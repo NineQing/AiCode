@@ -464,7 +464,8 @@ internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String
             contentDescription = statusLabel,
             tint = tint,
             modifier = Modifier
-                .size(15.dp)
+                // 与思考行同一格宽：两行的图标中心与后续文字左边缘才对得齐
+                .size(ChatStyle.rowIconSize)
                 .graphicsLayer { alpha = pulseAlpha }
         )
         if (isError) {
@@ -523,16 +524,16 @@ internal fun ToolCallGroupHeader(
                     if (expanded) R.string.common_collapse_action else R.string.common_expand
                 ),
                 onClick = onToggle
-            )
-            .padding(horizontal = Spacing.xs),
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         Icon(
             imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
             contentDescription = null,
             tint = Brand.IconGray,
-            modifier = Modifier.size(16.dp)
+            // 箭头收进行首图标格：不额外加左右内边距，图标中心与下面各工具行、思考行对齐
+            modifier = Modifier.size(ChatStyle.rowIconSize)
         )
         Text(
             text = stringResource(R.string.chat_tool_calls_count, count),

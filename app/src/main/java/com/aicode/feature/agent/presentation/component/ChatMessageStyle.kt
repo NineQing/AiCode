@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -80,6 +81,9 @@ internal object ChatStyle {
 
     /** 代码卡头部高度。 */
     val codeHeaderHeight = 36.dp
+
+    /** 行首图标格：思考行 / 工具行 / 工具分组头共用同一格宽，三行的图标与后续文字才会左右对齐。 */
+    val rowIconSize = 16.dp
 }
 
 /** 用户消息底色：浅色主题下即主题容器色（默认蓝即参考图那种淡蓝），深色下自动变深。 */
@@ -150,35 +154,41 @@ internal fun ThinkingGlyph(
     iconSize: Dp = 16.dp
 ) {
     Canvas(modifier.size(iconSize)) {
-        val side = size.minDimension
-        // 描边/圆角/中心点全部按尺寸等比取值，比例对齐参考图（1px 描边 / 13px 图形）
-        val stroke = (side * 0.078f).coerceAtLeast(1.dp.toPx())
-        val inset = stroke / 2f
-        val box = side - stroke
-        val corner = box * 0.13f
-        // 外框：圆角方
-        drawRoundRect(
-            color = tint,
-            topLeft = Offset(inset, inset),
-            size = Size(box, box),
-            cornerRadius = CornerRadius(corner, corner),
-            style = Stroke(width = stroke)
-        )
-        // 内接方框：旋转 45° 后四个顶点正好落在外框四边中点（对角线 = 外框边长 → 边长 = box / √2）
-        rotate(45f) {
-            val inner = box / 1.41421f
-            val offset = (side - inner) / 2f
-            val innerCorner = corner * 0.8f
+        val cell = size.minDimension
+        // 墨迹只占方格的 ~78%：Feather 图标在 24 的 viewBox 里四周各留 2~3 单位，
+        // 同样 16dp 的格子里两者的视觉重量才对得上，左边缘也才会落在同一个位置。
+        val side = cell * 0.78f
+        val origin = (cell - side) / 2f
+        translate(origin, origin) {
+            // 描边/圆角/中心点全部按尺寸等比取值，比例对齐参考图（1px 描边 / 13px 图形）
+            val stroke = (side * 0.078f).coerceAtLeast(1.dp.toPx())
+            val inset = stroke / 2f
+            val box = side - stroke
+            val corner = box * 0.13f
+            // 外框：圆角方
             drawRoundRect(
                 color = tint,
-                topLeft = Offset(offset, offset),
-                size = Size(inner, inner),
-                cornerRadius = CornerRadius(innerCorner, innerCorner),
+                topLeft = Offset(inset, inset),
+                size = Size(box, box),
+                cornerRadius = CornerRadius(corner, corner),
                 style = Stroke(width = stroke)
             )
+            // 内接方框：旋转 45° 后四个顶点正好落在外框四边中点（对角线 = 外框边长 → 边长 = box / √2）
+            rotate(45f) {
+                val inner = box / 1.41421f
+                val offset = (side - inner) / 2f
+                val innerCorner = corner * 0.8f
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(offset, offset),
+                    size = Size(inner, inner),
+                    cornerRadius = CornerRadius(innerCorner, innerCorner),
+                    style = Stroke(width = stroke)
+                )
+            }
+            // 中心点
+            drawCircle(color = tint, radius = side * 0.075f)
         }
-        // 中心点
-        drawCircle(color = tint, radius = side * 0.075f)
     }
 }
 

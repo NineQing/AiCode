@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,13 +42,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aicode.R
 import com.aicode.core.theme.Brand
-import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.feature.agent.domain.provider.RetryErrorInfo
 import com.aicode.feature.agent.domain.provider.RetryErrorKind
@@ -58,7 +54,6 @@ import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Clock
-import compose.icons.feathericons.Star
 import kotlinx.coroutines.delay
 
 /** 等待模型首个 token 的扁平指示：只有三个跳动的点，不再套描边卡片。 */
@@ -395,10 +390,10 @@ private fun formatThinkingTime(seconds: Int): String {
 /**
  * 思考过程可折叠气泡：左对齐、浅色弱化，与正式回复区分。点击标题栏折叠/展开。
  *
- * 折叠判定按行数阈值：超过 [REASONING_COLLAPSE_LINE_LIMIT] 行视为「过长」，自动折叠为
- * 前 N 行 + 「展开剩余 X 行」。流式实时展示时，短文本边想边看，一旦长度越过阈值即自动
- * 折叠（折叠态下新内容仍持续追加，保持折叠不刷屏，用户可随时点开看最新）；落库后的历史
- * 气泡默认折叠，避免刷屏。用户手动 toggle 后以用户选择为准，不再被自动折叠覆盖。
+ * 只有**展开/收起两态**，没有「显示尾巴几行」的中间态：收起时只剩标题栏一行，展开时给全文。
+ * 默认态按行数阈值：[REASONING_COLLAPSE_LINE_LIMIT] 行以内且调用方要求展开时展开（流式实时
+ * 边想边看），超过阈值即收起不刷屏（内容仍在后台累积，点开就看最新）；落库后的历史气泡默认
+ * 收起。用户手动 toggle 后以用户选择为准，不再被自动规则覆盖。
  */
 @Composable
 internal fun ReasoningBubble(
@@ -457,11 +452,9 @@ internal fun ReasoningBubble(
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        FeatherIcons.Star,
-                        contentDescription = null,
+                    ThinkingGlyph(
                         tint = Brand.IconGray,
-                        modifier = Modifier.size(16.dp)
+                        iconSize = 16.dp
                     )
                     Spacer(Modifier.width(Spacing.sm))
                     Text(
@@ -508,46 +501,6 @@ internal fun ReasoningBubble(
                             )
                         }
                     )
-                } else if (overThreshold) {
-                    // 折叠态：显示最新内容（尾部 N 行）+「还有 X 行」
-                    Spacer(Modifier.height(Spacing.sm))
-                    val tailText = remember(text) {
-                        text.lines().takeLast(REASONING_COLLAPSE_LINE_LIMIT).joinToString("\n")
-                    }
-                    Text(
-                        text = tailText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = REASONING_COLLAPSE_LINE_LIMIT,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    val hidden = lineCount - REASONING_COLLAPSE_LINE_LIMIT
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.sm))
-                            .clickable {
-                                userToggled = true
-                                expanded = true
-                            }
-                            .padding(vertical = Spacing.xs),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            FeatherIcons.ChevronDown,
-                            contentDescription = stringResource(R.string.common_expand),
-                            tint = Brand.IconGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(Spacing.xs))
-                        Text(
-                            text = stringResource(R.string.chat_expand_remaining, hidden),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
                 }
             }
         }

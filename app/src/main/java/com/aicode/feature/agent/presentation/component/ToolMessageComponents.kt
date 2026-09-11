@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
@@ -59,8 +61,18 @@ import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.presentation.AgentUIMessage
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertCircle
+import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.Database
+import compose.icons.feathericons.Edit3
+import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Tool
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -86,10 +98,12 @@ internal const val DIFF_COLLAPSE_THRESHOLD = 20
 internal const val TOOL_SECTION_LINE_LIMIT = 20
 
 /**
- * 工具消息：默认折叠为一行「状态圆点 + 工具名 + 参数摘要 + 箭头」，点击展开查看「指令」与「结果」。
- * 状态圆点仿 Claude Code：运行中=白点闪烁、成功=绿、失败=红。
+ * 工具消息（DSH 扁平行）：一行「工具图标 + 工具名 + 路径 + 增删统计 + 箭头」，行上方一条
+ * 1px 细线做分隔，不再套描边卡片；点击展开查看「指令 / 结果」，或对 editFile / writeFile
+ * 展开为白底描边的差异卡（头部路径 + 复制，页脚增删统计）。
+ *
+ * 状态不再只用颜色表达：运行中图标脉冲、失败额外挂一个警示图标，读屏另有状态语义。
  * [liveOutput] 非空时进入「实时输出」模式：显示逐行累积输出。
- * 对 edit_file / write_file 这类带结构化差异的结果，展开后以「+新增/−删除」的彩色差异视图呈现。
  */
 @Composable
 internal fun ToolMessageBody(
@@ -98,8 +112,7 @@ internal fun ToolMessageBody(
     onToggle: (() -> Unit)? = null
 ) {
     val streaming = liveOutput != null
-    val running = streaming || message.content.startsWith(SessionUseCase.PENDING_TOOL_MARKER) ||
-        message.content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
+    val running = message.isToolRunning(liveOutput)
     val edit = if (!running && !message.isError &&
         (message.toolName == "editFile" || message.toolName == "writeFile")
     ) {
@@ -140,10 +153,12 @@ internal fun ToolMessageBody(
         remember(message.toolArgs) { extractFilePathArg(message.toolArgs) }
     }
 
-    Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ChatHairline()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = ChatStyle.toolRowMinHeight)
                 .then(
                     if (expandable) Modifier.clickable {
                         userToggled = true
@@ -153,7 +168,7 @@ internal fun ToolMessageBody(
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ToolStatusDot(running = running, isError = message.isError)
+            ToolStatusIcon(running = running, isError = message.isError, toolName = message.toolName)
             Spacer(Modifier.width(Spacing.sm))
             Row(
                 modifier = Modifier.weight(1f),
@@ -169,13 +184,16 @@ internal fun ToolMessageBody(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.width(Spacing.xs))
-                    // 路径段（可省略）+ 文件名段（永远完整，优先级最高）
+                    // 路径段（可省略）+ 文件名段（永远完整，优先级最高）：等宽字，与代码卡头部一致
+                    val monoLabel = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace
+                    )
                     val pathDir = filePath.substringBeforeLast('/')
                     if (pathDir.isNotEmpty()) {
                         Text(
                             text = pathDir + "/",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = monoLabel,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -184,7 +202,7 @@ internal fun ToolMessageBody(
                     Text(
                         text = filePath.substringAfterLast('/'),
                         color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = monoLabel,
                         maxLines = 1
                     )
                 } else {
@@ -201,7 +219,9 @@ internal fun ToolMessageBody(
                         Text(
                             text = argHint,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -259,15 +279,28 @@ internal fun ToolMessageBody(
                 }
             ) {
                 if (todoData != null && todoData.items.isNotEmpty()) {
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     TodoCard(items = todoData.items)
                 } else if (webSearchData != null) {
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     WebSearchResultCard(result = webSearchData)
                 } else if (edit != null) {
-                    edit.hunks.forEach { h ->
-                        Spacer(Modifier.height(Spacing.xs))
-                        DiffView(diff = h.diff, startLine = h.startLine)
+                    // 差异卡：头部给路径与「复制」，页脚给增删统计（DSH 那块白底描边卡）
+                    Spacer(Modifier.height(Spacing.xs))
+                    ChatCodeCard(
+                        title = edit.path.ifBlank { null },
+                        copyText = edit.hunks.joinToString("\n") { it.diff },
+                        footer = stringResource(
+                            R.string.tool_changed_files_summary,
+                            edit.added,
+                            edit.removed,
+                            if (edit.path.isBlank()) 0 else 1
+                        )
+                    ) {
+                        Column {
+                            edit.hunks.forEach { h -> DiffView(diff = h.diff, startLine = h.startLine) }
+                            Spacer(Modifier.height(Spacing.xs))
+                        }
                     }
                 } else {
                     if (!argsFull.isNullOrBlank()) {
@@ -396,22 +429,24 @@ private suspend fun AwaitPointerEventScope.awaitTapOrSwipe(
 }
 
 /**
- * 工具状态圆点（仿 Claude Code）：运行中=主题中性「白点」并循环闪烁，成功=绿，失败=红。
+ * 工具状态图标：按工具类型给出字形（文件 / 终端 / 搜索 / 任务…），并按状态着色——
+ * 运行中脉冲、失败转红并额外挂一个警示图标、成功回到中性色（满屏绿色会抢注意力）。
+ * 颜色之外还有字形差异与读屏语义，色弱用户不会只靠红绿判断成败。
  */
 @Composable
-internal fun ToolStatusDot(running: Boolean, isError: Boolean) {
-    val baseColor = when {
-        running -> MaterialTheme.colorScheme.onSurface
+internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String?) {
+    val tint = when {
         isError -> DiffRemoveText
-        else -> DiffAddText
+        running -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val dotAlpha = if (running) {
-        val transition = rememberInfiniteTransition(label = "tool-status-dot")
+    val pulseAlpha = if (running) {
+        val transition = rememberInfiniteTransition(label = "tool-status-pulse")
         transition.animateFloat(
             initialValue = 1f,
-            targetValue = 0.25f,
+            targetValue = 0.35f,
             animationSpec = infiniteRepeatable(animation = tween(650), repeatMode = RepeatMode.Reverse),
-            label = "tool-status-dot-alpha"
+            label = "tool-status-pulse-alpha"
         ).value
     } else {
         1f
@@ -423,18 +458,94 @@ internal fun ToolStatusDot(running: Boolean, isError: Boolean) {
             else -> R.string.chat_tool_succeeded
         }
     )
-    Box(
-        modifier = Modifier
-            .size(8.dp)
-            .graphicsLayer { alpha = dotAlpha }
-            .clip(CircleShape)
-            .background(baseColor)
-            // 颜色是唯一信号，读屏与色弱用户没法区分，补上文字语义。
-            .semantics { contentDescription = statusLabel }
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = toolIcon(toolName),
+            contentDescription = statusLabel,
+            tint = tint,
+            modifier = Modifier
+                .size(15.dp)
+                .graphicsLayer { alpha = pulseAlpha }
+        )
+        if (isError) {
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                imageVector = FeatherIcons.AlertCircle,
+                contentDescription = null,
+                tint = DiffRemoveText,
+                modifier = Modifier.size(12.dp)
+            )
+        }
+    }
 }
 
-/** 展开区的一段带小标题的内容块（如「指令」「结果」） */
+/** 工具名字形映射：键与 [com.aicode.feature.agent.domain.tool.ToolRegistry] 注册名一致（比对时忽略大小写）。 */
+private fun toolIcon(toolName: String?): ImageVector = when (toolName?.lowercase()) {
+    "editfile", "writefile", "generateimage" -> FeatherIcons.Edit3
+    "readfile", "list", "sendfile", "viewimage" -> FeatherIcons.FileText
+    "search", "websearch", "webfetch" -> FeatherIcons.Search
+    "bash", "terminal" -> FeatherIcons.Terminal
+    "todo" -> FeatherIcons.Check
+    "task" -> FeatherIcons.Cpu
+    "memory" -> FeatherIcons.Database
+    else -> FeatherIcons.Tool
+}
+
+/**
+ * 工具是否仍在执行：实时输出中，或结果仍是 pending 占位。
+ * [AIChatPanel] 判定工具调用分组是否要保持展开时复用这一条，避免两处判定漂移。
+ */
+internal fun AgentUIMessage.isToolRunning(liveOutput: String?): Boolean =
+    liveOutput != null ||
+        content.startsWith(SessionUseCase.PENDING_TOOL_MARKER) ||
+        content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
+
+/**
+ * 「N 次工具调用」分组头：DSH 把一轮任务里连续的工具调用折成一行，运行中默认展开、
+ * 本轮结束自动折叠，点一下手动切换（用户手动选择优先，不再被自动规则覆盖）。
+ */
+@Composable
+internal fun ToolCallGroupHeader(
+    count: Int,
+    running: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ChatStyle.toolRowMinHeight)
+            .clip(RoundedCornerShape(ChatStyle.panelCorner))
+            .clickable(
+                // 无障碍：点这一行会展开还是收起，读屏能念出来（展开状态本身由 count 文本表达）
+                onClickLabel = stringResource(
+                    if (expanded) R.string.common_collapse_action else R.string.common_expand
+                ),
+                onClick = onToggle
+            )
+            .padding(horizontal = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+    ) {
+        Icon(
+            imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+            contentDescription = null,
+            tint = Brand.IconGray,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = stringResource(R.string.chat_tool_calls_count, count),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium
+        )
+        if (running) {
+            TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 4.dp)
+        }
+    }
+}
+
+/** 展开区的一段带小标题的内容块（如「指令」「结果」）：弱底等宽小面板。 */
 @Composable
 internal fun ToolSection(label: String, content: String) {
     Text(
@@ -451,14 +562,16 @@ internal fun ToolSection(label: String, content: String) {
     val visibleLines = if (collapsible && !expanded) lines.takeLast(TOOL_SECTION_LINE_LIMIT) else lines
     val hiddenCount = lines.size - TOOL_SECTION_LINE_LIMIT
 
-    SelectionContainer {
-        Text(
-            text = visibleLines.joinToString("\n"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = FontFamily.Monospace
+    ChatMonoPanel {
+        SelectionContainer {
+            Text(
+                text = visibleLines.joinToString("\n"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace
+                )
             )
-        )
+        }
     }
 
     if (collapsible) {
@@ -516,11 +629,10 @@ internal fun DiffView(diff: String, startLine: Int) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // 横向滚动容器在外层、文本选择在内层：滚动手势优先，
         // 避免 SelectionContainer 偶发抢占左右滑动（选择模式激活后拖动被选词消费）。
+        // 底色与圆角由外层 ChatCodeCard 提供，这里只负责行渲染与横滑。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.sm))
-                .background(MaterialTheme.colorScheme.background)
                 .horizontalScroll(rememberScrollState())
         ) {
             SelectionContainer {

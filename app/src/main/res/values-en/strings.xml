@@ -535,6 +535,7 @@
     <string name="chat_tool_running">Tool running</string>
     <string name="chat_tool_succeeded">Tool succeeded</string>
     <string name="chat_tool_failed">Tool failed</string>
+    <string name="chat_tool_calls_count">%1$d tool calls</string>
     <string name="chat_context_usage">Context %1$d%% used</string>
     <string name="chat_bg_command_done">Background command completed</string>
     <string name="chat_bg_commands_done">%1$d background tasks completed</string>
@@ -1163,6 +1164,7 @@
     <string name="tool_instruction">Instruction</string>
     <string name="tool_result">Result</string>
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
+    <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d files</string>
 
     <!-- Vision Model -->
     <string name="vision_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a vision model.</string>

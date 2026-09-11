@@ -41,6 +41,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,7 +144,120 @@ private data class ChatRenderItem(
     val slice: String? = null,
     val isChunkHeader: Boolean = true,
     val isChunkFooter: Boolean = true,
+    /**
+     * 非空表示这是一条「连续工具调用」分组头 item。成员各自仍是独立 item（仅在该组展开时生成），
+     * 因此无论展开与否，任何一条 item 的高度都有界——这是深处交互（表格横滑、长按复制）不失效的前提。
+     */
+    val toolGroup: List<AgentUIMessage>? = null,
+    /** 分组当前是否展开（已含用户手动覆盖的结果）。 */
+    val groupExpanded: Boolean = true,
 )
+
+/** 工具调用分组头 item 的 contentType。 */
+private const val TOOL_GROUP_CONTENT_TYPE = "tool-group"
+
+/**
+ * 该消息是否参与「连续工具调用」分组。
+ *
+ * 上下文压缩失败/摘要、后台通知这些 TOOL 消息各有专用渲染分支（见 [AgentMessageItem] 的早退），
+ * 混进分组会被当成普通工具行，故一并排除；普通消息（用户/助手）天然打断分组。
+ */
+private fun AgentUIMessage.isGroupableTool(): Boolean =
+    role == MessageRole.TOOL && !isCompactionFailure && !isContextSummary &&
+        !isCompactionMarker && !isBackgroundNotification
+
+/** 分组标识：取组内首条消息 id，保证一批工具调用在追加过程中 item key 稳定（不会重建导致视口跳动）。 */
+private fun toolGroupKey(first: AgentUIMessage): String = "toolgroup:${first.id}"
+
+/**
+ * 单条消息（非工具分组）在一次渲染中占据的 item：
+ * 超长助手正文拆成多条有界 chunk，其余消息 1:1。
+ */
+private fun messageRenderItems(message: AgentUIMessage): List<ChatRenderItem> {
+    val canSplit = message.role == MessageRole.ASSISTANT &&
+        !message.isCompactionMarker &&
+        !message.isContextSummary &&
+        !message.isCompactionFailure &&
+        !message.isBackgroundNotification &&
+        message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS
+    if (!canSplit) {
+        return listOf(
+            ChatRenderItem(message = message, key = message.id, contentType = message.role.name)
+        )
+    }
+    val slices = splitLongContent(message.content)
+    if (slices.size <= 1) {
+        // 只拆出一块（如无空行的超长单段）：等同普通消息。
+        return listOf(
+            ChatRenderItem(message = message, key = message.id, contentType = message.role.name)
+        )
+    }
+    return slices.mapIndexed { idx, slice ->
+        ChatRenderItem(
+            message = message,
+            key = "${message.id}#chunk$idx",
+            contentType = "assistant-chunk",
+            slice = slice,
+            isChunkHeader = idx == 0,
+            isChunkFooter = idx == slices.lastIndex,
+        )
+    }
+}
+
+/**
+ * 消息列表 → LazyColumn item 列表。
+ *
+ * 两件事：长文拆块（原逻辑）与**连续工具调用分组**。分组规则对齐参考图：
+ * 连续 TOOL 消息折成一条「N 次工具调用」头行，成员行只在展开时生成；
+ * 展开与否 = 用户手动选择优先，否则「组内还有工具在跑」或「本轮仍在进行且这是最后一个分组」时展开。
+ *
+ * 「本轮仍在进行」只对**最后一个**分组生效：否则新的一轮开始会把历史分组全部弹开。
+ */
+private fun buildChatItems(
+    messages: List<AgentUIMessage>,
+    agentBusy: Boolean,
+    runningToolIds: Set<String>,
+    groupOverrides: Map<String, Boolean>,
+): List<ChatRenderItem> {
+    val items = ArrayList<ChatRenderItem>(messages.size)
+    var lastGroupStart = -1
+    messages.forEachIndexed { index, message ->
+        if (message.isGroupableTool()) lastGroupStart = index
+    }
+    var i = 0
+    while (i < messages.size) {
+        val message = messages[i]
+        if (!message.isGroupableTool()) {
+            items += messageRenderItems(message)
+            i++
+            continue
+        }
+        var j = i
+        while (j < messages.size && messages[j].isGroupableTool()) j++
+        val members = messages.subList(i, j).toList()
+        val key = toolGroupKey(members.first())
+        val anyRunning = members.any { it.id in runningToolIds || it.isToolRunning(null) }
+        val expanded = groupOverrides[key] ?: (anyRunning || (agentBusy && i == lastGroupStart))
+        items += ChatRenderItem(
+            message = members.first(),
+            key = key,
+            contentType = TOOL_GROUP_CONTENT_TYPE,
+            toolGroup = members,
+            groupExpanded = expanded,
+        )
+        if (expanded) {
+            members.forEach { member ->
+                items += ChatRenderItem(
+                    message = member,
+                    key = member.id,
+                    contentType = member.role.name,
+                )
+            }
+        }
+        i = j
+    }
+    return items
+}
 
 /** 超过该长度（字符）的助手正文拆成多条有界 chunk。 */
 private const val CHUNK_SPLIT_THRESHOLD_CHARS = 2_000
@@ -336,11 +450,34 @@ fun AIChatPanel(
         else inputBarBottomReserveDp.toPx()).toInt()
     }
     val markdownCache = remember { MarkdownRenderCache() }
+    // 工具调用分组的手动展开/折叠覆盖：key = 组内首条消息 id；未记录时按运行状态自动判定。
+    val toolGroupOverrides = remember { mutableStateMapOf<String, Boolean>() }
+    // 快照：读一次 map 让组合订阅到它的变化，同时给下面的 remember 一个可比较的 key。
+    val toolGroupOverrideSnapshot = toolGroupOverrides.toMap()
+    // 正在执行的工具 id 集合：只让集合内容参与 remember key，避免实时输出逐字刷新导致整表重建。
+    val runningToolIds by remember { derivedStateOf { runningTool.mapTo(HashSet()) { it.messageId } } }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
     val isBusy = agentState is AgentUIState.Loading || agentState is AgentUIState.Streaming
+    // 拆块 + 工具分组：超长助手消息展开成多条有界 item（单条滚动轴、外观连续），
+    // 连续的工具调用折成一个「N 次工具调用」分组；chatItems 的顺序即 LazyColumn item 顺序。
+    // 提到这里（而不是 LazyColumn 分支内）是因为 isFarFromBottom 的「布局是否对应当前消息」判定
+    // 需要它：分组会让 item 数 ≠ 消息数 + 1，不能再拿消息数当期望值。
+    val chatItems = remember(
+        messages,
+        isBusy,
+        toolGroupOverrideSnapshot,
+        runningToolIds
+    ) {
+        buildChatItems(
+            messages = messages,
+            agentBusy = isBusy,
+            runningToolIds = runningToolIds,
+            groupOverrides = toolGroupOverrideSnapshot,
+        )
+    }
     // 每轮任务的总耗时（用户发送 → 本轮 AI 收工），挂在轮末助手气泡下方
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
@@ -631,14 +768,14 @@ fun AIChatPanel(
     // 「最后一次布局 pass」的产物，LazyColumn 卸载（空会话 WelcomeState、加载占位）后不会自动
     // 清空——旧会话翻历史后切到空会话，残留布局会让按钮悬在新会话上。totalItemsCount 再拦截
     // 「新列表尚未按当前消息重测」（layout 开始前 layoutInfo 仍是旧会话的）那一帧。
-    val isFarFromBottom by remember(inputBarReservePx, messagesReady, messages.size) {
+    val isFarFromBottom by remember(inputBarReservePx, messagesReady, messages.size, chatItems.size) {
         derivedStateOf {
             if (!messagesReady || messages.isEmpty()) return@derivedStateOf false
             if (!listState.canScrollForward) return@derivedStateOf false
             val layout = listState.layoutInfo
             val lastVisible = layout.visibleItemsInfo.lastOrNull()
                 ?: return@derivedStateOf false
-            if (layout.totalItemsCount != messages.size + 1) return@derivedStateOf false
+            if (layout.totalItemsCount != chatItems.size + 1) return@derivedStateOf false
             if (lastVisible.index < layout.totalItemsCount - 1) return@derivedStateOf true
             val safeBottom = layout.viewportEndOffset - inputBarReservePx
             (lastVisible.offset + lastVisible.size) - safeBottom > layout.viewportEndOffset / 2
@@ -751,6 +888,76 @@ fun AIChatPanel(
                     val pushedDown = lastVisible != null &&
                         lastVisible.offset + lastVisible.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX
                     if (lost || pushedDown) listState.scrollToItem(lastIndex, Int.MAX_VALUE)
+                }
+            }
+        }
+    }
+
+    // 展开/收起一条 item（工具卡片、工具分组头）之后的视口重定位。
+    // 先暂停自动跟随，避免校准循环把视口拉走造成跳动；用户滚回底部（isAtBottom 监测）时自动恢复跟随。
+    // 折叠后 item 可能整体缩出视口上方：等高度稳定后按折叠后的布局判断，仅当完全不可见时才滚回顶部
+    // 让标题可见；仍可见（含贴底）时不做任何主动滚动，避免用折叠前的旧 offset 定位导致位置不对。
+    // 展开后 item 底部可能被悬浮层（输入框）遮挡：滚动让它停在悬浮层上沿，与消息气泡的贴底跟随统一。
+    val settleAndReposition: (Int) -> Unit = { index ->
+        followBottom = false
+        scope.launch {
+            // 展开/收起后 item 高度可能连续变几帧（diff 渲染、实时输出逐行增长、分组成员增删），
+            // 等高度稳定（>0 且连续两帧相同）再读位置：既避免按瞬时高度算出过大的滚动目标，
+            // 也避免重组延迟时把折叠前的旧高度误判成「稳定」提前退出。
+            var prevSize = -1
+            var stableFrames = 0
+            for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
+                withFrameNanos { }
+                val curSize = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == index }?.size ?: -1
+                if (curSize > 0 && curSize == prevSize) {
+                    stableFrames++
+                    if (stableFrames >= 2) break
+                } else {
+                    stableFrames = 0
+                }
+                prevSize = curSize
+            }
+            val layout = listState.layoutInfo
+            val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
+            if (item == null || item.offset + item.size <= 0) {
+                // animateScrollToItem 对超一屏的大 item 按估算高度算滚动量，终点会系统性
+                // 滚过头（大卡片过头多、小卡片精准）；统一用无估算参与的瞬移落位。
+                listState.scrollToItem(index)
+            } else {
+                val safeBottom = layout.viewportEndOffset - reservePxState.value
+                if (item.offset + item.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX) {
+                    // 目标 = 让 item 底部停在 safeBottom 的顶部位置，但夹在 [0, 当前顶部] 之间：
+                    // 只向上滚、顶部永不越过视口顶（比可视区还高时对齐到顶部 0），
+                    // 避免中间位置的长卡片被一次性滚过头、标题滚出屏幕。
+                    val target = (safeBottom - item.size)
+                        .coerceIn(0, item.offset.coerceAtLeast(0))
+                    listState.scrollToItem(index, target)
+                    // 兜底：内容高度在滚动后仍可能微变（diff 渲染、实时输出），等布局稳定后
+                    // 若用户没在拖列表，再精确吸一次位到约束目标，保证最终位置以实测布局为准。
+                    var postSize = -1
+                    var postStable = 0
+                    for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
+                        withFrameNanos { }
+                        val cur = listState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.index == index }?.size ?: -1
+                        if (cur > 0 && cur == postSize) {
+                            postStable++
+                            if (postStable >= 2) break
+                        } else {
+                            postStable = 0
+                        }
+                        postSize = cur
+                    }
+                    val after = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.index == index }
+                    if (after != null && !listState.isScrollInProgress) {
+                        val corrected = (safeBottom - after.size)
+                            .coerceIn(0, after.offset.coerceAtLeast(0))
+                        if (kotlin.math.abs(corrected - after.offset) > AUTO_SCROLL_TOLERANCE_PX) {
+                            listState.scrollToItem(index, corrected)
+                        }
+                    }
                 }
             }
         }
@@ -869,50 +1076,6 @@ fun AIChatPanel(
                 } else if (messages.isEmpty()) {
                     WelcomeState(modifier = Modifier.fillMaxSize())
                 } else {
-                    // 拆块：超长助手消息展开成多条有界 item（单条滚动轴、外观连续的气泡），
-                    // 普通消息保持 1:1。chatItems 的顺序即 LazyColumn item 顺序（尾随尾巴 item）。
-                    val chatItems = remember(messages) {
-                        messages.map { message ->
-                            val canSplit = message.role == MessageRole.ASSISTANT &&
-                                !message.isCompactionMarker &&
-                                !message.isContextSummary &&
-                                !message.isCompactionFailure &&
-                                !message.isBackgroundNotification &&
-                                message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS
-                            if (!canSplit) {
-                                listOf(
-                                    ChatRenderItem(
-                                        message = message,
-                                        key = message.id,
-                                        contentType = message.role.name,
-                                    )
-                                )
-                            } else {
-                                val slices = splitLongContent(message.content)
-                                if (slices.size <= 1) {
-                                    // 只拆出一块（如无空行的超长单段）：等同普通消息，避免单块走分块描边。
-                                    listOf(
-                                        ChatRenderItem(
-                                            message = message,
-                                            key = message.id,
-                                            contentType = message.role.name,
-                                        )
-                                    )
-                                } else {
-                                    slices.mapIndexed { idx, slice ->
-                                        ChatRenderItem(
-                                            message = message,
-                                            key = "${message.id}#chunk$idx",
-                                            contentType = "assistant-chunk",
-                                            slice = slice,
-                                            isChunkHeader = idx == 0,
-                                            isChunkFooter = idx == slices.lastIndex,
-                                        )
-                                    }
-                                }
-                            }
-                        }.flatten()
-                    }
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -924,92 +1087,35 @@ fun AIChatPanel(
                         )
                     ) {
                         itemsIndexed(chatItems, key = { _, it -> it.key }, contentType = { _, it -> it.contentType }) { index, item ->
-                            val message = item.message
-                            val live = runningTool.firstOrNull { it.messageId == message.id }?.text
-                            AgentMessageItem(
-                                message = message,
-                                liveOutput = live,
-                                markdownCache = markdownCache,
-                                contentSlice = item.slice,
-                                isChunkHeader = item.isChunkHeader,
-                                isChunkFooter = item.isChunkFooter,
-                                onRewindClick = { viewModel.openRewindMenu(it) },
-                                onMoreClick = { messageForMenu = it },
-                                onToolToggle = {
-                                    // 用户主动展开/收起工具卡片：先暂停自动跟随，避免校准循环把视口拉走造成跳动；
-                                    // 用户滚回底部（isAtBottom 监测）时自动恢复跟随。
-                                    followBottom = false
-                                    // 折叠后卡片可能整体缩出视口上方（长卡片双击折叠）：等一帧按折叠后的布局判断，
-                                    // 仅当卡片完全不可见时才滚回顶部让标题可见；仍可见（含贴底）时不做任何主动滚动，
-                                    // 避免用折叠前的旧 offset 定位导致「收起时跳动、位置不对」。
-                                    // 展开后卡片底部可能被悬浮层（输入框）遮挡：滚动让卡片底部停在悬浮层上沿，
-                                    // 与消息气泡的贴底跟随统一。
-                                    scope.launch {
-                                        // 展开/收起后 item 高度可能连续变几帧（diff 渲染、实时输出逐行增长），
-                                        // 等高度稳定（>0 且连续两帧相同）再读位置：既避免按瞬时高度算出过大的滚动目标，
-                                        // 也避免重组延迟时把折叠前的旧高度误判成「稳定」提前退出。
-                                        var prevSize = -1
-                                        var stableFrames = 0
-                                        for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
-                                            withFrameNanos { }
-                                            val curSize = listState.layoutInfo.visibleItemsInfo
-                                                .firstOrNull { it.index == index }?.size ?: -1
-                                            if (curSize > 0 && curSize == prevSize) {
-                                                stableFrames++
-                                                if (stableFrames >= 2) break
-                                            } else {
-                                                stableFrames = 0
-                                            }
-                                            prevSize = curSize
-                                        }
-                                        val layout = listState.layoutInfo
-                                        val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-                                        if (item == null || item.offset + item.size <= 0) {
-                                            // animateScrollToItem 对超一屏的大 item 按估算高度算滚动量，终点会系统性
-                                            // 滚过头（大卡片过头多、小卡片精准）；统一用无估算参与的瞬移落位。
-                                            listState.scrollToItem(index)
-                                        } else {
-                                            val safeBottom = layout.viewportEndOffset - inputBarReservePx
-                                            if (item.offset + item.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX) {
-                                                // 目标 = 让卡片底部停在 safeBottom 的顶部位置，但夹在 [0, 当前顶部] 之间：
-                                                // 只向上滚、顶部永不越过视口顶（卡片比可视区还高时对齐到顶部 0），
-                                                // 避免中间位置的长卡片被一次性滚过头、标题滚出屏幕。
-                                                val target = (safeBottom - item.size)
-                                                    .coerceIn(0, item.offset.coerceAtLeast(0))
-                                                listState.scrollToItem(index, target)
-                                                // 兜底：内容高度在滚动后仍可能微变（diff 渲染、实时输出），等布局稳定后
-                                                // 若用户没在拖列表，再精确吸一次位到约束目标（底部尽量压到 safeBottom、
-                                                // 顶部不越视口顶），保证最终位置以实测布局为准。
-                                                var postSize = -1
-                                                var postStable = 0
-                                                for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
-                                                    withFrameNanos { }
-                                                    val cur = listState.layoutInfo.visibleItemsInfo
-                                                        .firstOrNull { it.index == index }?.size ?: -1
-                                                    if (cur > 0 && cur == postSize) {
-                                                        postStable++
-                                                        if (postStable >= 2) break
-                                                    } else {
-                                                        postStable = 0
-                                                    }
-                                                    postSize = cur
-                                                }
-                                                val after = listState.layoutInfo.visibleItemsInfo
-                                                    .firstOrNull { it.index == index }
-                                                if (after != null && !listState.isScrollInProgress) {
-                                                    val corrected = (safeBottom - after.size)
-                                                        .coerceIn(0, after.offset.coerceAtLeast(0))
-                                                    if (kotlin.math.abs(corrected - after.offset) > AUTO_SCROLL_TOLERANCE_PX) {
-                                                        listState.scrollToItem(index, corrected)
-                                                    }
-                                                }
-                                            }
-                                        }
+                            val group = item.toolGroup
+                            if (group != null) {
+                                // 分组头：点一下展开/收起整组工具调用，并复用同一套视口重定位
+                                ToolCallGroupHeader(
+                                    count = group.size,
+                                    running = group.any { it.id in runningToolIds || it.isToolRunning(null) },
+                                    expanded = item.groupExpanded,
+                                    onToggle = {
+                                        toolGroupOverrides[item.key] = !item.groupExpanded
+                                        settleAndReposition(index)
                                     }
-                                },
-                                taskDurationMs = taskDurations[message.id],
-                                entryDelayMs = messageEntryDelays[message.id]
-                            )
+                                )
+                            } else {
+                                val message = item.message
+                                val live = runningTool.firstOrNull { it.messageId == message.id }?.text
+                                AgentMessageItem(
+                                    message = message,
+                                    liveOutput = live,
+                                    markdownCache = markdownCache,
+                                    contentSlice = item.slice,
+                                    isChunkHeader = item.isChunkHeader,
+                                    isChunkFooter = item.isChunkFooter,
+                                    onRewindClick = { viewModel.openRewindMenu(it) },
+                                    onMoreClick = { messageForMenu = it },
+                                    onToolToggle = { settleAndReposition(index) },
+                                    taskDurationMs = taskDurations[message.id],
+                                    entryDelayMs = messageEntryDelays[message.id]
+                                )
+                            }
                         }
                         val reasoning = streamingReasoning
                         val showReasoning = reasoning != null && reasoning.isNotEmpty()

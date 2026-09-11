@@ -535,6 +535,7 @@
     <string name="chat_tool_running">工具执行中</string>
     <string name="chat_tool_succeeded">工具执行成功</string>
     <string name="chat_tool_failed">工具执行失败</string>
+    <string name="chat_tool_calls_count">%1$d 次工具调用</string>
     <string name="chat_context_usage">上下文已用 %1$d%%</string>
     <string name="chat_bg_command_done">后台命令已完成</string>
     <string name="chat_bg_commands_done">%1$d 个后台任务已完成</string>
@@ -1162,6 +1163,7 @@
     <string name="tool_instruction">指令</string>
     <string name="tool_result">结果</string>
     <string name="tool_expand_remaining">展开剩余 %1$s 行</string>
+    <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d 个文件</string>
 
     <!-- Vision Model -->
     <string name="vision_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选识图模型。</string>

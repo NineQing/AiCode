@@ -4,7 +4,6 @@ import android.content.ClipData
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,8 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -53,12 +51,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aicode.R
 import com.aicode.core.theme.Brand
-import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.ContentWidth
@@ -198,7 +194,7 @@ internal fun AgentMessageItem(
     if (message.role == MessageRole.ASSISTANT && !hasContent && !hasReasoning && !hasAttachments) return
 
     val isUser = message.role == MessageRole.USER
-    // 分块消息：气泡描边只画外沿、接缝不画水平线（见 chunkFrame），避免每块整框描边叠出双线。
+    // 分块消息：块间只留一个段落间距，视觉上仍是连续的一段正文（DSH 扁平文档流下不再有描边接缝）。
     val chunked = contentSlice != null
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     // 用户气泡随文字撑开，最大撑到与 AI 气泡同宽（消息列宽 - 列表两侧 padding）。
@@ -230,13 +226,14 @@ internal fun AgentMessageItem(
     )
 
     // 超长助手消息由 AIChatPanel 拆成多条有界 item（拆块）渲染，这里不再做任何限高内滚；
-    // 每条分块都视为普通气泡：正文按块渲染、思考只在首块、操作行只在末块。
+    // 每条分块都视为普通消息的一段：正文按块渲染、思考只在首块、操作行只在末块。
     Column(
         modifier = Modifier
             .fillMaxWidth()
             // LazyColumn 不再统一 spacedBy：末块（或非分块消息）自带与下一条 item 的间距，
-            // 相邻分块之间零间距无缝衔接，整个长消息在外观上仍是一条气泡。
-            .padding(bottom = if (isChunkFooter) Spacing.sm else 0.dp),
+            // 相邻分块之间零间距无缝衔接，整段长回复在外观上仍是连续的一整段。
+            // 扁平文档流下正文之间没有气泡边框兜底，间距要略大一点才分得清「轮次」。
+            .padding(bottom = if (isChunkFooter) Spacing.md else 0.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         if (hasReasoning && isChunkHeader) {
@@ -255,10 +252,8 @@ internal fun AgentMessageItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (message.role == MessageRole.TOOL) {
-                            Surface(
-                                shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = null,
+                            // 工具行自带 1px 细线与状态图标；这里只负责入场动画（只改 draw 层，不动布局）
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .graphicsLayer {
@@ -268,85 +263,50 @@ internal fun AgentMessageItem(
                             ) {
                                 ToolMessageBody(message, liveOutput = liveOutput, onToggle = onToolToggle)
                             }
-                        } else {
-                            // 分块气泡的圆角只出现在消息首块/末块的外侧边：中间块四角直角，
-                            // 相邻分块同底色直角相接，视觉上仍是整条气泡。
-                            val topCorner = if (isChunkHeader) Radius.md else 0.dp
-                            val bottomCorner = if (isChunkFooter) Radius.xs else 0.dp
+                        } else if (isUser) {
+                            // 用户消息：右对齐浅色药丸 + 深色文字（不再整块主题色反白）。
                             Surface(
-                                shape = if (isUser) {
-                                    RoundedCornerShape(Radius.md, Radius.md, Radius.xs, Radius.md)
-                                } else {
-                                    RoundedCornerShape(topCorner, topCorner, bottomCorner, bottomCorner)
-                                },
-                                color = when (message.role) {
-                                    MessageRole.USER -> MaterialTheme.colorScheme.primary
-                                    MessageRole.ASSISTANT -> MaterialTheme.colorScheme.surface
-                                    MessageRole.TOOL -> MaterialTheme.colorScheme.surfaceVariant
-                                },
-                                border = if (!chunked && message.role == MessageRole.ASSISTANT) {
-                                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                                } else null,
-                                // 用户气泡随内容自适应宽度，最大撑到与 AI 气泡同宽；AI/工具气泡填满可用宽度
-                                modifier = if (isUser) {
-                                    Modifier.widthIn(max = maxUserBubbleWidth)
-                                } else {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .then(
-                                            if (chunked) {
-                                                Modifier.chunkFrame(
-                                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                                    strokeWidth = 1.dp,
-                                                    header = isChunkHeader,
-                                                    footer = isChunkFooter,
-                                                )
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
-                                }
+                                shape = RoundedCornerShape(ChatStyle.bubbleCorner),
+                                color = chatUserBubbleColor(),
+                                modifier = Modifier.widthIn(max = maxUserBubbleWidth)
                             ) {
-                                val textColor = when (message.role) {
-                                    MessageRole.USER -> MaterialTheme.colorScheme.onPrimary
-                                    else -> MaterialTheme.colorScheme.onSurface
+                                SelectionContainer {
+                                    CompositionLocalProvider(
+                                        LocalTextSelectionColors provides TextSelectionColors(
+                                            handleColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            backgroundColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.24f),
+                                        )
+                                    ) {
+                                        Text(
+                                            text = message.content,
+                                            color = chatUserBubbleTextColor(),
+                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
+                                        )
+                                    }
                                 }
-                                val selectionColors = if (isUser) {
-                                    TextSelectionColors(
-                                        handleColor = MaterialTheme.colorScheme.onPrimary,
-                                        backgroundColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.28f),
-                                    )
-                                } else {
-                                    TextSelectionColors(
+                            }
+                        } else {
+                            // 助手正文：不套容器，直接铺在页面底色上（文档流）。分块之间只留一个段落间距，
+                            // 整条消息看起来仍是连续的一段正文。
+                            SelectionContainer {
+                                CompositionLocalProvider(
+                                    LocalTextSelectionColors provides TextSelectionColors(
                                         handleColor = MaterialTheme.colorScheme.primary,
                                         backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
                                     )
-                                }
-                                SelectionContainer {
-                                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
-                                        if (isUser) {
-                                            Text(
-                                                text = message.content,
-                                                color = textColor,
-                                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                                modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)
-                                            )
-                                        } else {
-                                            MarkdownContent(
-                                                text = contentSlice ?: message.content,
-                                                color = textColor,
-                                                // 分块气泡：块间只留一个段落间距（xs=4dp），避免相邻两块各留一次
-                                                // 垂直 sm 内边距叠成 16dp 空隙；首块补顶部、末块补底部。
-                                                modifier = Modifier.padding(
-                                                    start = Spacing.sm,
-                                                    end = Spacing.sm,
-                                                    top = if (chunked && !isChunkHeader) 0.dp else Spacing.sm,
-                                                    bottom = if (chunked && !isChunkFooter) Spacing.xs else Spacing.sm,
-                                                ),
-                                                cache = markdownCache,
-                                            )
-                                        }
-                                    }
+                                ) {
+                                    MarkdownContent(
+                                        text = contentSlice ?: message.content,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                top = if (chunked && !isChunkHeader) 0.dp else Spacing.xs,
+                                                bottom = Spacing.xs,
+                                            ),
+                                        cache = markdownCache,
+                                    )
                                 }
                             }
                         }
@@ -360,6 +320,11 @@ internal fun AgentMessageItem(
                 if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        // 用户消息：时间戳排在复制按钮之前（对齐参考图里气泡下方的「17:55 ⧉」）
+                        if (isUser) {
+                            ChatMetaText(text = formatClockTime(message.timestamp))
+                            Spacer(Modifier.width(Spacing.xs))
+                        }
                         if (hasContent) {
                             MessageActionIconButton(
                                 icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
@@ -394,11 +359,8 @@ internal fun AgentMessageItem(
                         if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
                             val inStr = formatTokenCount(message.inputTokens.toLong())
                             val outStr = formatTokenCount(message.outputTokens.toLong())
-                            Text(
-                                text = "↑$inStr ↓$outStr",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Spacer(Modifier.width(Spacing.sm))
+                            ChatMetaText(text = "↑$inStr ↓$outStr")
                         }
                         val cacheHitRate = if (message.role == MessageRole.ASSISTANT) {
                             formatCacheHitRate(message.inputTokens, message.cachedInputTokens)
@@ -412,11 +374,7 @@ internal fun AgentMessageItem(
                                 modifier = Modifier.size(12.dp)
                             )
                             Spacer(Modifier.width(2.dp))
-                            Text(
-                                text = cacheHitRate,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            ChatMetaText(text = cacheHitRate)
                         }
                         if (taskDurationMs != null) {
                             val durationText = formatTaskDuration(taskDurationMs)
@@ -428,11 +386,7 @@ internal fun AgentMessageItem(
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(Modifier.width(2.dp))
-                            Text(
-                                text = durationText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            ChatMetaText(text = durationText)
                         }
                     }
                     // 复制成功 1.5s 后恢复图标
@@ -446,27 +400,6 @@ internal fun AgentMessageItem(
             }
         }
     }
-}
-
-/**
- * 分块气泡外沿描边：只画首块顶边、末块底边与左右竖边，块间接缝不画水平线——否则每块
- * 各自画整框描边，接缝处会叠成双线，破坏「整条气泡」观感。用 drawWithContent 在内容之上
- * 绘制，避免被 Surface 背景盖住；左右竖边不收纳圆角（1dp 线在圆角处的偏差肉眼不可见）。
- */
-private fun Modifier.chunkFrame(
-    color: Color,
-    strokeWidth: Dp,
-    header: Boolean,
-    footer: Boolean,
-): Modifier = drawWithContent {
-    drawContent()
-    val w = strokeWidth.toPx()
-    val h = size.height
-    val wid = size.width
-    if (header) drawLine(color, Offset(0f, w / 2), Offset(wid, w / 2), strokeWidth = w)
-    if (footer) drawLine(color, Offset(0f, h - w / 2), Offset(wid, h - w / 2), strokeWidth = w)
-    drawLine(color, Offset(w / 2, 0f), Offset(w / 2, h), strokeWidth = w)
-    drawLine(color, Offset(wid - w / 2, 0f), Offset(wid - w / 2, h), strokeWidth = w)
 }
 
 @Composable
@@ -512,19 +445,18 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        ChatHairline()
         Row(
-            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ChatStyle.toolRowMinHeight),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(6.dp)
                     .clip(CircleShape)
                     .background(dotColor)
             )
@@ -540,26 +472,26 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
 }
 
 /**
- * 上下文压缩成功卡片：默认折叠为「圆点 + 上下文已压缩 + 箭头」，点击展开查看摘要全文。
- * 用 primary 色系与工具调用（surfaceVariant + 绿/红点）区分。
+ * 上下文压缩成功行：默认折叠为「圆点 + 上下文已压缩 + 箭头」，点击展开查看摘要全文。
+ * 扁平行 + 弱底面板，与工具行同构，只用圆点颜色区分事件类型。
  */
 @Composable
 private fun CompactionSummaryCard(message: AgentUIMessage, markdownCache: MarkdownRenderCache?) {
     var expanded by remember(message.id) { mutableStateOf(false) }
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = Spacing.xs)
-            .clickable { expanded = !expanded }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        ChatHairline()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ChatStyle.panelCorner))
+                .background(chatMutedSurfaceColor())
+                .clickable { expanded = !expanded }
+                .padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(6.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                 )
@@ -567,7 +499,7 @@ private fun CompactionSummaryCard(message: AgentUIMessage, markdownCache: Markdo
                 Text(
                     text = stringResource(R.string.chat_context_compressed),
                     color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
@@ -575,11 +507,11 @@ private fun CompactionSummaryCard(message: AgentUIMessage, markdownCache: Markdo
                     if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
                     contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
                     tint = Brand.IconGray,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
             if (expanded && message.content.hasVisibleContent()) {
-                Spacer(Modifier.height(Spacing.sm))
+                Spacer(Modifier.height(Spacing.xs))
                 MarkdownContent(
                     text = message.content,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -592,27 +524,27 @@ private fun CompactionSummaryCard(message: AgentUIMessage, markdownCache: Markdo
 }
 
 /**
- * 上下文压缩失败卡片：默认折叠为「圆点 + 压缩失败 + 原因首行 + 箭头」，点击展开查看完整原因。
- * 用 error 色系与工具调用失败（surfaceVariant + 红点）区分。
+ * 上下文压缩失败行：默认折叠为「圆点 + 压缩失败 + 原因首行 + 箭头」，点击展开查看完整原因。
+ * 与工具行同构的扁平行，用 error 色圆点区分。
  */
 @Composable
 private fun CompactionFailureCard(message: AgentUIMessage) {
     var expanded by remember(message.id) { mutableStateOf(false) }
     val reason = message.content.ifBlank { stringResource(R.string.chat_compaction_failed) }
-    Surface(
-        shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = Spacing.xs)
-            .clickable { expanded = !expanded }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        ChatHairline()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ChatStyle.panelCorner))
+                .background(chatMutedSurfaceColor())
+                .clickable { expanded = !expanded }
+                .padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(6.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.error)
                 )
@@ -620,7 +552,7 @@ private fun CompactionFailureCard(message: AgentUIMessage) {
                 Text(
                     text = stringResource(R.string.chat_compaction_failed),
                     color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Medium
                 )
                 if (!expanded) {
@@ -640,17 +572,18 @@ private fun CompactionFailureCard(message: AgentUIMessage) {
                     if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
                     contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
                     tint = Brand.IconGray,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
             if (expanded && reason.isNotBlank()) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    text = reason,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Spacer(Modifier.height(Spacing.xs))
+                ChatMonoPanel {
+                    Text(
+                        text = reason,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                    )
+                }
             }
         }
     }

@@ -150,6 +150,9 @@ internal fun formatCacheHitRate(inputTokens: Int, cachedInputTokens: Int): Strin
 @Composable
 internal fun AgentMessageItem(
     message: AgentUIMessage,
+    /** 是否渲染「复制 / 回退 / 更多」这排操作按钮：整段会话只有最新一条消息传 true，
+     *  避免每条消息下面都吊一排按钮。时间戳与用量、耗时属于信息，不受它控制。 */
+    showActions: Boolean = false,
     liveOutput: String? = null,
     markdownCache: MarkdownRenderCache? = null,
     onRewindClick: ((String) -> Unit)? = null,
@@ -315,58 +318,74 @@ internal fun AgentMessageItem(
                 if ((isUser || message.role == MessageRole.ASSISTANT) && hasAttachments) {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
-                // 气泡下方操作行（工具消息不显示）。纯图片消息没有文字，同样要能撤销/删除，故附件也算；
-                // 分块消息只在末块渲染操作行，避免每块都带一排复制/更多按钮。
-                if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter) {
+                // 气泡下方的元信息行（工具消息不显示）：整段会话只有最新一条消息挂「复制/回退/更多」按钮，
+                // 每条消息下面都吊一排按钮太吵；时间戳与用量/耗时属于信息不是按钮，照常按消息显示。
+                val tokenStats = if (message.role == MessageRole.ASSISTANT &&
+                    (message.inputTokens > 0 || message.outputTokens > 0)
+                ) {
+                    val inStr = formatTokenCount(message.inputTokens.toLong())
+                    val outStr = formatTokenCount(message.outputTokens.toLong())
+                    "↑$inStr ↓$outStr"
+                } else null
+                val cacheHitRate = if (message.role == MessageRole.ASSISTANT) {
+                    formatCacheHitRate(message.inputTokens, message.cachedInputTokens)
+                } else null
+                val durationText = taskDurationMs?.let { formatTaskDuration(it) }
+                val hasMeta = isUser || tokenStats != null || cacheHitRate != null || durationText != null
+                if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter &&
+                    (showActions || hasMeta)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        // 排过内容才补间隔，否则本行首个元素会被凭空缩进一格
+                        var emitted = false
                         // 用户消息：时间戳排在复制按钮之前（对齐参考图里气泡下方的「17:55 ⧉」）
                         if (isUser) {
                             ChatMetaText(text = formatClockTime(message.timestamp))
-                            Spacer(Modifier.width(Spacing.xs))
+                            emitted = true
                         }
-                        if (hasContent) {
-                            MessageActionIconButton(
-                                icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
-                                contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
-                                tint = iconTint,
-                                onClick = {
-                                    copyScope.launch {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(ClipData.newPlainText("message", message.content))
-                                        )
-                                        copied = true
+                        if (showActions) {
+                            if (emitted) Spacer(Modifier.width(Spacing.xs))
+                            if (hasContent) {
+                                MessageActionIconButton(
+                                    icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
+                                    contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
+                                    tint = iconTint,
+                                    onClick = {
+                                        copyScope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(ClipData.newPlainText("message", message.content))
+                                            )
+                                            copied = true
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
+                            if (isUser && onRewindClick != null) {
+                                MessageActionIconButton(
+                                    icon = FeatherIcons.RotateCcw,
+                                    contentDescription = stringResource(R.string.checkpoint_rewind_title),
+                                    tint = iconTint,
+                                    onClick = { onRewindClick(message.id) }
+                                )
+                            }
+                            if (onMoreClick != null) {
+                                MessageActionIconButton(
+                                    icon = FeatherIcons.MoreHorizontal,
+                                    contentDescription = stringResource(R.string.chat_more_options),
+                                    tint = iconTint,
+                                    onClick = { onMoreClick(message) }
+                                )
+                            }
+                            emitted = true
                         }
-                        if (isUser && onRewindClick != null) {
-                            MessageActionIconButton(
-                                icon = FeatherIcons.RotateCcw,
-                                contentDescription = stringResource(R.string.checkpoint_rewind_title),
-                                tint = iconTint,
-                                onClick = { onRewindClick(message.id) }
-                            )
+                        if (tokenStats != null) {
+                            if (emitted) Spacer(Modifier.width(Spacing.sm))
+                            ChatMetaText(text = tokenStats)
+                            emitted = true
                         }
-                        if (onMoreClick != null) {
-                            MessageActionIconButton(
-                                icon = FeatherIcons.MoreHorizontal,
-                                contentDescription = stringResource(R.string.chat_more_options),
-                                tint = iconTint,
-                                onClick = { onMoreClick(message) }
-                            )
-                        }
-                        if (message.role == MessageRole.ASSISTANT && (message.inputTokens > 0 || message.outputTokens > 0)) {
-                            val inStr = formatTokenCount(message.inputTokens.toLong())
-                            val outStr = formatTokenCount(message.outputTokens.toLong())
-                            Spacer(Modifier.width(Spacing.sm))
-                            ChatMetaText(text = "↑$inStr ↓$outStr")
-                        }
-                        val cacheHitRate = if (message.role == MessageRole.ASSISTANT) {
-                            formatCacheHitRate(message.inputTokens, message.cachedInputTokens)
-                        } else null
                         if (cacheHitRate != null) {
-                            Spacer(Modifier.width(Spacing.sm))
+                            if (emitted) Spacer(Modifier.width(Spacing.sm))
                             Icon(
                                 FeatherIcons.Database,
                                 contentDescription = stringResource(R.string.chat_cache_hit_rate, cacheHitRate),
@@ -375,10 +394,10 @@ internal fun AgentMessageItem(
                             )
                             Spacer(Modifier.width(2.dp))
                             ChatMetaText(text = cacheHitRate)
+                            emitted = true
                         }
-                        if (taskDurationMs != null) {
-                            val durationText = formatTaskDuration(taskDurationMs)
-                            Spacer(Modifier.width(Spacing.sm))
+                        if (durationText != null) {
+                            if (emitted) Spacer(Modifier.width(Spacing.sm))
                             Icon(
                                 FeatherIcons.Clock,
                                 contentDescription = stringResource(R.string.chat_task_duration, durationText),

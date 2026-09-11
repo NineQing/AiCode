@@ -482,6 +482,11 @@ fun AIChatPanel(
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
     }
+    // 「复制 / 回退 / 更多」只挂在整段会话最新的一条消息下面（工具消息不算），
+    // 否则每条消息都吊一排小按钮，既吵又打断文档流的阅读。
+    val lastActionableMessageId = remember(messages) {
+        messages.lastOrNull { it.role != MessageRole.TOOL }?.id
+    }
     val activeModel = activeProvider?.effectiveModel.orEmpty()
     val activeModelMetadata = modelMetadata[activeModel]
     val canUploadFiles = projectRoot.isNotBlank() && activeModelMetadata?.supportsTools == true
@@ -1104,6 +1109,7 @@ fun AIChatPanel(
                                 val live = runningTool.firstOrNull { it.messageId == message.id }?.text
                                 AgentMessageItem(
                                     message = message,
+                                    showActions = message.id == lastActionableMessageId,
                                     liveOutput = live,
                                     markdownCache = markdownCache,
                                     contentSlice = item.slice,

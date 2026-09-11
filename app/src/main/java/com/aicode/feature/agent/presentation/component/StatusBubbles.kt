@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -25,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,99 +61,76 @@ import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Star
 import kotlinx.coroutines.delay
 
+/** 等待模型首个 token 的扁平指示：只有三个跳动的点，不再套描边卡片。 */
 @Composable
 internal fun ThinkingBubble() {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ChatStyle.toolRowMinHeight),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Box(
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md),
-                contentAlignment = Alignment.Center
-            ) {
-                TypingDots(color = MaterialTheme.colorScheme.primary)
-            }
-        }
+        TypingDots(color = MaterialTheme.colorScheme.primary)
     }
 }
 
-/** 上下文压缩期间的临时状态气泡，不落库。 */
+/** 上下文压缩期间的临时状态行，不落库。 */
 @Composable
 internal fun CompactionProgressBubble() {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ChatStyle.toolRowMinHeight),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_compressing_context),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                TypingDots(color = MaterialTheme.colorScheme.primary)
-            }
-        }
+        Text(
+            text = stringResource(R.string.chat_compressing_context),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        TypingDots(color = MaterialTheme.colorScheme.primary)
     }
 }
 
-/** 网络重试期间的临时状态气泡，不落库。首行展示触发重试的具体错误（如 429/500/网络断开），次行展示重试进度。 */
+/** 网络重试期间的临时状态行，不落库。首行展示触发重试的具体错误（如 429/500/网络断开），次行展示重试进度。 */
 @Composable
 internal fun RetryingBubble(attempt: Int, maxRetries: Int, error: RetryErrorInfo?) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = Spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Column(modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
-                if (error != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
-                        Icon(
-                            FeatherIcons.AlertCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = retryErrorLabel(error),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.xs))
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_retrying, attempt, maxRetries),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    TypingDots(color = MaterialTheme.colorScheme.primary)
-                }
+        if (error != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                Icon(
+                    FeatherIcons.AlertCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = retryErrorLabel(error),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Text(
+                text = stringResource(R.string.chat_retrying, attempt, maxRetries),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            TypingDots(color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -394,26 +369,16 @@ internal fun StreamingBubble(
     cache: MarkdownRenderCache? = null
 ) {
     val renderText = text
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
-    ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
-                MarkdownContent(
-                    text = renderText,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    cache = cache
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 5.dp)
-            }
-        }
+    // 与落库助手正文同构：不套容器，直接铺在页面底色上，底部挂「生成中」的点
+    Column(modifier = Modifier.fillMaxWidth()) {
+        MarkdownContent(
+            text = renderText,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth(),
+            cache = cache
+        )
+        Spacer(Modifier.height(Spacing.xs))
+        TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 5.dp)
     }
 }
 
@@ -479,15 +444,13 @@ internal fun ReasoningBubble(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
     ) {
-        Surface(
-            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
+        // 扁平化：思考不再是染色/描边卡片，只是一段弱化的灰色小字（靠色阶与字号与正文区分）
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 32.dp)
                         .clickable {
                             userToggled = true
                             expanded = !expanded

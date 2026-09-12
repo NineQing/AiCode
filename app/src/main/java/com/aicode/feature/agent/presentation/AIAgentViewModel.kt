@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.PowerManager
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -220,6 +221,22 @@ class AIAgentViewModel @Inject constructor(
         val id = _currentSessionId.value ?: return
         _inputDrafts.value = _inputDrafts.value - id
         draftPrefs.edit().remove(id).apply()
+    }
+
+    /**
+     * 工具调用（分组头与单条工具卡片）的手动展开态：key = 分组 key（`toolgroup:<组内首条消息 id>`）
+     * 或单条消息 id。
+     *
+     * 放在 ViewModel 而不是组合里：窄窗下打开设置 / 终端 / Git / 编辑器都是全屏路由，聊天页整棵
+     * 组合被 dispose，`remember` 的 map 与按 message.id 的 remember 会一起丢——展开过的工具
+     * 一离开视线（滚出屏幕被回收、切页返回）就缩回默认态。这里按 App 进程的内存保留，
+     * 会话间互不影响（key 取消息 id，全局唯一），不落盘。
+     */
+    val toolExpansionOverrides = mutableStateMapOf<String, Boolean>()
+
+    /** 记录一次手动展开/收起（取值由调用方按当前可见态取反后传入）。 */
+    fun setToolExpanded(key: String, expanded: Boolean) {
+        toolExpansionOverrides[key] = expanded
     }
 
     fun loadMoreMessages() {

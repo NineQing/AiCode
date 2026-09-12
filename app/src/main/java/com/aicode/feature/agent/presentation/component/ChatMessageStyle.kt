@@ -1,7 +1,6 @@
 package com.aicode.feature.agent.presentation.component
 
 import android.content.ClipData
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,15 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -142,10 +136,8 @@ internal fun formatClockTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(CHAT_CLOCK_FORMATTER)
 
 /**
- * 「思考」字形：一个圆角方框 + 内接 45° 的同款圆角方框 + 中心点（对齐参考图里的思考图标）。
- *
- * 用 Canvas 现画而不是套图标库里的近似图形：`compose-icons` 里没有这个形状，现画能保证形状一致，
- * 且描边粗细、圆角、中心点都按尺寸等比缩放，颜色跟随调用方给的主题色。
+ * 「思考」字形：矢量原子/思考图标（对齐用户参考图）。
+ * 资源载入 R.drawable.ic_thinking，颜色跟随调用方给的主题色 tint，等比缩放到指定尺寸。
  */
 @Composable
 internal fun ThinkingGlyph(
@@ -153,43 +145,12 @@ internal fun ThinkingGlyph(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconSize: Dp = 16.dp
 ) {
-    Canvas(modifier.size(iconSize)) {
-        val cell = size.minDimension
-        // 墨迹只占方格的 ~78%：Feather 图标在 24 的 viewBox 里四周各留 2~3 单位，
-        // 同样 16dp 的格子里两者的视觉重量才对得上，左边缘也才会落在同一个位置。
-        val side = cell * 0.78f
-        val origin = (cell - side) / 2f
-        translate(origin, origin) {
-            // 描边/圆角/中心点全部按尺寸等比取值，比例对齐参考图（1px 描边 / 13px 图形）
-            val stroke = (side * 0.078f).coerceAtLeast(1.dp.toPx())
-            val inset = stroke / 2f
-            val box = side - stroke
-            val corner = box * 0.13f
-            // 外框：圆角方
-            drawRoundRect(
-                color = tint,
-                topLeft = Offset(inset, inset),
-                size = Size(box, box),
-                cornerRadius = CornerRadius(corner, corner),
-                style = Stroke(width = stroke)
-            )
-            // 内接方框：旋转 45° 后四个顶点正好落在外框四边中点（对角线 = 外框边长 → 边长 = box / √2）
-            rotate(45f) {
-                val inner = box / 1.41421f
-                val offset = (side - inner) / 2f
-                val innerCorner = corner * 0.8f
-                drawRoundRect(
-                    color = tint,
-                    topLeft = Offset(offset, offset),
-                    size = Size(inner, inner),
-                    cornerRadius = CornerRadius(innerCorner, innerCorner),
-                    style = Stroke(width = stroke)
-                )
-            }
-            // 中心点
-            drawCircle(color = tint, radius = side * 0.075f)
-        }
-    }
+    Icon(
+        painter = painterResource(R.drawable.ic_thinking),
+        contentDescription = null,
+        tint = tint,
+        modifier = modifier.size(iconSize)
+    )
 }
 
 /**

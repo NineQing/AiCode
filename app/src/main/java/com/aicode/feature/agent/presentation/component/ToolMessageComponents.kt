@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -104,11 +106,18 @@ internal const val TOOL_SECTION_LINE_LIMIT = 20
  *
  * 状态不再只用颜色表达：运行中图标脉冲、失败额外挂一个警示图标，读屏另有状态语义。
  * [liveOutput] 非空时进入「实时输出」模式：显示逐行累积输出。
+ *
+ * 展开态由 [expandedOverride] + [onExpandedChange] 受控（宿主持久化，见
+ * [com.aicode.feature.agent.presentation.AIAgentViewModel.toolExpansionOverrides]）：
+ * 从前用 `remember(message.id)` 存在这里，item 滚出视口被 LazyColumn 回收、或全屏路由
+ * 把整棵聊天组合 dispose 后就会缩回默认态。null 表示用户还没手动开关过，按内容类型取默认。
  */
 @Composable
 internal fun ToolMessageBody(
     message: AgentUIMessage,
     liveOutput: String? = null,
+    expandedOverride: Boolean? = null,
+    onExpandedChange: ((Boolean) -> Unit)? = null,
     onToggle: (() -> Unit)? = null
 ) {
     val streaming = liveOutput != null
@@ -140,10 +149,11 @@ internal fun ToolMessageBody(
     val hasLiveOutput = !liveOutput.isNullOrBlank()
     val expandable = streaming || (!running && (edit != null || !resultText.isNullOrBlank() || !argsFull.isNullOrBlank()
             || (todoData != null && todoData.items.isNotEmpty()) || webSearchData != null))
-    var expanded by remember(message.id) { mutableStateOf(edit != null || todoData != null) }
-    var userToggled by remember(message.id) { mutableStateOf(false) }
-    // 执行中默认收起（可手动展开看实时输出与指令）；落库后按内容类型决定（edit/todo 默认展开，其余折叠）；用户手动 toggle 后以用户选择为准
-    val effectiveExpanded = if (userToggled) expanded else (edit != null || todoData != null)
+    // 落库后按内容类型决定的默认态：差异卡与待办卡默认展开，其余折叠。
+    val defaultExpanded = edit != null || todoData != null
+    // 用户手动开关过（expandedOverride 非 null）就以用户的选择为准，否则用默认态。
+    // 展开态本身由宿主保管，因此滚出视口、切页返回都不会再丢。
+    val effectiveExpanded = expandedOverride ?: defaultExpanded
 
     val toolLabel = message.toolName ?: stringResource(R.string.common_tool)
     // 文件相关工具：从结构化 diff 或工具参数里取路径，统一按「工具名 + 路径 + 文件名」展示
@@ -161,8 +171,7 @@ internal fun ToolMessageBody(
                 .heightIn(min = ChatStyle.toolRowMinHeight)
                 .then(
                     if (expandable) Modifier.clickable {
-                        userToggled = true
-                        expanded = !effectiveExpanded
+                        onExpandedChange?.invoke(!effectiveExpanded)
                         onToggle?.invoke()
                     } else Modifier
                 ),
@@ -272,8 +281,7 @@ internal fun ToolMessageBody(
             Column(
                 modifier = Modifier.pointerInput(message.id) {
                     detectDoubleTapToCollapse {
-                        userToggled = true
-                        expanded = false
+                        onExpandedChange?.invoke(false)
                         onToggle?.invoke()
                     }
                 }
@@ -503,7 +511,8 @@ internal fun AgentUIMessage.isToolRunning(liveOutput: String?): Boolean =
 
 /**
  * 「N 次工具调用」分组头：DSH 把一轮任务里连续的工具调用折成一行，运行中默认展开、
- * 本轮结束自动折叠，点一下手动切换（用户手动选择优先，不再被自动规则覆盖）。
+ * 本轮结束自动折叠，点一下手动切换。
+ * 布局对齐思考行：左侧工具图标（锤子/施工） + 中间调用计数 + 右侧展开/折叠箭头。
  */
 @Composable
 internal fun ToolCallGroupHeader(
@@ -525,24 +534,31 @@ internal fun ToolCallGroupHeader(
                 ),
                 onClick = onToggle
             ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+            imageVector = Icons.Outlined.Construction,
             contentDescription = null,
             tint = Brand.IconGray,
-            // 箭头收进行首图标格：不额外加左右内边距，图标中心与下面各工具行、思考行对齐
             modifier = Modifier.size(ChatStyle.rowIconSize)
         )
+        Spacer(Modifier.width(Spacing.sm))
         Text(
             text = stringResource(R.string.chat_tool_calls_count, count),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.weight(1f)
         )
         if (running) {
             TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 4.dp)
+            Spacer(Modifier.width(Spacing.sm))
         }
+        Icon(
+            imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+            contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
+            tint = Brand.IconGray,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 

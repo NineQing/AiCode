@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -158,6 +159,12 @@ internal fun AgentMessageItem(
     onRewindClick: ((String) -> Unit)? = null,
     onMoreClick: ((AgentUIMessage) -> Unit)? = null,
     onToolToggle: (() -> Unit)? = null,
+    /** 工具行展开态的持久化覆盖（null = 尚未手动开关过，按内容类型取默认）；见 [ToolMessageBody]。 */
+    toolExpandedOverride: Boolean? = null,
+    /** 工具行手动展开/收起时回传新状态，由上层持久化。 */
+    onToolExpandedChange: ((Boolean) -> Unit)? = null,
+    /** 本 item 内容的外层内边距：工具调用分组展开时由 [AIChatPanel] 传入缩进，用于区分层级。 */
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     /** 本轮任务总耗时（ms）：仅轮末助手消息非空，见 [computeTaskDurations]。 */
     taskDurationMs: Long? = null,
     /** 新消息入场动画延迟（ms）：null 表示历史消息直接显示；非 null 时首次组合延迟后淡入展开。 */
@@ -233,6 +240,9 @@ internal fun AgentMessageItem(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // 分组成员的层级缩进（见 contentPadding 注释）：加在最外层，卡片自带的分隔细线与
+            // 「指令 / 结果」面板都跟着内缩，不会出现分组头与成员行起始位置齐平的观感。
+            .padding(contentPadding)
             // LazyColumn 不再统一 spacedBy：末块（或非分块消息）自带与下一条 item 的间距，
             // 相邻分块之间零间距无缝衔接，整段长回复在外观上仍是连续的一整段。
             // 扁平文档流下正文之间没有气泡边框兜底，间距要略大一点才分得清「轮次」。
@@ -264,7 +274,13 @@ internal fun AgentMessageItem(
                                         translationY = (1f - entryProgress) * MESSAGE_ENTRY_RISE.toPx()
                                     }
                             ) {
-                                ToolMessageBody(message, liveOutput = liveOutput, onToggle = onToolToggle)
+                                ToolMessageBody(
+                                    message = message,
+                                    liveOutput = liveOutput,
+                                    expandedOverride = toolExpandedOverride,
+                                    onExpandedChange = onToolExpandedChange,
+                                    onToggle = onToolToggle
+                                )
                             }
                         } else if (isUser) {
                             // 用户消息：右对齐浅色药丸 + 深色文字（不再整块主题色反白）。

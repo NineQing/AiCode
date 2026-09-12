@@ -41,7 +41,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -121,6 +120,52 @@ private const val CALIBRATE_TAIL_MS = 1_200L
  *  过早读位置会按瞬时高度算出过大的滚动目标（中间位置长卡片展开被滚过头、标题出视口）。 */
 private const val MAX_TOGGLE_SETTLE_FRAMES = 12
 
+/**
+ * 展开/收起一条工具 item 后，该 item 顶部应处的滚动位置（`scrollToItem` 的 offset）。
+ *
+ * 约定是**就地向下展开**：内容向下生长，只要底部没被悬浮层（输入框）挡住就一动不动；
+ * 挡住时按最小必要位移上滚，恰好让底部落在 [safeBottom]。
+ *
+ * @param itemOffset 该 item 当前在视口中的顶部偏移（px，视口顶为 0）
+ * @param itemSize 该 item 当前实测高度（px）
+ * @param safeBottom 内容安全区下沿：视口高度 - 悬浮层预留（px）
+ * @return 目标滚动位置；返回 [itemOffset] 即「不动」。只在需要上滚时返回更小的值，
+ *         永远 **不大于 [itemOffset]** —— 这正是「绝不被拉到视口顶部」的保证：
+ *         只有当所需上滚量超过 item 自身偏移时才会压到 0，此时 item 顶恰好停在视口顶，已是最小位移。
+ *         高度还没测量出来（size ≤ 0）时不动，避免首帧拿 0 高度算出错误的滚动目标。
+ */
+internal fun toolToggleScrollTarget(itemOffset: Int, itemSize: Int, safeBottom: Int): Int {
+    if (itemSize <= 0) return itemOffset
+    return (safeBottom - itemSize).coerceIn(0, itemOffset.coerceAtLeast(0))
+}
+
+/**
+ * 该 item 是否是「当前展开的工具分组」的成员行（用于加一级缩进）。
+ *
+ * 成员 item 自身不带所属分组信息（key 就是消息 id），但一个展开的分组，其成员一定是紧跟分组头的一串
+ * 连续 TOOL 行；故从本项往前**只走连续的 TOOL 行**，遇到的第一个非 TOOL 行就是分组头，它上面的
+ * [ChatRenderItem.groupExpanded] 已经是「手动选择优先」的终值。中途一旦遇到非 TOOL 行（如助手正文）
+ * 立即停止并判定「不属于任何分组」——否则分组之后被打断的孤立 TOOL 行会错误继承前一个分组的缩进。
+ *
+ * @param index 本项在 [chatItems] 中的下标
+ * @param isToolRow 本项是否为 TOOL 消息
+ */
+internal fun isExpandedGroupMember(
+    chatItems: List<ChatRenderItem>,
+    index: Int,
+    isToolRow: Boolean,
+): Boolean {
+    if (!isToolRow || index <= 0 || index >= chatItems.size) return false
+    if (chatItems[index].toolGroup != null) return false
+    for (k in index - 1 downTo 0) {
+        val candidate = chatItems[k]
+        if (candidate.toolGroup != null) return candidate.groupExpanded
+        // 回退路径只允许是连续的 TOOL 行；遇到别的内容说明本行不在任何分组的成员序列里
+        if (candidate.message.role != MessageRole.TOOL) return false
+    }
+    return false
+}
+
 /** 消息未就绪时延迟多久才显示加载提示（ms）：本地读库很快，立即显示反而闪。 */
 private const val MESSAGES_LOADING_HINT_DELAY_MS = 220L
 
@@ -136,8 +181,10 @@ private const val MESSAGES_LOADING_HINT_DELAY_MS = 220L
  * 交互（表 8+ 横滑/复制/点击）因每条 item 高度有界而全部恢复。
  *
  * 若正文长度不超过阈值，不拆块，与普通消息完全一致。
+ *
+ * internal（而非 private）是为了让 [buildChatItems] 的用例能断言渲染项，见 ToolGroupExpansionTest。
  */
-private data class ChatRenderItem(
+internal data class ChatRenderItem(
     val message: AgentUIMessage,
     val key: String,
     val contentType: String,
@@ -155,6 +202,13 @@ private data class ChatRenderItem(
 
 /** 工具调用分组头 item 的 contentType。 */
 private const val TOOL_GROUP_CONTENT_TYPE = "tool-group"
+
+/**
+ * 分组展开时成员行的左缩进：分组头与成员行行首元素原本左右完全对齐（同一格 16dp 图标 + 同一间距），
+ * 看不出从属关系；给成员整行缩进一级，分组头是父、成员行是子，层级一眼可辨。
+ * 固定取 16dp（不用 [Spacing.lg]：紧凑密度下它只有 14dp，缩进会随屏幕形态忽大忽小）。
+ */
+private val ToolGroupMemberPadding = PaddingValues(start = 16.dp)
 
 /**
  * 该消息是否参与「连续工具调用」分组。
@@ -212,17 +266,23 @@ private fun messageRenderItems(message: AgentUIMessage): List<ChatRenderItem> {
  * 展开与否 = 用户手动选择优先，否则「组内还有工具在跑」或「本轮仍在进行且这是最后一个分组」时展开。
  *
  * 「本轮仍在进行」只对**最后一个**分组生效：否则新的一轮开始会把历史分组全部弹开。
+ *
+ * [groupOverrides] 是宿主持久化的手动选择（key = [toolGroupKey]），优先于上面两条自动规则。
  */
-private fun buildChatItems(
+internal fun buildChatItems(
     messages: List<AgentUIMessage>,
     agentBusy: Boolean,
     runningToolIds: Set<String>,
     groupOverrides: Map<String, Boolean>,
 ): List<ChatRenderItem> {
     val items = ArrayList<ChatRenderItem>(messages.size)
+    // 最后一个「连续工具调用」分组的**起始下标**（不是最后一条 TOOL 消息的下标）：
+    // 判定「本轮仍在进行且这是最后一个分组」时两边必须是同一个量纲，否则只有单条工具的分组才会被自动展开。
     var lastGroupStart = -1
     messages.forEachIndexed { index, message ->
-        if (message.isGroupableTool()) lastGroupStart = index
+        if (message.isGroupableTool() && (index == 0 || !messages[index - 1].isGroupableTool())) {
+            lastGroupStart = index
+        }
     }
     var i = 0
     while (i < messages.size) {
@@ -450,10 +510,11 @@ fun AIChatPanel(
         else inputBarBottomReserveDp.toPx()).toInt()
     }
     val markdownCache = remember { MarkdownRenderCache() }
-    // 工具调用分组的手动展开/折叠覆盖：key = 组内首条消息 id；未记录时按运行状态自动判定。
-    val toolGroupOverrides = remember { mutableStateMapOf<String, Boolean>() }
+    // 工具调用（分组头 / 单条工具行）的手动展开态：放在 ViewModel 里，切页、滚出视口回收后仍保留。
+    // key = 分组 key（`toolgroup:<组内首条消息 id>`）或单条消息 id。
+    val toolExpansionOverrides = viewModel.toolExpansionOverrides
     // 快照：读一次 map 让组合订阅到它的变化，同时给下面的 remember 一个可比较的 key。
-    val toolGroupOverrideSnapshot = toolGroupOverrides.toMap()
+    val toolGroupOverrideSnapshot = toolExpansionOverrides.toMap()
     // 正在执行的工具 id 集合：只让集合内容参与 remember key，避免实时输出逐字刷新导致整表重建。
     val runningToolIds by remember { derivedStateOf { runningTool.mapTo(HashSet()) { it.messageId } } }
     val scope = rememberCoroutineScope()
@@ -900,15 +961,17 @@ fun AIChatPanel(
 
     // 展开/收起一条 item（工具卡片、工具分组头）之后的视口重定位。
     // 先暂停自动跟随，避免校准循环把视口拉走造成跳动；用户滚回底部（isAtBottom 监测）时自动恢复跟随。
-    // 折叠后 item 可能整体缩出视口上方：等高度稳定后按折叠后的布局判断，仅当完全不可见时才滚回顶部
-    // 让标题可见；仍可见（含贴底）时不做任何主动滚动，避免用折叠前的旧 offset 定位导致位置不对。
-    // 展开后 item 底部可能被悬浮层（输入框）遮挡：滚动让它停在悬浮层上沿，与消息气泡的贴底跟随统一。
+    //
+    // 核心约定：**就地向下展开**，绝不把被点的那一行拉到视口顶。展开后内容向下生长，只要底部还
+    // 在安全区（悬浮层上沿）以上就一动不动；顶出安全区时按最小必要位移上滚（恰好让底部停在安全区）。
+    // 收起后 item 可能整体缩出视口上方：仅当完全不可见时才滚回让标题可见，仍可见时不做任何主动滚动，
+    // 避免用收起前的旧 offset 定位导致位置不对。
     val settleAndReposition: (Int) -> Unit = { index ->
         followBottom = false
         scope.launch {
             // 展开/收起后 item 高度可能连续变几帧（diff 渲染、实时输出逐行增长、分组成员增删），
             // 等高度稳定（>0 且连续两帧相同）再读位置：既避免按瞬时高度算出过大的滚动目标，
-            // 也避免重组延迟时把折叠前的旧高度误判成「稳定」提前退出。
+            // 也避免重组延迟时把收起前的旧高度误判成「稳定」提前退出。
             var prevSize = -1
             var stableFrames = 0
             for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
@@ -926,17 +989,14 @@ fun AIChatPanel(
             val layout = listState.layoutInfo
             val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
             if (item == null || item.offset + item.size <= 0) {
-                // animateScrollToItem 对超一屏的大 item 按估算高度算滚动量，终点会系统性
-                // 滚过头（大卡片过头多、小卡片精准）；统一用无估算参与的瞬移落位。
+                // 完全不可见（多因收起后缩出视口上方）：animateScrollToItem 对超一屏的大 item
+                // 按估算高度算滚动量、终点会系统性滚过头，统一用无估算参与的瞬移落位。
                 listState.scrollToItem(index)
             } else {
                 val safeBottom = layout.viewportEndOffset - reservePxState.value
                 if (item.offset + item.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX) {
-                    // 目标 = 让 item 底部停在 safeBottom 的顶部位置，但夹在 [0, 当前顶部] 之间：
-                    // 只向上滚、顶部永不越过视口顶（比可视区还高时对齐到顶部 0），
-                    // 避免中间位置的长卡片被一次性滚过头、标题滚出屏幕。
-                    val target = (safeBottom - item.size)
-                        .coerceIn(0, item.offset.coerceAtLeast(0))
+                    // 底部越过安全区（被输入框遮挡）：只上滚「刚好露出底部」所需的距离，见 toolToggleScrollTarget
+                    val target = toolToggleScrollTarget(item.offset, item.size, safeBottom)
                     listState.scrollToItem(index, target)
                     // 兜底：内容高度在滚动后仍可能微变（diff 渲染、实时输出），等布局稳定后
                     // 若用户没在拖列表，再精确吸一次位到约束目标，保证最终位置以实测布局为准。
@@ -957,8 +1017,7 @@ fun AIChatPanel(
                     val after = listState.layoutInfo.visibleItemsInfo
                         .firstOrNull { it.index == index }
                     if (after != null && !listState.isScrollInProgress) {
-                        val corrected = (safeBottom - after.size)
-                            .coerceIn(0, after.offset.coerceAtLeast(0))
+                        val corrected = toolToggleScrollTarget(after.offset, after.size, safeBottom)
                         if (kotlin.math.abs(corrected - after.offset) > AUTO_SCROLL_TOLERANCE_PX) {
                             listState.scrollToItem(index, corrected)
                         }
@@ -1093,6 +1152,12 @@ fun AIChatPanel(
                     ) {
                         itemsIndexed(chatItems, key = { _, it -> it.key }, contentType = { _, it -> it.contentType }) { index, item ->
                             val group = item.toolGroup
+                            // 成员行缩进：由纯函数按下标关系定位所属分组头（见 isExpandedGroupMember）
+                            val inExpandedGroup = isExpandedGroupMember(
+                                chatItems = chatItems,
+                                index = index,
+                                isToolRow = item.message.role == MessageRole.TOOL,
+                            )
                             if (group != null) {
                                 // 分组头：点一下展开/收起整组工具调用，并复用同一套视口重定位
                                 ToolCallGroupHeader(
@@ -1100,7 +1165,7 @@ fun AIChatPanel(
                                     running = group.any { it.id in runningToolIds || it.isToolRunning(null) },
                                     expanded = item.groupExpanded,
                                     onToggle = {
-                                        toolGroupOverrides[item.key] = !item.groupExpanded
+                                        viewModel.setToolExpanded(item.key, !item.groupExpanded)
                                         settleAndReposition(index)
                                     }
                                 )
@@ -1117,7 +1182,13 @@ fun AIChatPanel(
                                     isChunkFooter = item.isChunkFooter,
                                     onRewindClick = { viewModel.openRewindMenu(it) },
                                     onMoreClick = { messageForMenu = it },
+                                    toolExpandedOverride = toolGroupOverrideSnapshot[message.id],
+                                    onToolExpandedChange = { isExpanded ->
+                                        viewModel.setToolExpanded(message.id, isExpanded)
+                                    },
                                     onToolToggle = { settleAndReposition(index) },
+                                    // 分组展开时成员行内缩一级，与分组头区分层级
+                                    contentPadding = if (inExpandedGroup) ToolGroupMemberPadding else PaddingValues(0.dp),
                                     taskDurationMs = taskDurations[message.id],
                                     entryDelayMs = messageEntryDelays[message.id]
                                 )

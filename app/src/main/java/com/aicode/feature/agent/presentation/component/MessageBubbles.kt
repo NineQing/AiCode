@@ -151,8 +151,9 @@ internal fun formatCacheHitRate(inputTokens: Int, cachedInputTokens: Int): Strin
 @Composable
 internal fun AgentMessageItem(
     message: AgentUIMessage,
-    /** 是否渲染「复制 / 回退 / 更多」这排操作按钮：整段会话只有最新一条消息传 true，
-     *  避免每条消息下面都吊一排按钮。时间戳与用量、耗时属于信息，不受它控制。 */
+    /** 是否为整段会话最新的一条消息（只有它挂「复制 / 更多」）。用户消息不受此限：每条都常驻
+     *  这一排按钮，随时能复制或回退自己发的话；助手消息只挂最新一条，避免历史回复下面吊满
+     *  重复按钮把聊天记录割碎。时间戳与用量、耗时属于信息，不受它控制。 */
     showActions: Boolean = false,
     liveOutput: String? = null,
     markdownCache: MarkdownRenderCache? = null,
@@ -250,9 +251,19 @@ internal fun AgentMessageItem(
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         if (hasReasoning && isChunkHeader) {
-            // 刚结束思考落库的消息保持展开（流式思考展开→落库折叠会高度骤变抽搐）；稍后/历史默认折叠
-            val reasoningJustFinished = System.currentTimeMillis() - message.timestamp < REASONING_FRESH_WINDOW_MS
-            ReasoningBubble(text = message.reasoning.orEmpty(), initiallyExpanded = reasoningJustFinished, cache = markdownCache)
+            // 刚结束思考落库的消息保持展开（流式思考展开→落库折叠会高度骤变抽搐）；稍后/历史默认折叠。
+            // 只在挂载那一刻判一次：这个判断读的是墙上时钟，直接写在组合函数体里的话，落库 5 秒后
+            // 任意一次重组都会把它从 true 翻成 false，表现就是「思考先显示了全文，过几秒钟突然收起」。
+            val reasoningExpanded = remember(message.id) {
+                System.currentTimeMillis() - message.timestamp < REASONING_FRESH_WINDOW_MS
+            }
+            ReasoningBubble(
+                text = message.reasoning.orEmpty(),
+                initiallyExpanded = reasoningExpanded,
+                cache = markdownCache,
+                // 刚落库这条不按阈值收起：交接瞬间把刚看完的整段思考收掉，同样是一次「突然收起」
+                autoCollapse = !reasoningExpanded
+            )
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
             Column(
@@ -334,8 +345,9 @@ internal fun AgentMessageItem(
                 if ((isUser || message.role == MessageRole.ASSISTANT) && hasAttachments) {
                     MessageAttachmentPreviewRow(attachments = message.attachments)
                 }
-                // 气泡下方的元信息行（工具消息不显示）：整段会话只有最新一条消息挂「复制/回退/更多」按钮，
-                // 每条消息下面都吊一排按钮太吵；时间戳与用量/耗时属于信息不是按钮，照常按消息显示。
+                // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「复制/回退/更多」，
+                // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎；
+                // 时间戳与用量/耗时属于信息不是按钮，照常按消息显示。
                 val tokenStats = if (message.role == MessageRole.ASSISTANT &&
                     (message.inputTokens > 0 || message.outputTokens > 0)
                 ) {
@@ -348,8 +360,9 @@ internal fun AgentMessageItem(
                 } else null
                 val durationText = taskDurationMs?.let { formatTaskDuration(it) }
                 val hasMeta = isUser || tokenStats != null || cacheHitRate != null || durationText != null
+                val actionsVisible = isUser || showActions
                 if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter &&
-                    (showActions || hasMeta)
+                    (actionsVisible || hasMeta)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -360,7 +373,7 @@ internal fun AgentMessageItem(
                             ChatMetaText(text = formatClockTime(message.timestamp))
                             emitted = true
                         }
-                        if (showActions) {
+                        if (actionsVisible) {
                             if (emitted) Spacer(Modifier.width(Spacing.xs))
                             if (hasContent) {
                                 MessageActionIconButton(

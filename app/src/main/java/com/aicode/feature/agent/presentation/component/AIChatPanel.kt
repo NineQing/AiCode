@@ -224,6 +224,18 @@ private fun AgentUIMessage.isGroupableTool(): Boolean =
 private fun toolGroupKey(first: AgentUIMessage): String = "toolgroup:${first.id}"
 
 /**
+ * 该助手消息是否会渲染出「气泡下方的元信息行」——即能不能承接那排「复制 / 更多」按钮。
+ *
+ * 压缩标记、上下文摘要、压缩失败、后台通知条在 [AgentMessageItem] 里各有专用渲染分支并提前
+ * return，不产生这一行；纯思考无正文的助手消息同理（没有正文可复制）。把「最新一条」的按钮
+ * 挂到它们身上，整段会话就一个按钮都不剩。
+ */
+private fun AgentUIMessage.rendersActionRow(): Boolean =
+    role == MessageRole.ASSISTANT &&
+        !isCompactionMarker && !isContextSummary && !isCompactionFailure && !isBackgroundNotification &&
+        (content.hasVisibleContent() || attachments.isNotEmpty())
+
+/**
  * 单条消息（非工具分组）在一次渲染中占据的 item：
  * 超长助手正文拆成多条有界 chunk，其余消息 1:1。
  */
@@ -543,10 +555,10 @@ fun AIChatPanel(
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
     }
-    // 「复制 / 回退 / 更多」只挂在整段会话最新的一条消息下面（工具消息不算），
-    // 否则每条消息都吊一排小按钮，既吵又打断文档流的阅读。
+    // 「复制 / 更多」只挂在整段会话最新的一条助手消息下面（工具消息不算），
+    // 否则每条回复都吊一排小按钮，既吵又打断文档流的阅读。用户消息不受此限，逐条常驻（见 AgentMessageItem）。
     val lastActionableMessageId = remember(messages) {
-        messages.lastOrNull { it.role != MessageRole.TOOL }?.id
+        messages.lastOrNull { it.rendersActionRow() }?.id
     }
     val activeModel = activeProvider?.effectiveModel.orEmpty()
     val activeModelMetadata = modelMetadata[activeModel]
@@ -1215,8 +1227,9 @@ fun AIChatPanel(
                         item(key = "__active__", contentType = "tail") {
                             Column {
                                 if (showReasoning) {
-                                    // 流式实时：短文本默认展开边想边看，过长（超 REASONING_COLLAPSE_LINE_LIMIT）时由气泡内部自动折叠，不刷屏
-                                    ReasoningBubble(text = typewriterReasoningText, initiallyExpanded = true, cache = markdownCache, showTimer = true, preRendered = true, sessionKey = currentSessionId)
+                                    // 流式实时：一边想一边看全文，思考没结束就不因超过 8 行自动收起
+                                    //（整段消失只剩标题，观感是「显示了一会儿突然收起」）
+                                    ReasoningBubble(text = typewriterReasoningText, initiallyExpanded = true, cache = markdownCache, showTimer = true, preRendered = true, sessionKey = currentSessionId, autoCollapse = false)
                                 }
                                 when (tailKind) {
                                     TailKind.THINKING -> ThinkingBubble()

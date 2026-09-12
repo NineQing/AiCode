@@ -377,7 +377,7 @@ internal fun StreamingBubble(
     }
 }
 
-/** 思维链折叠阈值：超过此行数视为过长，自动折叠为前 N 行 + 「展开剩余 X 行」。 */
+/** 思维链折叠阈值：超过此行数视为过长；autoCollapse 生效时默认收起（收起只剩标题一行，点开看全文）。 */
 internal const val REASONING_COLLAPSE_LINE_LIMIT = 8
 
 /** 思考时长格式化：<1 分钟显示 `5s`，超过显示 `1:05`。 */
@@ -391,9 +391,13 @@ private fun formatThinkingTime(seconds: Int): String {
  * 思考过程可折叠气泡：左对齐、浅色弱化，与正式回复区分。点击标题栏折叠/展开。
  *
  * 只有**展开/收起两态**，没有「显示尾巴几行」的中间态：收起时只剩标题栏一行，展开时给全文。
- * 默认态按行数阈值：[REASONING_COLLAPSE_LINE_LIMIT] 行以内且调用方要求展开时展开（流式实时
- * 边想边看），超过阈值即收起不刷屏（内容仍在后台累积，点开就看最新）；落库后的历史气泡默认
- * 收起。用户手动 toggle 后以用户选择为准，不再被自动规则覆盖。
+ * 默认态按行数阈值：[REASONING_COLLAPSE_LINE_LIMIT] 行以内且调用方要求展开时展开，超过阈值且
+ * 允许自动收起时收起（内容仍在后台累积，点开就是最新的）；刚结束思考落库的那条始终展开，
+ * 免得交接瞬间高度骤变。用户手动 toggle 后以用户选择为准，不再被自动规则覆盖。
+ *
+ * [autoCollapse] 为「超阈值自动收起」开关：流式思考进行中与刚结束思考落库的那条都传 false ——
+ * 用户正盯着这段文字长出来，长到第 9 行就整段消失只剩标题，观感就是「显示了一会儿突然收起」，
+ * 比刷屏更糟；历史气泡传 true，避免翻记录时满屏都是旧思考。
  */
 @Composable
 internal fun ReasoningBubble(
@@ -404,7 +408,9 @@ internal fun ReasoningBubble(
     /** 文本已由外部打字机驱动（流式尾巴场景），跳过内部防抖直接渲染。 */
     preRendered: Boolean = false,
     /** 思考所属会话：切会话时重新计时，否则会拿上一个会话的起点算出离谱的时长。 */
-    sessionKey: String? = null
+    sessionKey: String? = null,
+    /** 超 [REASONING_COLLAPSE_LINE_LIMIT] 行时是否自动收起，见上方 KDoc。 */
+    autoCollapse: Boolean = true
 ) {
     var userToggled by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(initiallyExpanded) }
@@ -434,7 +440,7 @@ internal fun ReasoningBubble(
     val renderText = if (preRendered) text else rememberThrottledStreamingText(text)
     val overThreshold = lineCount > REASONING_COLLAPSE_LINE_LIMIT
     // 自动折叠：仅在用户尚未手动 toggle 过时生效；用户手动展开/折叠后以用户选择为准
-    val effectiveExpanded = if (userToggled) expanded else (initiallyExpanded && !overThreshold)
+    val effectiveExpanded = if (userToggled) expanded else (initiallyExpanded && !(autoCollapse && overThreshold))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start

@@ -116,29 +116,6 @@ private const val MESSAGE_ENTRY_MAX_STAGGER_MS = 360L
 /** AI 收工后继续逐帧校准的时长（ms）：md 异步解析仍可能改高度，不能一停就收手。 */
 private const val CALIBRATE_TAIL_MS = 1_200L
 
-/** 展开/收起工具卡片后等待 item 高度稳定的最大帧数：diff 渲染、实时输出会分帧长高，
- *  过早读位置会按瞬时高度算出过大的滚动目标（中间位置长卡片展开被滚过头、标题出视口）。 */
-private const val MAX_TOGGLE_SETTLE_FRAMES = 12
-
-/**
- * 展开/收起一条工具 item 后，该 item 顶部应处的滚动位置（`scrollToItem` 的 offset）。
- *
- * 约定是**就地向下展开**：内容向下生长，只要底部没被悬浮层（输入框）挡住就一动不动；
- * 挡住时按最小必要位移上滚，恰好让底部落在 [safeBottom]。
- *
- * @param itemOffset 该 item 当前在视口中的顶部偏移（px，视口顶为 0）
- * @param itemSize 该 item 当前实测高度（px）
- * @param safeBottom 内容安全区下沿：视口高度 - 悬浮层预留（px）
- * @return 目标滚动位置；返回 [itemOffset] 即「不动」。只在需要上滚时返回更小的值，
- *         永远 **不大于 [itemOffset]** —— 这正是「绝不被拉到视口顶部」的保证：
- *         只有当所需上滚量超过 item 自身偏移时才会压到 0，此时 item 顶恰好停在视口顶，已是最小位移。
- *         高度还没测量出来（size ≤ 0）时不动，避免首帧拿 0 高度算出错误的滚动目标。
- */
-internal fun toolToggleScrollTarget(itemOffset: Int, itemSize: Int, safeBottom: Int): Int {
-    if (itemSize <= 0) return itemOffset
-    return (safeBottom - itemSize).coerceIn(0, itemOffset.coerceAtLeast(0))
-}
-
 /**
  * 该 item 是否是「当前展开的工具分组」的成员行（用于加一级缩进）。
  *
@@ -215,10 +192,13 @@ private val ToolGroupMemberPadding = PaddingValues(start = 16.dp)
  *
  * 上下文压缩失败/摘要、后台通知这些 TOOL 消息各有专用渲染分支（见 [AgentMessageItem] 的早退），
  * 混进分组会被当成普通工具行，故一并排除；普通消息（用户/助手）天然打断分组。
+ *
+ * **带附件的工具（`sendFile` / `generateImage`）也不分组**：它们产出的文件行就是结果本身，
+ * 折进「N 次工具调用」后随分组默认收起，等于把发来的文件藏起来；留作顶层 item 才常显。
  */
 private fun AgentUIMessage.isGroupableTool(): Boolean =
     role == MessageRole.TOOL && !isCompactionFailure && !isContextSummary &&
-        !isCompactionMarker && !isBackgroundNotification
+        !isCompactionMarker && !isBackgroundNotification && attachments.isEmpty()
 
 /** 分组标识：取组内首条消息 id，保证一批工具调用在追加过程中 item key 稳定（不会重建导致视口跳动）。 */
 private fun toolGroupKey(first: AgentUIMessage): String = "toolgroup:${first.id}"
@@ -274,28 +254,16 @@ private fun messageRenderItems(message: AgentUIMessage): List<ChatRenderItem> {
  * 消息列表 → LazyColumn item 列表。
  *
  * 两件事：长文拆块（原逻辑）与**连续工具调用分组**。分组规则对齐参考图：
- * 连续 TOOL 消息折成一条「N 次工具调用」头行，成员行只在展开时生成；
- * 展开与否 = 用户手动选择优先，否则「组内还有工具在跑」或「本轮仍在进行且这是最后一个分组」时展开。
+ * 连续 TOOL 消息折成一条「N 次工具调用」头行，成员行只在展开时生成。
  *
- * 「本轮仍在进行」只对**最后一个**分组生效：否则新的一轮开始会把历史分组全部弹开。
- *
- * [groupOverrides] 是宿主持久化的手动选择（key = [toolGroupKey]），优先于上面两条自动规则。
+ * 分组**默认收起**——工具调用一律不自动展开（运行中也不弹开），要不要看细节由用户点开；
+ * [groupOverrides] 是宿主持久化的手动选择（key = [toolGroupKey]），只认它，没有记录即收起。
  */
 internal fun buildChatItems(
     messages: List<AgentUIMessage>,
-    agentBusy: Boolean,
-    runningToolIds: Set<String>,
     groupOverrides: Map<String, Boolean>,
 ): List<ChatRenderItem> {
     val items = ArrayList<ChatRenderItem>(messages.size)
-    // 最后一个「连续工具调用」分组的**起始下标**（不是最后一条 TOOL 消息的下标）：
-    // 判定「本轮仍在进行且这是最后一个分组」时两边必须是同一个量纲，否则只有单条工具的分组才会被自动展开。
-    var lastGroupStart = -1
-    messages.forEachIndexed { index, message ->
-        if (message.isGroupableTool() && (index == 0 || !messages[index - 1].isGroupableTool())) {
-            lastGroupStart = index
-        }
-    }
     var i = 0
     while (i < messages.size) {
         val message = messages[i]
@@ -308,8 +276,7 @@ internal fun buildChatItems(
         while (j < messages.size && messages[j].isGroupableTool()) j++
         val members = messages.subList(i, j).toList()
         val key = toolGroupKey(members.first())
-        val anyRunning = members.any { it.id in runningToolIds || it.isToolRunning(null) }
-        val expanded = groupOverrides[key] ?: (anyRunning || (agentBusy && i == lastGroupStart))
+        val expanded = groupOverrides[key] == true
         items += ChatRenderItem(
             message = members.first(),
             key = key,
@@ -538,22 +505,18 @@ fun AIChatPanel(
     // 连续的工具调用折成一个「N 次工具调用」分组；chatItems 的顺序即 LazyColumn item 顺序。
     // 提到这里（而不是 LazyColumn 分支内）是因为 isFarFromBottom 的「布局是否对应当前消息」判定
     // 需要它：分组会让 item 数 ≠ 消息数 + 1，不能再拿消息数当期望值。
-    val chatItems = remember(
-        messages,
-        isBusy,
-        toolGroupOverrideSnapshot,
-        runningToolIds
-    ) {
+    val chatItems = remember(messages, toolGroupOverrideSnapshot) {
         buildChatItems(
             messages = messages,
-            agentBusy = isBusy,
-            runningToolIds = runningToolIds,
             groupOverrides = toolGroupOverrideSnapshot,
         )
     }
-    // 每轮任务的总耗时（用户发送 → 本轮 AI 收工），挂在轮末助手气泡下方
+    // 每轮任务的总耗时（用户发送 → 本轮 AI 收工）与 token 合计，都只挂在轮末助手气泡下方
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
+    }
+    val turnUsages = remember(messages, isBusy) {
+        computeTurnUsage(messages, lastTurnFinished = !isBusy)
     }
     // 「复制 / 更多」只挂在整段会话最新的一条助手消息下面（工具消息不算），
     // 否则每条回复都吊一排小按钮，既吵又打断文档流的阅读。用户消息不受此限，逐条常驻（见 AgentMessageItem）。
@@ -971,73 +934,14 @@ fun AIChatPanel(
         }
     }
 
-    // 展开/收起一条 item（工具卡片、工具分组头）之后的视口重定位。
-    // 先暂停自动跟随，避免校准循环把视口拉走造成跳动；用户滚回底部（isAtBottom 监测）时自动恢复跟随。
+    // 展开/收起一条 item（工具卡片、工具分组头）之后**不做任何主动滚动**：就地展开、就地收起，
+    // 视口一动不动；只暂停贴底跟随（用户滚回底部时由 isAtBottom 监测自动恢复）。
     //
-    // 核心约定：**就地向下展开**，绝不把被点的那一行拉到视口顶。展开后内容向下生长，只要底部还
-    // 在安全区（悬浮层上沿）以上就一动不动；顶出安全区时按最小必要位移上滚（恰好让底部停在安全区）。
-    // 收起后 item 可能整体缩出视口上方：仅当完全不可见时才滚回让标题可见，仍可见时不做任何主动滚动，
-    // 避免用收起前的旧 offset 定位导致位置不对。
-    val settleAndReposition: (Int) -> Unit = { index ->
-        followBottom = false
-        scope.launch {
-            // 展开/收起后 item 高度可能连续变几帧（diff 渲染、实时输出逐行增长、分组成员增删），
-            // 等高度稳定（>0 且连续两帧相同）再读位置：既避免按瞬时高度算出过大的滚动目标，
-            // 也避免重组延迟时把收起前的旧高度误判成「稳定」提前退出。
-            var prevSize = -1
-            var stableFrames = 0
-            for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
-                withFrameNanos { }
-                val curSize = listState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { it.index == index }?.size ?: -1
-                if (curSize > 0 && curSize == prevSize) {
-                    stableFrames++
-                    if (stableFrames >= 2) break
-                } else {
-                    stableFrames = 0
-                }
-                prevSize = curSize
-            }
-            val layout = listState.layoutInfo
-            val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-            if (item == null || item.offset + item.size <= 0) {
-                // 完全不可见（多因收起后缩出视口上方）：animateScrollToItem 对超一屏的大 item
-                // 按估算高度算滚动量、终点会系统性滚过头，统一用无估算参与的瞬移落位。
-                listState.scrollToItem(index)
-            } else {
-                val safeBottom = layout.viewportEndOffset - reservePxState.value
-                if (item.offset + item.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX) {
-                    // 底部越过安全区（被输入框遮挡）：只上滚「刚好露出底部」所需的距离，见 toolToggleScrollTarget
-                    val target = toolToggleScrollTarget(item.offset, item.size, safeBottom)
-                    listState.scrollToItem(index, target)
-                    // 兜底：内容高度在滚动后仍可能微变（diff 渲染、实时输出），等布局稳定后
-                    // 若用户没在拖列表，再精确吸一次位到约束目标，保证最终位置以实测布局为准。
-                    var postSize = -1
-                    var postStable = 0
-                    for (i in 0 until MAX_TOGGLE_SETTLE_FRAMES) {
-                        withFrameNanos { }
-                        val cur = listState.layoutInfo.visibleItemsInfo
-                            .firstOrNull { it.index == index }?.size ?: -1
-                        if (cur > 0 && cur == postSize) {
-                            postStable++
-                            if (postStable >= 2) break
-                        } else {
-                            postStable = 0
-                        }
-                        postSize = cur
-                    }
-                    val after = listState.layoutInfo.visibleItemsInfo
-                        .firstOrNull { it.index == index }
-                    if (after != null && !listState.isScrollInProgress) {
-                        val corrected = toolToggleScrollTarget(after.offset, after.size, safeBottom)
-                        if (kotlin.math.abs(corrected - after.offset) > AUTO_SCROLL_TOLERANCE_PX) {
-                            listState.scrollToItem(index, corrected)
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 从前这里会按「让 item 底部露出安全区」重定位视口，还带一条「item 完全不可见就 scrollToItem」
+    // 的兜底；卡片比一屏高时前者算出的目标被夹到 0，后者干脆把 item 顶到视口顶——两条路径都会让
+    // 被点的那一行整条跳到顶部（概率性出现，取决于点的那一刻布局稳定到哪一帧）。这个跳动比
+    // 「展开后底部被输入框挡一点」难接受得多，整段重定位逻辑去掉。
+    val onToolItemToggled: () -> Unit = { followBottom = false }
 
     // 只在「跟随中且内容可能还在动」时逐帧校准。原来是无条件 while(true)，followBottom
     // 为 false 也只 continue、帧回调照旧注册，等于让主线程全程每帧醒一次（空闲也在耗电）。
@@ -1178,7 +1082,7 @@ fun AIChatPanel(
                                     expanded = item.groupExpanded,
                                     onToggle = {
                                         viewModel.setToolExpanded(item.key, !item.groupExpanded)
-                                        settleAndReposition(index)
+                                        onToolItemToggled()
                                     }
                                 )
                             } else {
@@ -1198,10 +1102,11 @@ fun AIChatPanel(
                                     onToolExpandedChange = { isExpanded ->
                                         viewModel.setToolExpanded(message.id, isExpanded)
                                     },
-                                    onToolToggle = { settleAndReposition(index) },
+                                    onToolToggle = onToolItemToggled,
                                     // 分组展开时成员行内缩一级，与分组头区分层级
                                     contentPadding = if (inExpandedGroup) ToolGroupMemberPadding else PaddingValues(0.dp),
                                     taskDurationMs = taskDurations[message.id],
+                                    turnUsage = turnUsages[message.id],
                                     entryDelayMs = messageEntryDelays[message.id]
                                 )
                             }
@@ -1227,9 +1132,8 @@ fun AIChatPanel(
                         item(key = "__active__", contentType = "tail") {
                             Column {
                                 if (showReasoning) {
-                                    // 流式实时：一边想一边看全文，思考没结束就不因超过 8 行自动收起
-                                    //（整段消失只剩标题，观感是「显示了一会儿突然收起」）
-                                    ReasoningBubble(text = typewriterReasoningText, initiallyExpanded = true, cache = markdownCache, showTimer = true, preRendered = true, sessionKey = currentSessionId, autoCollapse = false)
+                                    // 流式实时：默认收起，折叠行跟着正在写的那一行滚动；点开看全文
+                                    ReasoningBubble(text = typewriterReasoningText, cache = markdownCache, showTimer = true, preRendered = true, sessionKey = currentSessionId, live = true)
                                 }
                                 when (tailKind) {
                                     TailKind.THINKING -> ThinkingBubble()

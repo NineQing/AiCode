@@ -75,52 +75,97 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** 落库思考气泡保持展开的窗口（ms）：刚结束的思考不立即折叠回缩，防止高度骤变抽搐。 */
-private const val REASONING_FRESH_WINDOW_MS = 5_000L
-
 /** 工具卡片入场时长（ms）与上浮起点：略微下移再淡入到位，只走 draw 层不影响布局。 */
 private const val MESSAGE_ENTRY_ANIM_MS = 260
 private val MESSAGE_ENTRY_RISE = 10.dp
 
+/** 一轮任务的划分结果：轮起点 + 轮内所有助手消息（1 轮 n 步）+ 轮末那条。 */
+private data class AgentTurn(
+    val startMillis: Long,
+    val assistantMessages: List<AgentUIMessage>,
+    val endMessage: AgentUIMessage
+)
+
 /**
- * 每轮任务的总耗时（毫秒）：轮末助手消息落库时刻 − 该轮用户消息发出时刻，即用户按下发送
- * 到本轮 AI 收工的挂钟时间（含工具执行与等待用户授权的时间）。返回「消息 id → 耗时」，
- * 只有轮末的那条助手消息才有条目。
+ * 一轮任务内的 token 合计：轮内**每一步**（每次 LLM 调用）的输入/输出/缓存命中求和。
+ * 与 [computeTaskDurations] 同挂在轮末那条助手消息下，见 [computeTurnUsage]。
+ */
+internal data class TurnUsage(
+    val inputTokens: Int = 0,
+    val outputTokens: Int = 0,
+    val cachedInputTokens: Int = 0
+)
+
+/**
+ * 把消息按「用户消息 → 下一个用户消息之前」切成轮。
  *
  * 轮末判定：其后第一条消息是用户消息，或它就是列表末条且本轮已结束（[lastTurnFinished]，
- * 由 agent 是否空闲给出）。仍在生成中的末条不给耗时，收工落库后自然出现。
+ * 由 agent 是否空闲给出）。仍在生成中的末轮不计入——耗时与用量都要等本轮收工才成立。
  *
  * 上下文压缩插入的锚点/摘要落在轮内（压缩发生在请求前），若参与划分会把轮起点算到压缩
  * 时刻上，故先剔除。
  */
-internal fun computeTaskDurations(
-    messages: List<AgentUIMessage>,
-    lastTurnFinished: Boolean
-): Map<String, Long> {
+private fun splitTurns(messages: List<AgentUIMessage>, lastTurnFinished: Boolean): List<AgentTurn> {
     val turnMessages = messages.filter {
         !it.isCompactionMarker && !it.isContextSummary && !it.isCompactionFailure
     }
-    if (turnMessages.isEmpty()) return emptyMap()
-    val durations = mutableMapOf<String, Long>()
+    if (turnMessages.isEmpty()) return emptyList()
+    val turns = mutableListOf<AgentTurn>()
     var turnStart: Long? = null
+    var assistants = mutableListOf<AgentUIMessage>()
     turnMessages.forEachIndexed { index, message ->
         when (message.role) {
-            MessageRole.USER -> turnStart = message.timestamp
+            MessageRole.USER -> {
+                turnStart = message.timestamp
+                assistants = mutableListOf()
+            }
             MessageRole.ASSISTANT -> {
                 val start = turnStart ?: return@forEachIndexed
+                assistants += message
                 val isTurnEnd = if (index == turnMessages.lastIndex) {
                     lastTurnFinished
                 } else {
                     turnMessages[index + 1].role == MessageRole.USER
                 }
-                if (isTurnEnd && message.timestamp > start) {
-                    durations[message.id] = message.timestamp - start
+                if (isTurnEnd) {
+                    turns += AgentTurn(start, assistants.toList(), message)
+                    assistants = mutableListOf()
                 }
             }
             MessageRole.TOOL -> Unit
         }
     }
-    return durations
+    return turns
+}
+
+/**
+ * 每轮任务的总耗时（毫秒）：轮末助手消息落库时刻 − 该轮用户消息发出时刻，即用户按下发送
+ * 到本轮 AI 收工的挂钟时间（含工具执行与等待用户授权的时间）。返回「消息 id → 耗时」，
+ * 只有轮末的那条助手消息才有条目。
+ */
+internal fun computeTaskDurations(
+    messages: List<AgentUIMessage>,
+    lastTurnFinished: Boolean
+): Map<String, Long> = splitTurns(messages, lastTurnFinished)
+    .filter { it.endMessage.timestamp > it.startMillis }
+    .associate { it.endMessage.id to (it.endMessage.timestamp - it.startMillis) }
+
+/**
+ * 每轮任务的 token 合计：轮内**所有步骤**的输入/输出/缓存命中求和，返回「消息 id → [TurnUsage]」，
+ * 同样只有轮末的那条助手消息才有条目。
+ *
+ * 口径是「这一轮总共花了多少」，不是「这一步花了多少」：一轮里可能调了 n 次模型（工具循环），
+ * 逐步显示会把一次任务的开销拆成碎片，中间步骤的数字对用户也没有意义。
+ */
+internal fun computeTurnUsage(
+    messages: List<AgentUIMessage>,
+    lastTurnFinished: Boolean
+): Map<String, TurnUsage> = splitTurns(messages, lastTurnFinished).associate { turn ->
+    turn.endMessage.id to TurnUsage(
+        inputTokens = turn.assistantMessages.sumOf { it.inputTokens },
+        outputTokens = turn.assistantMessages.sumOf { it.outputTokens },
+        cachedInputTokens = turn.assistantMessages.sumOf { it.cachedInputTokens }
+    )
 }
 
 /** 任务耗时格式化：不足 1 分钟显示 `12s`，不足 1 小时显示 `2:05`，更长显示 `1:02:05`。 */
@@ -168,6 +213,8 @@ internal fun AgentMessageItem(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /** 本轮任务总耗时（ms）：仅轮末助手消息非空，见 [computeTaskDurations]。 */
     taskDurationMs: Long? = null,
+    /** 本轮任务的 token 合计（1 轮 n 步求和）：仅轮末助手消息非空，见 [computeTurnUsage]。 */
+    turnUsage: TurnUsage? = null,
     /** 新消息入场动画延迟（ms）：null 表示历史消息直接显示；非 null 时首次组合延迟后淡入展开。 */
     entryDelayMs: Long? = null,
     /** 长消息分块渲染：非 null 时正文 MarkdownContent 只渲染该片段。
@@ -251,19 +298,8 @@ internal fun AgentMessageItem(
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         if (hasReasoning && isChunkHeader) {
-            // 刚结束思考落库的消息保持展开（流式思考展开→落库折叠会高度骤变抽搐）；稍后/历史默认折叠。
-            // 只在挂载那一刻判一次：这个判断读的是墙上时钟，直接写在组合函数体里的话，落库 5 秒后
-            // 任意一次重组都会把它从 true 翻成 false，表现就是「思考先显示了全文，过几秒钟突然收起」。
-            val reasoningExpanded = remember(message.id) {
-                System.currentTimeMillis() - message.timestamp < REASONING_FRESH_WINDOW_MS
-            }
-            ReasoningBubble(
-                text = message.reasoning.orEmpty(),
-                initiallyExpanded = reasoningExpanded,
-                cache = markdownCache,
-                // 刚落库这条不按阈值收起：交接瞬间把刚看完的整段思考收掉，同样是一次「突然收起」
-                autoCollapse = !reasoningExpanded
-            )
+            // 思考默认收起：折叠行只占一行（显示思考的第一行），要看全文手动点开
+            ReasoningBubble(text = message.reasoning.orEmpty(), cache = markdownCache)
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {
             Column(
@@ -343,21 +379,24 @@ internal fun AgentMessageItem(
                     }
                 }
                 if ((isUser || message.role == MessageRole.ASSISTANT) && hasAttachments) {
-                    MessageAttachmentPreviewRow(attachments = message.attachments)
+                    MessageAttachmentList(attachments = message.attachments)
                 }
-                // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「复制/回退/更多」，
-                // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎；
-                // 时间戳与用量/耗时属于信息不是按钮，照常按消息显示。
-                val tokenStats = if (message.role == MessageRole.ASSISTANT &&
-                    (message.inputTokens > 0 || message.outputTokens > 0)
-                ) {
-                    val inStr = formatTokenCount(message.inputTokens.toLong())
-                    val outStr = formatTokenCount(message.outputTokens.toLong())
-                    "↑$inStr ↓$outStr"
-                } else null
-                val cacheHitRate = if (message.role == MessageRole.ASSISTANT) {
-                    formatCacheHitRate(message.inputTokens, message.cachedInputTokens)
-                } else null
+                // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「时间 + 复制/回退/更多」，
+                // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎。
+                // 排列固定为「复制 → 统计（用量/缓存/耗时）→ 更多选项」：信息在前，操作入口收在行尾。
+                //
+                // 用量与耗时按**本轮合计**（1 轮 n 步的所有调用求和）挂在轮末那条助手消息上：
+                // 逐步显示会把一次任务的开销拆成碎片，中间步骤的数字对用户也没有意义。
+                val tokenStats = turnUsage
+                    ?.takeIf { it.inputTokens > 0 || it.outputTokens > 0 }
+                    ?.let {
+                        val inStr = formatTokenCount(it.inputTokens.toLong())
+                        val outStr = formatTokenCount(it.outputTokens.toLong())
+                        "↑$inStr ↓$outStr"
+                    }
+                val cacheHitRate = turnUsage?.let {
+                    formatCacheHitRate(it.inputTokens, it.cachedInputTokens)
+                }
                 val durationText = taskDurationMs?.let { formatTaskDuration(it) }
                 val hasMeta = isUser || tokenStats != null || cacheHitRate != null || durationText != null
                 val actionsVisible = isUser || showActions
@@ -398,14 +437,6 @@ internal fun AgentMessageItem(
                                     onClick = { onRewindClick(message.id) }
                                 )
                             }
-                            if (onMoreClick != null) {
-                                MessageActionIconButton(
-                                    icon = FeatherIcons.MoreHorizontal,
-                                    contentDescription = stringResource(R.string.chat_more_options),
-                                    tint = iconTint,
-                                    onClick = { onMoreClick(message) }
-                                )
-                            }
                             emitted = true
                         }
                         if (tokenStats != null) {
@@ -435,6 +466,18 @@ internal fun AgentMessageItem(
                             )
                             Spacer(Modifier.width(2.dp))
                             ChatMetaText(text = durationText)
+                            emitted = true
+                        }
+                        // 「更多选项」排在这一行的**最后**：助手消息里它跟在用量/耗时后面（先给信息，
+                        // 再给操作入口）；用户消息没有统计项，它自然接着回退按钮，间距与按钮组一致。
+                        if (actionsVisible && onMoreClick != null) {
+                            if (emitted) Spacer(Modifier.width(if (isUser) Spacing.xs else Spacing.sm))
+                            MessageActionIconButton(
+                                icon = FeatherIcons.MoreHorizontal,
+                                contentDescription = stringResource(R.string.chat_more_options),
+                                tint = iconTint,
+                                onClick = { onMoreClick(message) }
+                            )
                         }
                     }
                     // 复制成功 1.5s 后恢复图标

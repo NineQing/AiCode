@@ -1,5 +1,6 @@
 package com.aicode.feature.agent.presentation.component
 
+import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.agent.presentation.AgentUIMessage
 import com.aicode.feature.agent.presentation.MessageRole
 import org.junit.Assert.assertEquals
@@ -10,11 +11,11 @@ import org.junit.Test
 /**
  * 连续工具调用分组的展开判定。
  *
- * 展开与否 = **上层持久化的手动选择优先**（[AIAgentViewModel.toolExpansionOverrides]，按 [toolGroupKey] 取），
- * 没有手动记录时才回落自动规则（组内还在跑 / 本轮仍在进行且这是最后一个分组）。
+ * 展开与否 = **上层持久化的手动选择**（[AIAgentViewModel.toolExpansionOverrides]，按 [toolGroupKey] 取）：
+ * 没有手动记录就一律收起——工具调用统一默认不展开，组内还在跑、本轮仍在进行都不再自动弹开。
  *
  * 重点守两条：①手动选择跨重建稳定（持久化的语义就是每次重建都按同一份覆盖走）；
- * ②自动展开只认「最后一个分组」，新的一轮开始不会把历史分组全部弹开。
+ * ②没有手动记录时任何分组都不自动展开。
  */
 class ToolGroupExpansionTest {
 
@@ -27,21 +28,8 @@ class ToolGroupExpansionTest {
 
     private fun items(
         messages: List<AgentUIMessage>,
-        agentBusy: Boolean = false,
-        runningToolIds: Set<String> = emptySet(),
         overrides: Map<String, Boolean> = emptyMap(),
-    ) = buildChatItems(messages, agentBusy, runningToolIds, overrides)
-
-    @Test
-    fun runningGroup_expandsByDefault() {
-        val items = items(listOf(tool("t1"), tool("t2")), runningToolIds = setOf("t1"))
-        val header = items.first()
-        assertEquals(groupKey, header.key)
-        assertTrue(header.groupExpanded)
-        // 成员行只在展开时生成：头 + 2 个成员
-        assertTrue(items.any { it.key == "t1" })
-        assertTrue(items.any { it.key == "t2" })
-    }
+    ) = buildChatItems(messages, overrides)
 
     @Test
     fun finishedTurn_collapsesByDefault() {
@@ -53,28 +41,28 @@ class ToolGroupExpansionTest {
     }
 
     @Test
-    fun busyLastGroup_expandsByDefault() {
-        val items = items(listOf(tool("t1"), tool("t2")), agentBusy = true)
-        assertTrue(items.first().groupExpanded)
+    fun groupWithSingleMember_collapsesByDefault() {
+        // 单条工具调用同样折成一行且默认收起：工具调用的默认态统一，不因成员多少而变
+        val items = items(listOf(tool("t1")))
+        assertEquals(1, items.size)
+        assertFalse(items.first().groupExpanded)
     }
 
     @Test
-    fun busyLastGroupWithMultipleMembers_expandsByDefault() {
-        // 回归：曾经把「最后一条可分组消息的下标」当成「最后一个分组的下标」，导致多成员的最后一个分组
-        // 在轮次进行中反而不自动展开（只有单条工具的分组才碰巧成立）。
-        val items = items(listOf(tool("t1"), tool("t2"), tool("t3")), agentBusy = true)
-        assertTrue("多成员的最后一个分组也应自动展开", items.first().groupExpanded)
-        assertEquals(4, items.size)
-    }
-
-    @Test
-    fun manualCollapse_winsOverRunning() {
-        val items = items(
-            listOf(tool("t1"), tool("t2")),
-            runningToolIds = setOf("t1"),
-            overrides = mapOf(groupKey to false),
+    fun noGroupAutoExpands() {
+        // 回归：曾经「组内还在跑」或「本轮仍在进行且这是最后一个分组」会自动弹开整组。
+        // 现在一律默认收起，历史分组与最新分组一视同仁。
+        val messages = listOf(
+            tool("t1"), tool("t2"),
+            assistant("a1"),
+            tool("t3"), tool("t4"),
         )
-        assertFalse("手动收起后，即使组内还在跑也应保持收起", items.first().groupExpanded)
+        val items = items(messages)
+        val headers = items.filter { it.key.startsWith("toolgroup:") }
+        assertEquals(2, headers.size)
+        assertTrue("默认全部收起", headers.none { it.groupExpanded })
+        // 都没展开：两个分组头 + 中间那条助手消息，没有成员行
+        assertEquals(3, items.size)
     }
 
     @Test
@@ -86,27 +74,19 @@ class ToolGroupExpansionTest {
         val rebuilt = items(messages, overrides = mapOf(groupKey to true))
         assertTrue(rebuilt.first().groupExpanded)
         assertEquals(expanded.size, rebuilt.size)
+        // 展开时成员行才生成：头 + 2 个成员
+        assertTrue(rebuilt.any { it.key == "t1" })
+        assertTrue(rebuilt.any { it.key == "t2" })
     }
 
     @Test
-    fun manualExpand_winsOverIdleTurn() {
-        val items = items(listOf(tool("t1"), tool("t2")), overrides = mapOf(groupKey to true))
-        assertTrue("本轮已结束，但用户手动展开过：不应被自动折叠规则改回去", items.first().groupExpanded)
-    }
-
-    @Test
-    fun onlyLastGroupAutoExpands() {
-        // 两批工具调用被一条助手消息隔开：轮次进行中也只弹开最后一个分组
-        val messages = listOf(
-            tool("t1"), tool("t2"),
-            assistant("a1"),
-            tool("t3"), tool("t4"),
+    fun manualCollapse_isRespected() {
+        val items = items(
+            listOf(tool("t1"), tool("t2")),
+            overrides = mapOf(groupKey to false),
         )
-        val items = items(messages, agentBusy = true)
-        val headers = items.filter { it.key.startsWith("toolgroup:") }
-        assertEquals(2, headers.size)
-        assertFalse("历史分组不应被新一轮弹开", headers[0].groupExpanded)
-        assertTrue(headers[1].groupExpanded)
+        assertFalse("手动收起过：保持收起", items.first().groupExpanded)
+        assertEquals(1, items.size)
     }
 
     @Test
@@ -121,6 +101,33 @@ class ToolGroupExpansionTest {
         assertEquals(2, headers.size)
         assertEquals("toolgroup:t1", headers[0].key)
         assertEquals("toolgroup:t2", headers[1].key)
+    }
+
+    @Test
+    fun toolWithAttachments_isNotGrouped() {
+        // sendFile / generateImage 产出的文件行就是结果本身：不参与「N 次工具调用」折叠，
+        // 否则分组默认收起就等于把发来的文件藏起来。它自己是一级 item，同时把左右两批工具切开。
+        val file = AgentAttachment(
+            fileName = "report.pdf",
+            containerPath = "~/workspace/report.pdf",
+            localPath = "/tmp/report.pdf",
+            mimeType = "application/pdf",
+            sizeBytes = 1024,
+            isImage = false,
+        )
+        val messages = listOf(
+            tool("t1"), tool("t2"),
+            tool("send").copy(toolName = "sendFile", attachments = listOf(file)),
+            tool("t3"), tool("t4"),
+        )
+        val items = items(messages)
+        assertEquals("带附件的工具自己要是一级 item", 1, items.count { it.key == "send" })
+        // 两侧的连续工具各自成组（分组默认收起，所以只剩两个头）
+        val headers = items.filter { it.key.startsWith("toolgroup:") }
+        assertEquals(listOf("toolgroup:t1", "toolgroup:t3"), headers.map { it.key })
+        assertTrue("分组默认收起", headers.none { it.groupExpanded })
+        // send 不是任何分组的成员：不会因为它落在两个分组之间而被折叠吞掉
+        assertFalse(items.any { it.toolGroup?.any { member -> member.id == "send" } == true })
     }
 
     // ---- 成员行缩进判定（isExpandedGroupMember）----

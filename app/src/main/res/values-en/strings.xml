@@ -253,6 +253,7 @@
     <string name="common_expand">Expand</string>
     <string name="common_workspace">Workspace</string>
     <string name="common_tool">Tool</string>
+    <string name="common_file">File</string>
     <string name="common_collapse">Collapse</string>
     <string name="common_reset">Reset</string>
     <string name="common_collapse_action">Collapse</string>
@@ -325,6 +326,8 @@
     <string name="chat_open_file_failed">File not found or inaccessible</string>
     <string name="chat_open_file_no_app">No app available to open this file</string>
     <string name="chat_open_apk_permission">Installing apps requires permission. Allow installs from this source in the settings that just opened</string>
+    <string name="chat_attachment_preview">Preview %1$s</string>
+    <string name="chat_attachment_open">Open %1$s</string>
     <string name="chat_no_model_selected">No model selected</string>
     <string name="chat_open_git">Open version control</string>
     <string name="chat_open_terminal">Open terminal</string>

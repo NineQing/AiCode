@@ -63,7 +63,6 @@ import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.presentation.AgentUIMessage
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
@@ -110,7 +109,8 @@ internal const val TOOL_SECTION_LINE_LIMIT = 20
  * 展开态由 [expandedOverride] + [onExpandedChange] 受控（宿主持久化，见
  * [com.aicode.feature.agent.presentation.AIAgentViewModel.toolExpansionOverrides]）：
  * 从前用 `remember(message.id)` 存在这里，item 滚出视口被 LazyColumn 回收、或全屏路由
- * 把整棵聊天组合 dispose 后就会缩回默认态。null 表示用户还没手动开关过，按内容类型取默认。
+ * 把整棵聊天组合 dispose 后就会缩回默认态。null 表示用户还没手动开关过——此时**默认收起**，
+ * 所有工具（含差异卡、待办卡）一视同仁，看细节要点开。
  */
 @Composable
 internal fun ToolMessageBody(
@@ -149,11 +149,10 @@ internal fun ToolMessageBody(
     val hasLiveOutput = !liveOutput.isNullOrBlank()
     val expandable = streaming || (!running && (edit != null || !resultText.isNullOrBlank() || !argsFull.isNullOrBlank()
             || (todoData != null && todoData.items.isNotEmpty()) || webSearchData != null))
-    // 落库后按内容类型决定的默认态：差异卡与待办卡默认展开，其余折叠。
-    val defaultExpanded = edit != null || todoData != null
-    // 用户手动开关过（expandedOverride 非 null）就以用户的选择为准，否则用默认态。
-    // 展开态本身由宿主保管，因此滚出视口、切页返回都不会再丢。
-    val effectiveExpanded = expandedOverride ?: defaultExpanded
+    // 工具调用一律默认收起（差异卡、待办卡也不例外）：要不要看细节由用户点开，
+    // 手动开关过（expandedOverride 非 null）就以用户的选择为准。展开态由宿主保管，
+    // 因此滚出视口、切页返回都不会再丢。
+    val effectiveExpanded = expandedOverride == true
 
     val toolLabel = message.toolName ?: stringResource(R.string.common_tool)
     // 文件相关工具：从结构化 diff 或工具参数里取路径，统一按「工具名 + 路径 + 文件名」展示
@@ -326,10 +325,10 @@ internal fun ToolMessageBody(
             Spacer(Modifier.height(Spacing.sm))
             notifications.forEach { ToolNotificationRow(it) }
         }
-        // 文件卡片：工具结束后常显在消息底部，点击用系统 app 打开。
+        // 文件列表：工具结束后常显在消息底部，一行一个文件，点击用系统 app 打开。
         if (!running && message.attachments.isNotEmpty()) {
             val context = LocalContext.current
-            MessageAttachmentPreviewRow(
+            MessageAttachmentList(
                 attachments = message.attachments,
                 onClick = { openAttachment(context, it) }
             )
@@ -438,8 +437,10 @@ private suspend fun AwaitPointerEventScope.awaitTapOrSwipe(
 
 /**
  * 工具状态图标：按工具类型给出字形（文件 / 终端 / 搜索 / 任务…），并按状态着色——
- * 运行中脉冲、失败转红并额外挂一个警示图标、成功回到中性色（满屏绿色会抢注意力）。
- * 颜色之外还有字形差异与读屏语义，色弱用户不会只靠红绿判断成败。
+ * 运行中脉冲、失败整枚图标转红、成功回到中性色（满屏绿色会抢注意力）。
+ *
+ * 失败不再额外挂一枚警示图标：行首图标格保持一枚字形，状态只由颜色与读屏语义表达，
+ * 免得同一行出现两个图标、行首位置还随成败跳动。色弱用户靠 [statusLabel]（读屏）分辨成败。
  */
 @Composable
 internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String?) {
@@ -476,15 +477,6 @@ internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String
                 .size(ChatStyle.rowIconSize)
                 .graphicsLayer { alpha = pulseAlpha }
         )
-        if (isError) {
-            Spacer(Modifier.width(2.dp))
-            Icon(
-                imageVector = FeatherIcons.AlertCircle,
-                contentDescription = null,
-                tint = DiffRemoveText,
-                modifier = Modifier.size(12.dp)
-            )
-        }
     }
 }
 
@@ -510,8 +502,8 @@ internal fun AgentUIMessage.isToolRunning(liveOutput: String?): Boolean =
         content.startsWith(SessionUseCase.LEGACY_PENDING_TOOL_MARKER)
 
 /**
- * 「N 次工具调用」分组头：DSH 把一轮任务里连续的工具调用折成一行，运行中默认展开、
- * 本轮结束自动折叠，点一下手动切换。
+ * 「N 次工具调用」分组头：DSH 把一轮任务里连续的工具调用折成一行，**默认收起**，
+ * 点一下手动展开/收起（运行中也不自动弹开，`running` 只用来决定是否显示跳动的点）。
  * 布局对齐思考行：左侧工具图标（锤子/施工） + 中间调用计数 + 右侧展开/折叠箭头。
  */
 @Composable

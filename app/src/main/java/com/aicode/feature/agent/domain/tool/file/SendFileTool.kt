@@ -18,9 +18,10 @@ import java.net.URLConnection
 import javax.inject.Inject
 
 /**
- * 把工作区文件以「文件卡片」形式发送到聊天区展示，点击卡片会用系统对应 app 打开。
+ * 把工作区文件以「文件行」形式发送到聊天区展示（一行一个文件：缩略图/类型图标 + 文件名 + 大小·路径），
+ * 点击用系统对应 app 打开，图片则在应用内全屏预览。
  *
- * 原子语义：所有文件必须全部存在且合法，任一失败则整体失败（不渲染任何卡片），
+ * 原子语义：所有文件必须全部存在且合法，任一失败则整体失败（不渲染任何文件行），
  * 错误信息逐条列出失败项，AI 可修正 paths 后重新调用。
  * 文件数据（内容/base64）不会进入模型上下文，模型只收到文件元数据文本。
  */
@@ -28,7 +29,7 @@ class SendFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider
 ) : AgentTool() {
     override val name = "sendFile"
-    override val description = "把工作区文件以「文件卡片」形式发送到聊天区展示给用户，点击卡片查看：图片在应用内全屏预览，其它类型用系统对应 app 打开。支持一次发送多个文件（聊天区可左右滑动）。所有文件必须全部存在，任一文件不存在/不是文件/过大则整体失败，需修正后重新调用。仅用于把已有文件展示给用户，不读取文件内容。"
+    override val description = "把工作区文件发送到聊天区展示给用户，聊天区每个文件占一行（缩略图/类型图标 + 文件名 + 大小·路径），点击查看：图片在应用内全屏预览，其它类型用系统对应 app 打开。支持一次发送多个文件。所有文件必须全部存在，任一文件不存在/不是文件/过大则整体失败，需修正后重新调用。仅用于把已有文件展示给用户，不读取文件内容。"
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val parameters = mapOf(
         "paths" to ToolParameter(

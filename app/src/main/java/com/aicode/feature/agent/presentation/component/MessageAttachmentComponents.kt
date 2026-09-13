@@ -5,20 +5,16 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +26,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -37,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.aicode.R
+import com.aicode.core.theme.Brand
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.ui.LocalImageViewer
@@ -44,37 +42,45 @@ import com.aicode.core.ui.THUMBNAIL_MAX_EDGE
 import com.aicode.core.ui.decodeSampledBitmap
 import com.aicode.feature.agent.presentation.AgentAttachment
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Image
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** 附件缩略图边长：一行一个文件时左侧的小图，够看清是截图还是照片即可。 */
+private val AttachmentThumbSize = 44.dp
+
+/**
+ * 已发送 / 已生成附件的列表：**一行一个文件**。
+ *
+ * 每行是「左侧缩略图（图片放真缩略图，其余按类型给图标）+ 文件名 + 大小 · 容器路径」，
+ * 整行可点。不再用横向滚动的方形卡片带：76dp 的格子里文件名必被截断，多个文件还得左右滑，
+ * 一行一个才能一眼看清发的是哪几份。
+ *
+ * 点击语义：图片一律走内置全屏查看器（隐式依赖组合树上层提供 [LocalImageViewer]，聊天区都满足）；
+ * 非图片用调用方给的 [onClick] —— 工具卡片传的是「系统 app 打开」，助手气泡不传即不可点。
+ */
 @Composable
-internal fun MessageAttachmentPreviewRow(
+internal fun MessageAttachmentList(
     attachments: List<AgentAttachment>,
     onClick: ((AgentAttachment) -> Unit)? = null
 ) {
-    Row(
+    Column(
         modifier = Modifier
-            .horizontalScroll(rememberScrollState())
+            .fillMaxWidth()
             .padding(top = Spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         attachments.forEach { attachment ->
-            MessageAttachmentPreviewItem(attachment = attachment, onClick = onClick)
+            MessageAttachmentRow(attachment = attachment, onClick = onClick)
         }
     }
 }
 
-/**
- * 单个附件预览卡。
- *
- * 图片一律走内置全屏查看器（隐式依赖组合树上层提供了 [LocalImageViewer]，聊天区都满足）；
- * 非图片才用调用方给的 [onClick] —— 工具卡片传的是「系统 app 打开」，用户气泡不传即不可点。
- */
 @Composable
-private fun MessageAttachmentPreviewItem(
+private fun MessageAttachmentRow(
     attachment: AgentAttachment,
     onClick: ((AgentAttachment) -> Unit)? = null
 ) {
@@ -86,21 +92,120 @@ private fun MessageAttachmentPreviewItem(
     } else {
         null
     }
-    val clickModifier = if (handler != null) {
-        Modifier.clickable(onClick = handler)
+    val fallbackName = stringResource(R.string.common_file)
+    val name = attachment.fileName.ifBlank { fallbackName }
+    // 读屏与长按提示用：图片是「预览」，其它是「打开」，两者落到的地方不一样。
+    val actionLabel = if (attachment.isImage) {
+        stringResource(R.string.chat_attachment_preview, name)
     } else {
-        Modifier
+        stringResource(R.string.chat_attachment_open, name)
+    }
+    // 次要信息：大小 + 容器路径。路径对「AI 发过来的文件」是关键信息（能直接在终端/编辑器里找到），
+    // 整行放不下时靠省略号截断，不换行。
+    val meta = remember(attachment.sizeBytes, attachment.containerPath) {
+        listOf(formatBytes(attachment.sizeBytes), attachment.containerPath)
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
     }
     Surface(
         shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = clickModifier.size(76.dp)
+        color = chatMutedSurfaceColor(),
+        modifier = Modifier
+            .fillMaxWidth()
+            // 先裁圆角再挂 clickable：涟漪才会被裁在圆角内，不会溢出成直角方块
+            .clip(RoundedCornerShape(Radius.md))
+            .then(
+                if (handler != null) {
+                    Modifier.clickable(onClickLabel = actionLabel, onClick = handler)
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            AttachmentThumb(attachment = attachment)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            // 有动作才给指示箭头：不可点的行不该长得像能点（如助手气泡里的非图片附件）
+            if (handler != null) {
+                Icon(
+                    FeatherIcons.ChevronRight,
+                    contentDescription = null,
+                    tint = Brand.IconGray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentThumb(attachment: AgentAttachment) {
+    Surface(
+        shape = RoundedCornerShape(Radius.sm),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.size(AttachmentThumbSize)
     ) {
         if (attachment.isImage) {
-            MessageImagePreview(attachment = attachment)
+            AttachmentImageThumb(attachment = attachment)
         } else {
-            MessageFilePreview(attachment = attachment)
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    FeatherIcons.FileText,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentImageThumb(attachment: AgentAttachment) {
+    // 读盘 + 解码放 IO 线程：以前在 remember 里同步 decodeFile，滚到带图消息时会卡主线程。
+    // 采样与 OOM 兜底统一走 decodeSampledBitmap。
+    val bitmap by produceState<ImageBitmap?>(null, attachment.localPath) {
+        value = withContext(Dispatchers.IO) {
+            decodeSampledBitmap(attachment.localPath, THUMBNAIL_MAX_EDGE)
+        }
+    }
+    val loaded = bitmap
+    if (loaded != null) {
+        ComposeImage(
+            bitmap = loaded,
+            contentDescription = attachment.fileName.ifBlank { stringResource(R.string.common_image_preview) },
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    } else {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                FeatherIcons.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -153,66 +258,4 @@ private fun isApk(attachment: AgentAttachment): Boolean {
     if (attachment.mimeType.equals("application/vnd.android.package-archive", ignoreCase = true)) return true
     val name = attachment.fileName.lowercase()
     return name.endsWith(".apk") || name.endsWith(".apks") || name.endsWith(".xapk")
-}
-
-@Composable
-private fun MessageImagePreview(attachment: AgentAttachment) {
-    // 读盘 + 解码放 IO 线程：以前在 remember 里同步 decodeFile，滚到带图消息时会卡主线程。
-    // 采样与 OOM 兜底统一走 decodeSampledBitmap。
-    val bitmap by produceState<ImageBitmap?>(null, attachment.localPath) {
-        value = withContext(Dispatchers.IO) {
-            decodeSampledBitmap(attachment.localPath, THUMBNAIL_MAX_EDGE)
-        }
-    }
-    val loaded = bitmap
-    if (loaded != null) {
-        ComposeImage(
-            bitmap = loaded,
-            contentDescription = attachment.fileName.ifBlank { stringResource(R.string.common_image_preview) },
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-    } else {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-                FeatherIcons.Image,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun MessageFilePreview(attachment: AgentAttachment) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(Spacing.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            FeatherIcons.FileText,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = attachment.fileName,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = formatBytes(attachment.sizeBytes),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }

@@ -42,6 +42,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aicode.R
@@ -377,9 +378,6 @@ internal fun StreamingBubble(
     }
 }
 
-/** 思维链折叠阈值：超过此行数视为过长；autoCollapse 生效时默认收起（收起只剩标题一行，点开看全文）。 */
-internal const val REASONING_COLLAPSE_LINE_LIMIT = 8
-
 /** 思考时长格式化：<1 分钟显示 `5s`，超过显示 `1:05`。 */
 private fun formatThinkingTime(seconds: Int): String {
     val m = seconds / 60
@@ -388,32 +386,54 @@ private fun formatThinkingTime(seconds: Int): String {
 }
 
 /**
- * 思考过程可折叠气泡：左对齐、浅色弱化，与正式回复区分。点击标题栏折叠/展开。
+ * 折叠行里显示的那一行思考内容：思考进行中取**最后一行**（跟着模型正在写的内容快速滚动），
+ * 思考结束后取**第一行**（内容已定，固定成一句预览）。
  *
- * 只有**展开/收起两态**，没有「显示尾巴几行」的中间态：收起时只剩标题栏一行，展开时给全文。
- * 默认态按行数阈值：[REASONING_COLLAPSE_LINE_LIMIT] 行以内且调用方要求展开时展开，超过阈值且
- * 允许自动收起时收起（内容仍在后台累积，点开就是最新的）；刚结束思考落库的那条始终展开，
- * 免得交接瞬间高度骤变。用户手动 toggle 后以用户选择为准，不再被自动规则覆盖。
+ * 调用方按单行 + 省略号渲染，所以这里把行首的 Markdown 记号（标题、列表、引用）与行尾的闭合
+ * 记号（加粗、行内代码）一并清掉，免得折叠行里露出 `##` / `**` 这种源码记号；整行仍过长时
+ * 交给省略号截断。没有任何可见内容时返回空串，调用方回落到「思考过程」文案。
+ */
+internal fun reasoningPreviewLine(raw: String, live: Boolean): String {
+    val line = if (live) {
+        // 从末尾回退跳过空白与换行，切出最后一行。不整串 trimEnd()：流式思考下这个函数每帧都跑，
+        // 长思考文本的整串复制纯属浪费。
+        var end = raw.length
+        while (end > 0 && raw[end - 1].isWhitespace()) end--
+        var start = end
+        while (start > 0 && raw[start - 1] != '\n') start--
+        raw.substring(start, end)
+    } else {
+        raw.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+    }
+    // 空格与 Markdown 记号在两端交替出现（`- **要点**`、`## 标题`），放同一个集合里一次剥干净
+    return line.trim(*REASONING_PREVIEW_MARKERS)
+}
+
+/** 折叠行预览两端要剥掉的字符：空白 + Markdown 记号（标题 `#`、列表 `-` `+` `*`、引用 `>`、加粗与行内代码的 `*` `` ` ``）。 */
+private val REASONING_PREVIEW_MARKERS = charArrayOf(' ', '\t', '#', '*', '-', '>', '`', '+')
+
+/**
+ * 思考过程折叠行：左对齐、浅色弱化，与正式回复区分。**默认收起**，点这一行随时展开/收起。
  *
- * [autoCollapse] 为「超阈值自动收起」开关：流式思考进行中与刚结束思考落库的那条都传 false ——
- * 用户正盯着这段文字长出来，长到第 9 行就整段消失只剩标题，观感就是「显示了一会儿突然收起」，
- * 比刷屏更糟；历史气泡传 true，避免翻记录时满屏都是旧思考。
+ * 收起态只占一行：行首思考图标 + 一行内容预览（见 [reasoningPreviewLine]，超宽省略号截断）；
+ * 展开态换成完整正文（Markdown 渲染）。两态之间没有「显示尾巴几行」的中间态。
+ *
+ * [live] 表示思考仍在进行中：折叠行的预览取最后一行、跟着内容滚动，不展开也能看到模型在想什么；
+ * 思考结束后预览固定为第一行。
  */
 @Composable
 internal fun ReasoningBubble(
     text: String,
-    initiallyExpanded: Boolean = true,
     cache: MarkdownRenderCache? = null,
     showTimer: Boolean = false,
     /** 文本已由外部打字机驱动（流式尾巴场景），跳过内部防抖直接渲染。 */
     preRendered: Boolean = false,
     /** 思考所属会话：切会话时重新计时，否则会拿上一个会话的起点算出离谱的时长。 */
     sessionKey: String? = null,
-    /** 超 [REASONING_COLLAPSE_LINE_LIMIT] 行时是否自动收起，见上方 KDoc。 */
-    autoCollapse: Boolean = true
+    /** 思考仍在进行中：折叠行的预览取最后一行（跟着滚动），见上方 KDoc。 */
+    live: Boolean = false
 ) {
-    var userToggled by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    var expanded by remember { mutableStateOf(false) }
     // 思考计时：仅流式思考场景开启，思考结束组件卸载自然停止。存绝对起始时间戳而非累加
     // 秒数，切页返回或气泡滚出视口重挂载后显示的仍是真实时长；起始戳连同已见文本的长度与
     // 指纹一起进 saveable，恢复时文本若不是同一轮的延续（期间已换轮）则重新计时。
@@ -434,13 +454,10 @@ internal fun ReasoningBubble(
             delay(1000)
         }
     }
-    val lineCount = remember(text) { text.count { it == '\n' } + 1 }
-    // 折叠判定/折叠预览用实时文本，展开渲染用节流文本（流式思考时降低 md 解析频率）；
-    // preRendered 时外部已按打字机节奏给出渲染文本，直接使用。
+    // 展开渲染用节流文本（流式思考时降低 md 解析频率）；preRendered 时外部已按打字机节奏给出渲染文本。
     val renderText = if (preRendered) text else rememberThrottledStreamingText(text)
-    val overThreshold = lineCount > REASONING_COLLAPSE_LINE_LIMIT
-    // 自动折叠：仅在用户尚未手动 toggle 过时生效；用户手动展开/折叠后以用户选择为准
-    val effectiveExpanded = if (userToggled) expanded else (initiallyExpanded && !(autoCollapse && overThreshold))
+    // 折叠行预览直接用实时文本：节流后的文本会让「快速滚动」慢半拍
+    val previewLine = reasoningPreviewLine(text, live)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
@@ -452,10 +469,7 @@ internal fun ReasoningBubble(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 32.dp)
-                        .clickable {
-                            userToggled = true
-                            expanded = !expanded
-                        },
+                        .clickable { expanded = !expanded },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ThinkingGlyph(
@@ -463,10 +477,14 @@ internal fun ReasoningBubble(
                         iconSize = 16.dp
                     )
                     Spacer(Modifier.width(Spacing.sm))
+                    // 收起态只给一行预览：思考进行中是正在写的那一行（跟着内容滚动），
+                    // 结束后是思考的第一行；整行放不下就省略号截断，内容为空时回落标题文案。
                     Text(
-                        text = stringResource(R.string.chat_thinking_process),
+                        text = previewLine.ifEmpty { stringResource(R.string.chat_thinking_process) },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
                     if (showTimer) {
@@ -485,13 +503,13 @@ internal fun ReasoningBubble(
                         )
                     }
                     Icon(
-                        if (effectiveExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                        contentDescription = if (effectiveExpanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
+                        if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        contentDescription = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
                         tint = Brand.IconGray,
                         modifier = Modifier.size(18.dp)
                     )
                 }
-                if (effectiveExpanded) {
+                if (expanded) {
                     Spacer(Modifier.height(Spacing.sm))
                     MarkdownContent(
                         text = renderText,
@@ -500,10 +518,7 @@ internal fun ReasoningBubble(
                         compact = true,
                         modifier = Modifier.pointerInput(text) {
                             detectTapGestures(
-                                onDoubleTap = {
-                                    userToggled = true
-                                    expanded = false
-                                }
+                                onDoubleTap = { expanded = false }
                             )
                         }
                     )

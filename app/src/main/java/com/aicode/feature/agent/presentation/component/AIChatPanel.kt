@@ -520,8 +520,11 @@ fun AIChatPanel(
     }
     // 「复制 / 更多」只挂在整段会话最新的一条助手消息下面（工具消息不算），
     // 否则每条回复都吊一排小按钮，既吵又打断文档流的阅读。用户消息不受此限，逐条常驻（见 AgentMessageItem）。
-    val lastActionableMessageId = remember(messages) {
-        messages.lastOrNull { it.rendersActionRow() }?.id
+    // **本轮收工前不挂**：一轮任务里 AI 常常分好几步（工具调用后继续生成），轮内就把按钮挂到
+    // 当前的"最后一条"上，下一步一到按钮又跳到下一条，看起来像按钮在追着消息跑；判据与
+    // computeTaskDurations / computeTurnUsage 的 lastTurnFinished 一致（忙 = 本轮还没收工）。
+    val lastActionableMessageId = remember(messages, isBusy) {
+        if (isBusy) null else messages.lastOrNull { it.rendersActionRow() }?.id
     }
     val activeModel = activeProvider?.effectiveModel.orEmpty()
     val activeModelMetadata = modelMetadata[activeModel]

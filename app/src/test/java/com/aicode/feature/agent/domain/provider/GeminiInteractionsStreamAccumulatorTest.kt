@@ -86,6 +86,32 @@ class GeminiInteractionsStreamAccumulatorTest {
     }
 
     @Test
+    fun function_call_name_is_declared_at_step_start() {
+        val acc = GeminiInteractionsStreamAccumulator()
+
+        // 名字在 step.start 就到达：UI 靠它把「正在思考」提前换成具体场景
+        val declared = acc.accept(
+            event("{'event_type':'step.start','index':1,'step':{'type':'function_call','id':'fc_1','name':'readFile'}}")
+        )
+        assertEquals("readFile", (declared as InteractionsDelta.ToolCallDeclared).name)
+
+        // 同一个 step 只播报一次，参数增量不产生声明
+        assertNull(
+            acc.accept(event("{'event_type':'step.delta','index':1,'delta':{'type':'arguments_delta','arguments':'{}'}}"))
+        )
+
+        // 声明不能打断本 step 的其他解析：step.start 带的完整 arguments 仍要落进聚合结果
+        val withArgs = GeminiInteractionsStreamAccumulator()
+        withArgs.accept(
+            event("{'event_type':'step.start','index':1,'step':{'type':'function_call','id':'fc_2','name':'readFile','arguments':{'path':'b.kt'}}}")
+        )
+        withArgs.accept(event("{'event_type':'interaction.requires_action','interaction':{'status':'requires_action'}}"))
+        val call = withArgs.toResponse().toolCalls.single()
+        assertEquals("readFile", call.name)
+        assertEquals("b.kt", call.arguments["path"].toString().trim('"'))
+    }
+
+    @Test
     fun function_call_arguments_are_accumulated_from_deltas() {
         val acc = GeminiInteractionsStreamAccumulator()
         feed(

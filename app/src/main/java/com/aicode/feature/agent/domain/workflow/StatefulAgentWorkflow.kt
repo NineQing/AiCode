@@ -549,6 +549,12 @@ class StatefulAgentWorkflow @Inject constructor(
                                         if (ttfbElapsed == null) ttfbElapsed = SystemClock.elapsedRealtime() - callStartElapsed
                                         finalResponse = chunk.response
                                     }
+                                    is AIStreamChunk.ToolCallDeclared -> {
+                                        // 工具名先于参数到达：立刻告诉 UI「模型准备调什么」，
+                                        // 免得长参数流式期间一直停在「正在思考」。
+                                        if (ttfbElapsed == null) ttfbElapsed = SystemClock.elapsedRealtime() - callStartElapsed
+                                        send(AgentEvent.ToolCallPreparing(chunk.name))
+                                    }
                                 }
                             }
                             // 节流窗口内可能还压着最新累积文本：补发，保证 UI 尾巴拿到完整文本再交接落库。

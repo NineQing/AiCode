@@ -37,6 +37,14 @@ sealed class AgentEvent {
     /** 模型决定调用某工具（执行前）。 */
     data class ToolCallStarted(val id: String, val toolName: String, val argsPreview: String) : AgentEvent()
 
+    /**
+     * 模型刚开始产出某次工具调用、工具名已知（参数还在流式传输中）。
+     *
+     * 长参数工具（写整份文件、长命令）的参数流式可能持续好几秒，期间既没有正文也没有思考增量，
+     * UI 只能显示笼统的「正在思考」。这条事件让 UI 提前把状态说具体，不落库、不参与执行判定。
+     */
+    data class ToolCallPreparing(val toolName: String) : AgentEvent()
+
     /** 工具执行过程中的实时累积输出（仅流式工具产生，用于 UI 实时渲染，不落库）。 */
     data class ToolCallProgress(val id: String, val toolName: String, val accumulated: String) : AgentEvent()
 

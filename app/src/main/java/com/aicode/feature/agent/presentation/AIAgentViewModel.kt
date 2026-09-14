@@ -601,6 +601,31 @@ class AIAgentViewModel @Inject constructor(
         }
     }
 
+    private val _preparingTools = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * 模型正在流式产出、还没开始执行的工具名（如 `editFile`）。
+     *
+     * 长参数工具（写整份文件、长命令）的参数流式可能持续好几秒，期间没有正文也没有思考增量，
+     * UI 只能显示笼统的「正在思考」。上游在工具名一出现就上报（[AgentEvent.ToolCallPreparing]），
+     * UI 据此把状态换成具体场景（「正在编辑文件」）。工具真正开始执行后由 [runningTool] 接管。
+     */
+    val preparingTool: StateFlow<String?> = _currentSessionId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(null)
+            else _preparingTools.map { it[id] }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private fun setPreparingTool(sessionId: String, toolName: String?) {
+        val current = _preparingTools.value
+        if (toolName == null) {
+            if (current.containsKey(sessionId)) _preparingTools.value = current - sessionId
+        } else if (current[sessionId] != toolName) {
+            _preparingTools.value = current + (sessionId to toolName)
+        }
+    }
+
     private val _compactingSessions = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
     private val _llmCallEvents = MutableSharedFlow<LlmCallEvent>(extraBufferCapacity = 16)
@@ -1186,6 +1211,11 @@ class AIAgentViewModel @Inject constructor(
                         setRetryState(sessionId, null)
                         setStreamingReasoning(sessionId, event.accumulated)
                     }
+                    is AgentEvent.ToolCallPreparing -> {
+                        // 工具名先于参数到达：让 UI 把「正在思考」换成具体场景（「正在编辑文件」）。
+                        // 参数流完、工具真正开始执行后由 ToolCallStarted 清掉，改由工具行表达。
+                        setPreparingTool(sessionId, event.toolName)
+                    }
                     is AgentEvent.Retrying -> {
                         setRetryState(sessionId, RetryState(event.attempt, event.maxRetries, event.error))
                         // 重试会从头重新流式输出：清掉已展示的正文/思维链气泡，
@@ -1242,10 +1272,14 @@ class AIAgentViewModel @Inject constructor(
                         }
                         setStreamingReasoning(sessionId, null)
                         setStreamingText(sessionId, null)
+                        // 流已收尾：模型本轮不会再吐工具参数了，清掉"准备调什么"的临时状态
+                        // （真要执行会在紧接着的 ToolCallStarted 里重新由工具行表达）
+                        setPreparingTool(sessionId, null)
                     }
                     is AgentEvent.ToolCallStarted -> {
                         val msgId = "tool_${event.id}"
                         setStreamingText(sessionId, null)
+                        setPreparingTool(sessionId, null)
                         toolArgsByMsgId[msgId] = event.argsPreview
                         messagePersistenceUseCase.persist(
                             sessionId,
@@ -1362,6 +1396,7 @@ class AIAgentViewModel @Inject constructor(
             _runningTools.value = _runningTools.value - sessionId
             setStreamingText(sessionId, null)
             setStreamingReasoning(sessionId, null)
+            setPreparingTool(sessionId, null)
             setCompacting(sessionId, false)
             setRetryState(sessionId, null)
 

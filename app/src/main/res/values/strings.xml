@@ -535,6 +535,16 @@
     <string name="chat_task_duration">本轮总耗时 %1$s</string>
     <string name="chat_cache_hit_rate">缓存命中率 %1$s</string>
     <string name="chat_status_generating">正在生成</string>
+    <string name="chat_status_thinking">正在思考</string>
+    <string name="chat_status_calling_tool">正在调用工具</string>
+    <string name="chat_status_running_command">正在执行命令</string>
+    <string name="chat_status_editing_file">正在编辑文件</string>
+    <string name="chat_status_reading_file">正在读取文件</string>
+    <string name="chat_status_searching_web">正在联网搜索</string>
+    <string name="chat_status_generating_image">正在生成图片</string>
+    <string name="chat_status_updating_todo">正在整理待办</string>
+    <string name="chat_status_starting_subagent">正在启动子代理</string>
+    <string name="chat_status_reading_memory">正在读写记忆</string>
     <string name="chat_tool_running">工具执行中</string>
     <string name="chat_tool_succeeded">工具执行成功</string>
     <string name="chat_tool_failed">工具执行失败</string>

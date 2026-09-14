@@ -234,10 +234,16 @@ class AnthropicAdapter @Inject constructor(
                                     val index = obj.get("index")?.asInt ?: continue
                                     val block = obj.getAsJsonObject("content_block")
                                     when (block?.get("type")?.asString) {
-                                        "tool_use" -> toolBlocks[index] = ToolBlockAcc(
-                                            id = block.get("id")?.asString ?: "",
-                                            name = block.get("name")?.asString ?: ""
-                                        )
+                                        "tool_use" -> {
+                                            val name = block.get("name")?.asString ?: ""
+                                            toolBlocks[index] = ToolBlockAcc(
+                                                id = block.get("id")?.asString ?: "",
+                                                name = name
+                                            )
+                                            // 工具名先于参数到达：立刻告诉 UI「模型准备调什么」，
+                                            // 免得参数流式期间一直停在「正在思考」
+                                            if (name.isNotEmpty()) emit(AIStreamChunk.ToolCallDeclared(name))
+                                        }
                                         "thinking" -> thinkingBlocks[index] = ThinkingBlockAcc(type = "thinking").also { acc ->
                                             acc.thinking.append(block.get("thinking")?.takeIf { !it.isJsonNull }?.asString ?: "")
                                             acc.signature = block.get("signature")?.takeIf { !it.isJsonNull }?.asString

@@ -535,6 +535,16 @@
     <string name="chat_task_duration">Total time %1$s</string>
     <string name="chat_cache_hit_rate">Cache hit rate %1$s</string>
     <string name="chat_status_generating">Generating</string>
+    <string name="chat_status_thinking">Thinking</string>
+    <string name="chat_status_calling_tool">Calling tool</string>
+    <string name="chat_status_running_command">Running command</string>
+    <string name="chat_status_editing_file">Editing file</string>
+    <string name="chat_status_reading_file">Reading file</string>
+    <string name="chat_status_searching_web">Searching the web</string>
+    <string name="chat_status_generating_image">Generating image</string>
+    <string name="chat_status_updating_todo">Updating to-dos</string>
+    <string name="chat_status_starting_subagent">Starting sub-agent</string>
+    <string name="chat_status_reading_memory">Reading memory</string>
     <string name="chat_tool_running">Tool running</string>
     <string name="chat_tool_succeeded">Tool succeeded</string>
     <string name="chat_tool_failed">Tool failed</string>

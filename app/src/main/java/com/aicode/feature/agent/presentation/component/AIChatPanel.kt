@@ -427,6 +427,11 @@ fun AIChatPanel(
     val retryState by viewModel.retryState.collectAsStateWithLifecycle()
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val streamingReasoning by viewModel.streamingReasoning.collectAsStateWithLifecycle()
+    val preparingTool by viewModel.preparingTool.collectAsStateWithLifecycle()
+    // 等待模型时的状态文案：模型已经在吐某次工具调用的参数时（工具名先到，参数可能还要好几秒），
+    // 直接说清在做什么，而不是一直「正在思考」——上游在工具名一出现就上报了 ToolCallPreparing。
+    val thinkingLabel = preparingTool?.let { stringResource(toolRunningLabelRes(it)) }
+        ?: stringResource(R.string.chat_status_thinking)
     val pendingPermission by viewModel.pendingToolPermission.collectAsStateWithLifecycle()
     val pendingPermissionSessionTitle by viewModel.pendingToolPermissionSessionTitle.collectAsStateWithLifecycle()
     val pendingQuestion by viewModel.pendingUserQuestion.collectAsStateWithLifecycle()
@@ -1100,7 +1105,8 @@ fun AIChatPanel(
                                 isToolRow = item.message.role == MessageRole.TOOL,
                             )
                             if (group != null) {
-                                // 分组头：点一下展开/收起整组工具调用，并复用同一套视口重定位
+                                // 分组头：点一下展开/收起整组工具调用，并复用同一套视口重定位。
+                                // 还在跑时由「N 次工具调用」这行文案自己走涟漪高光（见 ToolCallGroupHeader）。
                                 ToolCallGroupHeader(
                                     count = group.size,
                                     running = group.any { it.id in runningToolIds || it.isToolRunning(null) },
@@ -1171,7 +1177,7 @@ fun AIChatPanel(
                                     ReasoningBubble(text = typewriterReasoningText, cache = markdownCache, showTimer = true, preRendered = true, sessionKey = currentSessionId, live = true)
                                 }
                                 when (tailKind) {
-                                    TailKind.THINKING -> ThinkingBubble()
+                                    TailKind.THINKING -> ThinkingBubble(label = thinkingLabel)
                                     TailKind.STREAMING -> StreamingBubble(text = typewriterRenderText, cache = markdownCache)
                                     TailKind.COMPACTING -> CompactionProgressBubble()
                                     TailKind.RETRYING -> {

@@ -118,6 +118,9 @@ private val TRUNCATION_REASONS = setOf("max_output_tokens", "max_tokens")
 internal sealed class ResponsesDelta {
     data class Text(val text: String) : ResponsesDelta()
     data class Reasoning(val text: String) : ResponsesDelta()
+
+    /** 刚开始产出某次 function_call、工具名已知（参数还在流式传输中），供 UI 提前说清「在调什么」。 */
+    data class ToolCallDeclared(val name: String) : ResponsesDelta()
 }
 
 /**
@@ -174,8 +177,13 @@ internal class ResponsesStreamAccumulator {
                     ResponsesItem.FUNCTION_CALL -> {
                         val acc = calls.getOrPut(event.callKey()) { CallAcc() }
                         item.str("call_id")?.takeIf { it.isNotEmpty() }?.let { acc.callId = it }
-                        item.str("name")?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
                         item.str("arguments")?.takeIf { it.isNotEmpty() }?.let { acc.args = StringBuilder(it) }
+                        item.str("name")?.takeIf { it.isNotEmpty() }?.let { name ->
+                            val first = acc.name.isEmpty()
+                            acc.name = name
+                            // 工具名先于参数到达：让 UI 提前把状态说具体（每个调用只推一次）
+                            if (first) return ResponsesDelta.ToolCallDeclared(name)
+                        }
                     }
                     ResponsesItem.REASONING -> {
                         val encContent = item.str("encrypted_content")?.takeIf { it.isNotEmpty() }

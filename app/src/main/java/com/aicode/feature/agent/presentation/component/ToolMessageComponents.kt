@@ -1,5 +1,6 @@
 package com.aicode.feature.agent.presentation.component
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -237,6 +238,13 @@ internal fun ToolMessageBody(
                     }
                 }
             }
+            if (running) {
+                // 运行中的这条：行尾用统一的涟漪场景文案说明「正在做什么」。工具名在开始执行前
+                // 就已到达（AgentEvent.ToolCallStarted），所以不必停在笼统的「执行中」；
+                // 折叠态也看得见，不必展开才知道它在跑。
+                Spacer(Modifier.width(Spacing.sm))
+                RippleText(text = stringResource(toolRunningLabelRes(message.toolName)))
+            }
             if (edit != null) {
                 DiffStat(added = edit.added, removed = edit.removed)
                 Spacer(Modifier.width(Spacing.sm))
@@ -261,8 +269,8 @@ internal fun ToolMessageBody(
             }
         }
         if (streaming) {
-            // 展开态与落库卡片同构：先「指令」（工具参数），再「结果」（实时输出尾部），输出进行中指示放结果下方；
-            // 折叠态只保留标题行
+            // 展开态与落库卡片同构：先「指令」（工具参数），再「结果」（实时输出尾部）；
+            // 折叠态只保留标题行。「还在跑」由标题行行尾的涟漪场景文案表达，不在这里重复一遍。
             if (effectiveExpanded) {
                 if (!argsFull.isNullOrBlank()) {
                     Spacer(Modifier.height(Spacing.sm))
@@ -273,8 +281,6 @@ internal fun ToolMessageBody(
                     Spacer(Modifier.height(Spacing.sm))
                     ToolSection(label = stringResource(R.string.tool_result), content = truncated)
                 }
-                Spacer(Modifier.height(Spacing.sm))
-                TypingDots(color = MaterialTheme.colorScheme.onSurfaceVariant, dotSize = 5.dp)
             }
         } else if (effectiveExpanded) {
             Column(
@@ -493,6 +499,28 @@ private fun toolIcon(toolName: String?): ImageVector = when (toolName?.lowercase
 }
 
 /**
+ * 工具执行中的场景文案：把工具名归成用户一眼能懂的「正在做什么」，供统一忙碌指示器
+ * （[AgentBusyIndicator] / [RippleText]）使用。
+ *
+ * 键与 [toolIcon] 一致（工具注册名，忽略大小写）。归类原则是「用户视角」而不是「实现视角」：
+ * 读文件与列目录都算「正在读取文件」，联网搜索与抓网页都算「正在联网搜索」。工具名在执行前
+ * 就已到达（`AgentEvent.ToolCallStarted`），所以文案能跟着实际动作走，而不必停在「正在思考」。
+ * MCP 动态注册工具、自定义工具等未归类的，一律回落 [R.string.chat_status_calling_tool]。
+ */
+@StringRes
+internal fun toolRunningLabelRes(toolName: String?): Int = when (toolName?.lowercase()) {
+    "editfile", "writefile" -> R.string.chat_status_editing_file
+    "readfile", "list", "sendfile", "viewimage" -> R.string.chat_status_reading_file
+    "search", "websearch", "webfetch" -> R.string.chat_status_searching_web
+    "bash", "terminal" -> R.string.chat_status_running_command
+    "generateimage" -> R.string.chat_status_generating_image
+    "todo" -> R.string.chat_status_updating_todo
+    "task" -> R.string.chat_status_starting_subagent
+    "memory" -> R.string.chat_status_reading_memory
+    else -> R.string.chat_status_calling_tool
+}
+
+/**
  * 工具是否仍在执行：实时输出中，或结果仍是 pending 占位。
  * [AIChatPanel] 判定工具调用分组是否要保持展开时复用这一条，避免两处判定漂移。
  */
@@ -503,8 +531,12 @@ internal fun AgentUIMessage.isToolRunning(liveOutput: String?): Boolean =
 
 /**
  * 「N 次工具调用」分组头：DSH 把一轮任务里连续的工具调用折成一行，**默认收起**，
- * 点一下手动展开/收起（运行中也不自动弹开，`running` 只用来决定是否显示跳动的点）。
- * 布局对齐思考行：左侧工具图标（锤子/施工） + 中间调用计数 + 右侧展开/折叠箭头。
+ * 点一下手动展开/收起（运行中也不自动弹开）。
+ * 布局对齐思考行：左侧工具图标（锤子/施工） + 中间调用计数 + 折叠箭头。
+ *
+ * [running] 为真时给「N 次工具调用」这行文案本身走涟漪高光，表示这批调用还在跑。
+ * 不再另挂三个跳动的点，也不在这里重复场景文案（「正在编辑文件」这类说的是**具体哪个工具**，
+ * 展开后由每条工具行的运行状态给出，见 [ToolMessageBody]）。
  */
 @Composable
 internal fun ToolCallGroupHeader(
@@ -535,15 +567,13 @@ internal fun ToolCallGroupHeader(
             modifier = Modifier.size(ChatStyle.rowIconSize)
         )
         Spacer(Modifier.width(Spacing.sm))
-        Text(
-            text = stringResource(R.string.chat_tool_calls_count, count),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.weight(1f)
-        )
-        if (running) {
-            TypingDots(color = MaterialTheme.colorScheme.primary, dotSize = 4.dp)
-            Spacer(Modifier.width(Spacing.sm))
+        // 权重挂在外层占位，涟漪画在文字自身的尺寸上：光带只扫「N 次工具调用」这几个字，
+        // 不会在整行空白里慢慢爬（见 Modifier.rippleHighlight）。
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            RippleText(
+                text = stringResource(R.string.chat_tool_calls_count, count),
+                highlight = if (running) Color.White else null
+            )
         }
         Icon(
             imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,

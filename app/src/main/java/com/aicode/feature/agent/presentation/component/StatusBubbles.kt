@@ -1,11 +1,13 @@
 package com.aicode.feature.agent.presentation.component
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -36,12 +38,17 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,37 +64,154 @@ import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Clock
 import kotlinx.coroutines.delay
 
-/** 等待模型首个 token 的扁平指示：只有三个跳动的点，不再套描边卡片。 */
+/** 涟漪高光一个来回的周期（ms）。 */
+private const val RIPPLE_PERIOD_MS = 1600
+
+/** 高光带宽度占内容宽度的比例：太宽像整段变色，太窄看不出来。 */
+private const val RIPPLE_BAND_RATIO = 0.5f
+
+/** 高光带边缘的不透明度（渐变两端）。 */
+private const val RIPPLE_EDGE_ALPHA = 0.12f
+
+/**
+ * 高光带峰值不透明度。
+ *
+ * 高光是白色（主流做法）：深色主题下把字「打亮」，浅色主题下把字朝背景方向提亮成一道光泽。
+ * 峰值不能太高——浅色主题下白色 0.85 会直接把字擦掉，0.5 左右是「亮一下但仍认得出字」。
+ */
+private const val RIPPLE_PEAK_ALPHA = 0.5f
+
+/**
+ * 涟漪高光：一条中间亮、两端透明的高光带周期性从左划到右。
+ *
+ * 用 [BlendMode.SrcAtop] 叠在已绘制内容上——它只作用在不透明像素上，所以不会在空白处
+ * 画出一条色带方块。高光默认白色（Claude Code / 主流 shimmer 的做法）；浅色主题下白色会在
+ * 文字像素上把字朝背景提亮，形成一道掠过的光泽，而不是盖上一层灰。
+ *
+ * 性能：进度在 [drawWithContent] 的绘制阶段读取（`by` 委托在 lambda 内取值），只重绘、不重组。
+ */
 @Composable
-internal fun ThinkingBubble() {
-    Row(
+internal fun Modifier.rippleHighlight(
+    highlight: Color = Color.White,
+    bandRatio: Float = RIPPLE_BAND_RATIO,
+    periodMs: Int = RIPPLE_PERIOD_MS
+): Modifier {
+    val transition = rememberInfiniteTransition(label = "ripple-highlight")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = periodMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "ripple-progress"
+    )
+    return drawWithContent {
+        drawContent()
+        val band = size.width * bandRatio
+        // 起点在左侧完全移出、终点在右侧完全移出，两端各留一个带的余量做「停顿感」
+        val center = -band + progress * (size.width + 2 * band)
+        drawRect(
+            brush = Brush.linearGradient(
+                // 五档渐变：两端全透明、中间一个软峰，扫过时是「亮一下」而不是一条硬边色带
+                colors = listOf(
+                    Color.Transparent,
+                    highlight.copy(alpha = RIPPLE_EDGE_ALPHA),
+                    highlight.copy(alpha = RIPPLE_PEAK_ALPHA),
+                    highlight.copy(alpha = RIPPLE_EDGE_ALPHA),
+                    Color.Transparent
+                ),
+                start = Offset(center - band / 2f, 0f),
+                end = Offset(center + band / 2f, 0f)
+            ),
+            blendMode = BlendMode.SrcAtop
+        )
+    }
+}
+
+/**
+ * 一条会走涟漪高光的文字（[Modifier.rippleHighlight] 的文字版）。
+ *
+ * 涟漪画在**文字自身宽度**上：调用方不要给它 `weight`，否则光带会在整段可分配宽度里爬、
+ * 扫过这几个字只是一瞬间（要占位就让外层容器去占）。
+ *
+ * [highlight] 传 null 表示只画静态文字：同一处文案要在「空闲」与「进行中」之间切换时，
+ * 用同一个组件、只换这一个参数即可（避免两个分支各写一套 Text 参数）。
+ */
+@Composable
+internal fun RippleText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    style: TextStyle = MaterialTheme.typography.labelMedium,
+    highlight: Color? = Color.White
+) {
+    val rippleModifier = if (highlight != null) modifier.rippleHighlight(highlight) else modifier
+    Text(
+        text = text,
+        color = color,
+        style = style,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = rippleModifier
+    )
+}
+
+/**
+ * 统一的「正在忙什么」状态行：涟漪高光文案（+ 可选的三点跳动）。
+ *
+ * 高光只盖在文案上，三个跳动的点是独立的动画，不参与高光（两层动画叠在一起会糊）。
+ * 外层 [modifier]（撑满宽度、定高）交给容器，内层内容按自身宽度靠左排。
+ *
+ * 读屏语义统一由本行给出（文案即语义），所以内部的 [TypingDots] 关掉自己的播报。
+ */
+@Composable
+internal fun AgentBusyIndicator(
+    label: String,
+    modifier: Modifier = Modifier,
+    showDots: Boolean = false,
+    dotColor: Color = MaterialTheme.colorScheme.primary,
+    dotSize: Dp = 6.dp
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            RippleText(text = label)
+            if (showDots) TypingDots(color = dotColor, dotSize = dotSize, announce = false)
+        }
+    }
+}
+
+/**
+ * 等待模型响应时的状态行：涟漪高光的文案 + 三个跳动的点，不套描边卡片。
+ *
+ * [label] 由调用方决定说「正在思考」还是更具体的场景（模型已在吐某次工具调用的参数时，
+ * 说「正在编辑文件」），见 [toolRunningLabelRes]。
+ */
+@Composable
+internal fun ThinkingBubble(label: String) {
+    AgentBusyIndicator(
+        label = label,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = ChatStyle.toolRowMinHeight),
-        horizontalArrangement = Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        TypingDots(color = MaterialTheme.colorScheme.primary)
-    }
+        showDots = true
+    )
 }
 
 /** 上下文压缩期间的临时状态行，不落库。 */
 @Composable
 internal fun CompactionProgressBubble() {
-    Row(
+    AgentBusyIndicator(
+        label = stringResource(R.string.chat_compressing_context),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = ChatStyle.toolRowMinHeight),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-    ) {
-        Text(
-            text = stringResource(R.string.chat_compressing_context),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
-        )
-        TypingDots(color = MaterialTheme.colorScheme.primary)
-    }
+        showDots = true
+    )
 }
 
 /** 网络重试期间的临时状态行，不落库。首行展示触发重试的具体错误（如 429/500/网络断开），次行展示重试进度。 */
@@ -248,6 +372,43 @@ internal fun isStreamContinuation(text: String, seenChars: Int, seenHead: Int): 
 }
 
 /**
+ * 打字机单帧显示速率（码点/秒）。[lag] = 上游已到字数 − 已显示字数，[arrivalRate] 为滑窗估算的
+ * 上游吐字速率，[drainRate] 非空表示上游已结束的收尾阶段（按该恒定速率匀速打完剩余）。
+ *
+ * 播出阶段取两者较大值：
+ * - 跟随项 = 上游速率 × [TYPEWRITER_FOLLOW_RATIO]（略慢于上游，保留「慢半拍」的观感）；
+ * - 追赶项 = 滞后 ÷ [TYPEWRITER_SETTLE_SECONDS]（滞后越大追得越快）。
+ *
+ * 常规上限 [TYPEWRITER_MAX_RATE] 只在滞后未超标时生效：滞后一旦超过 [TYPEWRITER_LAG_TARGET]
+ * 就放宽到 [TYPEWRITER_BURST_RATE]。这条规则是「结束时别抽搐」的关键——旧实现把速率死封在
+ * 200 字符/秒，模型吐得快或爆发式吐字时滞后只增不减（稳态约 1.8×上游速率，动辄上百字），
+ * 上游一结束整段一次跳出，看起来就是突然抽搐一下。现在滞后被压在十几字以内，
+ * 收尾阶段再按 [TYPEWRITER_DRAIN_SECONDS] 匀速把这一小段打完，不会瞬移。
+ */
+internal fun typewriterRate(lag: Float, arrivalRate: Float, drainRate: Float? = null): Float {
+    if (lag <= 0f) return 0f
+    if (drainRate != null) {
+        return drainRate.coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_BURST_RATE)
+    }
+    val followRate = arrivalRate * TYPEWRITER_FOLLOW_RATIO
+    val catchUpRate = lag / TYPEWRITER_SETTLE_SECONDS
+    val ceiling = if (lag > TYPEWRITER_LAG_TARGET) TYPEWRITER_BURST_RATE else TYPEWRITER_MAX_RATE
+    return maxOf(followRate, catchUpRate).coerceIn(TYPEWRITER_MIN_RATE, ceiling)
+}
+
+/**
+ * 收尾速率（码点/秒）：把 [lag] 个剩余码点在 [TYPEWRITER_DRAIN_SECONDS] 内匀速打完。
+ *
+ * 取「按剩余量摊到目标时长」而不是「固定倍数追赶」，保证收尾时间是常数级（约 0.2 秒）：
+ * 剩余十几字看得清是打字，剩余几百字也不会一格一格磨到用户以为卡住。
+ */
+internal fun typewriterDrainRate(lag: Float): Float =
+    (lag / TYPEWRITER_DRAIN_SECONDS).coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_DRAIN_MAX_RATE)
+
+/** 打字机当前渲染结果：[text] 为应渲染文本（上游全文的前缀），[settled] 表示是否已追平全文。 */
+internal data class TypewriterText(val text: String, val settled: Boolean)
+
+/**
  * 速率自适应打字机：显示文本滞后于上游累积文本，打字速度跟随模型吐字速度。
  *
  * 上游每个 delta 都携带完整累积文本，到达节奏即模型吐字节奏。此处维护两个进度：
@@ -393,43 +554,6 @@ internal fun rememberTypewriterStreamingText(
     // settled 直接由「渲染文本是否已等于上游全文」给出：收尾期间调用方据此决定渲染归属
     return TypewriterText(text = renderText, settled = renderText == text)
 }
-
-/**
- * 打字机单帧显示速率（码点/秒）。[lag] = 上游已到字数 − 已显示字数，[arrivalRate] 为滑窗估算的
- * 上游吐字速率，[drainRate] 非空表示上游已结束的收尾阶段（按该恒定速率匀速打完剩余）。
- *
- * 播出阶段取两者较大值：
- * - 跟随项 = 上游速率 × [TYPEWRITER_FOLLOW_RATIO]（略慢于上游，保留「慢半拍」的观感）；
- * - 追赶项 = 滞后 ÷ [TYPEWRITER_SETTLE_SECONDS]（滞后越大追得越快）。
- *
- * 常规上限 [TYPEWRITER_MAX_RATE] 只在滞后未超标时生效：滞后一旦超过 [TYPEWRITER_LAG_TARGET]
- * 就放宽到 [TYPEWRITER_BURST_RATE]。这条规则是「结束时别抽搐」的关键——旧实现把速率死封在
- * 200 字符/秒，模型吐得快或爆发式吐字时滞后只增不减（稳态约 1.8×上游速率，动辄上百字），
- * 上游一结束整段一次跳出，看起来就是突然抽搐一下。现在滞后被压在十几字以内，
- * 收尾阶段再按 [TYPEWRITER_DRAIN_SECONDS] 匀速把这一小段打完，不会瞬移。
- */
-internal fun typewriterRate(lag: Float, arrivalRate: Float, drainRate: Float? = null): Float {
-    if (lag <= 0f) return 0f
-    if (drainRate != null) {
-        return drainRate.coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_BURST_RATE)
-    }
-    val followRate = arrivalRate * TYPEWRITER_FOLLOW_RATIO
-    val catchUpRate = lag / TYPEWRITER_SETTLE_SECONDS
-    val ceiling = if (lag > TYPEWRITER_LAG_TARGET) TYPEWRITER_BURST_RATE else TYPEWRITER_MAX_RATE
-    return maxOf(followRate, catchUpRate).coerceIn(TYPEWRITER_MIN_RATE, ceiling)
-}
-
-/**
- * 收尾速率（码点/秒）：把 [lag] 个剩余码点在 [TYPEWRITER_DRAIN_SECONDS] 内匀速打完。
- *
- * 取「按剩余量摊到目标时长」而不是「固定倍数追赶」，保证收尾时间是常数级（约 0.2 秒）：
- * 剩余十几字看得清是打字，剩余几百字也不会一格一格磨到用户以为卡住。
- */
-internal fun typewriterDrainRate(lag: Float): Float =
-    (lag / TYPEWRITER_DRAIN_SECONDS).coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_DRAIN_MAX_RATE)
-
-/** 打字机当前渲染结果：[text] 为应渲染文本（上游全文的前缀），[settled] 表示是否已追平全文。 */
-internal data class TypewriterText(val text: String, val settled: Boolean)
 
 /**
  * 模型流式吐字时的实时气泡：左对齐、与助手气泡同款。
@@ -619,7 +743,9 @@ internal fun ReasoningBubble(
 @Composable
 internal fun TypingDots(
     color: Color,
-    dotSize: androidx.compose.ui.unit.Dp = 6.dp
+    dotSize: androidx.compose.ui.unit.Dp = 6.dp,
+    /** 是否单独给读屏播报「正在生成」：嵌在 [AgentBusyIndicator] 里时由外层状态行统一播报。 */
+    announce: Boolean = true
 ) {
     val transition = rememberInfiniteTransition(label = "typing-dots")
     val label = stringResource(R.string.chat_status_generating)
@@ -628,7 +754,9 @@ internal fun TypingDots(
         // 给读屏一个语义：三个跳动的点对 TalkBack 本来完全不可见。
         modifier = Modifier
             .height(dotSize + 10.dp)
-            .semantics { contentDescription = label }
+            .then(
+                if (announce) Modifier.semantics { contentDescription = label } else Modifier
+            )
     ) {
         repeat(3) { index ->
             val offsetY by transition.animateFloat(

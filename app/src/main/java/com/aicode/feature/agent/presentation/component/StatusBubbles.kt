@@ -175,14 +175,39 @@ private fun rememberThrottledStreamingText(text: String): String {
 /** 打字机最低显示速率（字符/秒）：上游停顿时仍匀速追赶，保证能看到结尾。 */
 private const val TYPEWRITER_MIN_RATE = 30f
 
-/** 打字机显示速率上限（字符/秒）：防止模型爆发式吐字时显示被拉爆。 */
-private const val TYPEWRITER_MAX_RATE = 200f
+/** 常规显示速率上限（字符/秒）：滞后在 [TYPEWRITER_LAG_TARGET] 以内时的天花板。 */
+private const val TYPEWRITER_MAX_RATE = 220f
 
-/** 显示速率 = 上游速率 × 该系数：略小于 1，保持「始终慢半拍」的滞后感。 */
-private const val TYPEWRITER_FOLLOW_RATIO = 0.9f
+/** 滞后超标后的应急速率上限（字符/秒）：允许突破常规上限，把积压迅速吃掉。 */
+private const val TYPEWRITER_BURST_RATE = 1600f
 
-/** 追赶系数（/秒）：显示进度落后越多追得越快，时间常数约 1/该值 秒。 */
-private const val TYPEWRITER_CATCHUP_PER_SEC = 0.5f
+/** 显示速率 = 上游速率 × 该系数：略小于 1，保留「始终慢半拍」的滞后感。 */
+private const val TYPEWRITER_FOLLOW_RATIO = 0.95f
+
+/**
+ * 允许的滞后（字符）：显示最多落在上游这么多字之后。
+ *
+ * 超过它就不再受 [TYPEWRITER_MAX_RATE] 约束。这条上限是「结束瞬间别抽搐」的关键——
+ * 上游结束时要补的永远是最后这一小段，而不是攒了几百字的整段。
+ */
+private const val TYPEWRITER_LAG_TARGET = 12f
+
+/** 追赶时间常数（秒）：滞后按该节奏收敛，越小追得越紧。 */
+private const val TYPEWRITER_SETTLE_SECONDS = 0.06f
+
+/**
+ * 上游结束后把剩余文字打完的目标时长（秒）。
+ *
+ * 结束后不再一帧补全（那正是「突然跳到结尾」的来源），而是按「剩余 ÷ 该时长」匀速打完：
+ * 既不会瞬移，也不会拖到用户以为卡住。常见剩余量（十几字）约 0.2 秒打完。
+ */
+private const val TYPEWRITER_DRAIN_SECONDS = 0.2f
+
+/** 收尾阶段的显示速率上限（字符/秒）：剩余很多时也不至于一闪而过。 */
+private const val TYPEWRITER_DRAIN_MAX_RATE = 400f
+
+/** 收尾硬上限（ms）：极端情况（文本被整体替换、渲染跟不上）也必须在这之内追平。 */
+private const val TYPEWRITER_DRAIN_HARD_MS = 600L
 
 /** 上游吐字速率估算的滑动窗口时长（ms）。 */
 private const val TYPEWRITER_RATE_WINDOW_MS = 500L
@@ -226,14 +251,17 @@ internal fun isStreamContinuation(text: String, seenChars: Int, seenHead: Int): 
  * 速率自适应打字机：显示文本滞后于上游累积文本，打字速度跟随模型吐字速度。
  *
  * 上游每个 delta 都携带完整累积文本，到达节奏即模型吐字节奏。此处维护两个进度：
- * 到达进度（[text] 的码点数）与显示进度（已展示的码点数）。显示进度由动画帧驱动，
- * 每帧取「上游速率 × 跟随系数」与「按滞后量追赶」两者较大值（封顶 [TYPEWRITER_MAX_RATE]），
- * 上游停顿时以 [TYPEWRITER_MIN_RATE] 兜底匀速追赶直至追平，避免停在半截。
+ * 到达进度（[text] 的码点数）与显示进度（已展示的码点数）。显示进度由动画帧驱动，速率见
+ * [typewriterRate]：滞后被压在 [TYPEWRITER_LAG_TARGET] 附近，不会越积越多。
  *
  * 渲染文本每 [TYPEWRITER_RENDER_INTERVAL_MS] 快照一次（throttle 而非 debounce，
  * 保证打字期间渲染持续可见增长），把 md 解析频率压在 ~10fps；text 突变（换会话 /
- * 新一轮 / 重试）时补全为当前全文，之后继续跟着 delta 打字。上游结束（[active] 变 false）
- * 时立即显示完整文本，与落库消息无缝交接。
+ * 新一轮 / 重试）时补全为当前全文，之后继续跟着 delta 打字。
+ *
+ * 上游结束（[active] 变 false）**不再一帧补全**：剩余那一小段按 [typewriterDrainRate] 匀速
+ * 打完（约 0.2 秒，硬上限 [TYPEWRITER_DRAIN_HARD_MS] 兜底），期间 [TypewriterText.settled]
+ * 保持 false，调用方据此把这段文字的渲染交棒给刚落库的助手消息（见 AIChatPanel），
+ * 打完后再让落库消息完全接管——用户看不到「整段突然跳出」，也看不到同一段文字重复两份。
  *
  * 调用方应在 LazyColumn 之外持有本状态，避免尾巴 item 滚出视口被 dispose 后
  * 重新组合导致打字进度丢失。切页（chat 整棵子树离开 NavHost 组合）无法靠持有位置规避，
@@ -249,7 +277,7 @@ internal fun rememberTypewriterStreamingText(
      * 判定当成新一轮，把那段内容当着用户的面再逐字打一遍。
      */
     sessionKey: String? = null
-): String {
+): TypewriterText {
     // 已渲染文本的长度与前缀指纹进 saveable：切页返回后据此延续打字进度，避免已输出的
     // 正文从头重打。校验不通过（期间换过轮或换过会话）时补全为当前全文而不是从头打字：
     // 挂载这一刻才第一次看到的文本对用户就是历史，重打一遍只会让人以为模型在重复输出。
@@ -290,24 +318,29 @@ internal fun rememberTypewriterStreamingText(
         }
         lastText = text
 
-        if (!active) {
-            // 上游已结束：直接显示完整文本，交给落库消息无缝接管
-            shownCodePoints = text.codePointCount(0, text.length).toFloat()
-            commitRender(text)
-            return@LaunchedEffect
-        }
-
-        // 记录本次到达事件，裁剪速率窗口（保留最近 WINDOW 内至少 2 条）
+        // 上游结束进入收尾阶段：不再一帧补全（那正是「结束瞬间抽搐一下」的来源），
+        // 剩余那点字按恒定速率匀速打完。此时 text 不会再变，收尾期间本协程不会被打断。
+        val draining = !active
         val now = System.nanoTime()
         val codePoints = text.codePointCount(0, text.length)
-        if (lastArrivalNanos != 0L) {
-            arrivals.addLast(now to codePoints)
-            val windowNanos = TYPEWRITER_RATE_WINDOW_MS * 1_000_000L
-            while (arrivals.size > 2 && now - arrivals.first().first > windowNanos) {
-                arrivals.removeFirst()
-            }
+        // 收尾速率按「进入收尾时的剩余量」定，保证收尾时长恒定、且能精确打完（不残留小数）
+        val drainRate = if (draining) {
+            typewriterDrainRate((codePoints - shownCodePoints).coerceAtLeast(0f))
+        } else {
+            null
         }
-        lastArrivalNanos = now
+        val drainDeadlineNanos = now + TYPEWRITER_DRAIN_HARD_MS * 1_000_000L
+        if (!draining) {
+            // 记录本次到达事件，裁剪速率窗口（保留最近 WINDOW 内至少 2 条）
+            if (lastArrivalNanos != 0L) {
+                arrivals.addLast(now to codePoints)
+                val windowNanos = TYPEWRITER_RATE_WINDOW_MS * 1_000_000L
+                while (arrivals.size > 2 && now - arrivals.first().first > windowNanos) {
+                    arrivals.removeFirst()
+                }
+            }
+            lastArrivalNanos = now
+        }
 
         // 帧驱动推进显示进度，追平本次文本即退出（text 再变化时本协程被取消重启）
         var lastRenderNanos = 0L
@@ -316,23 +349,32 @@ internal fun rememberTypewriterStreamingText(
             withFrameNanos { frameNanos ->
                 if (lastFrameNanos != 0L) {
                     val dtSec = (frameNanos - lastFrameNanos) / 1_000_000_000f
-                    // 跟随项：上游速率 × 系数（滑动窗口估算）；追赶项：滞后越多追得越快
+                    // 播出阶段才需要估算上游速率：收尾阶段上游已经不动了
                     var arrivalRate = 0f
-                    val oldest = arrivals.firstOrNull()
-                    if (arrivals.size >= 2 && oldest != null) {
-                        val spanSec = (frameNanos - oldest.first) / 1_000_000_000f
-                        if (spanSec > 0f) {
-                            arrivalRate = (arrivals.last().second - oldest.second) / spanSec
+                    if (!draining) {
+                        val oldest = arrivals.firstOrNull()
+                        if (arrivals.size >= 2 && oldest != null) {
+                            val spanSec = (frameNanos - oldest.first) / 1_000_000_000f
+                            if (spanSec > 0f) {
+                                arrivalRate = (arrivals.last().second - oldest.second) / spanSec
+                            }
                         }
                     }
-                    val followRate = arrivalRate * TYPEWRITER_FOLLOW_RATIO
-                    val catchUpRate = (codePoints - shownCodePoints) * TYPEWRITER_CATCHUP_PER_SEC
-                    val rate = maxOf(followRate, catchUpRate)
-                        .coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_MAX_RATE)
+                    val rate = typewriterRate(
+                        lag = codePoints - shownCodePoints,
+                        arrivalRate = arrivalRate,
+                        drainRate = drainRate
+                    )
                     shownCodePoints = (shownCodePoints + rate * dtSec)
                         .coerceAtMost(codePoints.toFloat())
                 }
                 lastFrameNanos = frameNanos
+
+                // 收尾硬上限：极端情况（文本被整体替换、渲染跟不上）也必须在这之内追平，
+                // 否则尾巴会一直挂在未追平状态，落库消息永远等不到交棒。
+                if (draining && frameNanos >= drainDeadlineNanos) {
+                    shownCodePoints = codePoints.toFloat()
+                }
 
                 // 渲染节流：到间隔就快照当前显示进度；追平瞬间强制渲染完整文本
                 val intervalNanos = TYPEWRITER_RENDER_INTERVAL_MS * 1_000_000L
@@ -348,8 +390,46 @@ internal fun rememberTypewriterStreamingText(
         // 追平后确保渲染完整文本（while 退出时 shownCodePoints 已到 available）
         if (renderText != text) commitRender(text)
     }
-    return renderText
+    // settled 直接由「渲染文本是否已等于上游全文」给出：收尾期间调用方据此决定渲染归属
+    return TypewriterText(text = renderText, settled = renderText == text)
 }
+
+/**
+ * 打字机单帧显示速率（码点/秒）。[lag] = 上游已到字数 − 已显示字数，[arrivalRate] 为滑窗估算的
+ * 上游吐字速率，[drainRate] 非空表示上游已结束的收尾阶段（按该恒定速率匀速打完剩余）。
+ *
+ * 播出阶段取两者较大值：
+ * - 跟随项 = 上游速率 × [TYPEWRITER_FOLLOW_RATIO]（略慢于上游，保留「慢半拍」的观感）；
+ * - 追赶项 = 滞后 ÷ [TYPEWRITER_SETTLE_SECONDS]（滞后越大追得越快）。
+ *
+ * 常规上限 [TYPEWRITER_MAX_RATE] 只在滞后未超标时生效：滞后一旦超过 [TYPEWRITER_LAG_TARGET]
+ * 就放宽到 [TYPEWRITER_BURST_RATE]。这条规则是「结束时别抽搐」的关键——旧实现把速率死封在
+ * 200 字符/秒，模型吐得快或爆发式吐字时滞后只增不减（稳态约 1.8×上游速率，动辄上百字），
+ * 上游一结束整段一次跳出，看起来就是突然抽搐一下。现在滞后被压在十几字以内，
+ * 收尾阶段再按 [TYPEWRITER_DRAIN_SECONDS] 匀速把这一小段打完，不会瞬移。
+ */
+internal fun typewriterRate(lag: Float, arrivalRate: Float, drainRate: Float? = null): Float {
+    if (lag <= 0f) return 0f
+    if (drainRate != null) {
+        return drainRate.coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_BURST_RATE)
+    }
+    val followRate = arrivalRate * TYPEWRITER_FOLLOW_RATIO
+    val catchUpRate = lag / TYPEWRITER_SETTLE_SECONDS
+    val ceiling = if (lag > TYPEWRITER_LAG_TARGET) TYPEWRITER_BURST_RATE else TYPEWRITER_MAX_RATE
+    return maxOf(followRate, catchUpRate).coerceIn(TYPEWRITER_MIN_RATE, ceiling)
+}
+
+/**
+ * 收尾速率（码点/秒）：把 [lag] 个剩余码点在 [TYPEWRITER_DRAIN_SECONDS] 内匀速打完。
+ *
+ * 取「按剩余量摊到目标时长」而不是「固定倍数追赶」，保证收尾时间是常数级（约 0.2 秒）：
+ * 剩余十几字看得清是打字，剩余几百字也不会一格一格磨到用户以为卡住。
+ */
+internal fun typewriterDrainRate(lag: Float): Float =
+    (lag / TYPEWRITER_DRAIN_SECONDS).coerceIn(TYPEWRITER_MIN_RATE, TYPEWRITER_DRAIN_MAX_RATE)
+
+/** 打字机当前渲染结果：[text] 为应渲染文本（上游全文的前缀），[settled] 表示是否已追平全文。 */
+internal data class TypewriterText(val text: String, val settled: Boolean)
 
 /**
  * 模型流式吐字时的实时气泡：左对齐、与助手气泡同款。

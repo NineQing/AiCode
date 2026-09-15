@@ -79,10 +79,21 @@ data class AIResponse(
 }
 
 /**
+ * 一次 Key 切换的结果：新 Key 与其在候选列表中的序号（1 起），供 adapter 改写凭据并通知 UI。
+ */
+data class KeySwitchOutcome(val newKey: String, val newIndex: Int, val total: Int)
+
+/**
+ * 所有候选 Key 都失败时抛出。文案已包含原始失败原因，交由上层原样展示。
+ */
+class AllKeysFailedException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
  * 流式补全过程中向上游推送的分块。
  * [TextDelta] 为模型新吐出的一小段文字（增量，非累积）；
  * [Final] 在本轮结束时给出完整结果（聚合后的文字 + 工具调用），供 Agent 循环驱动后续工具执行。
  * [Retrying] 在网络重试时推送，供 UI 展示"正在重试"提示。
+ * [KeySwitched] 在多 Key 自动切换时推送，供 UI 提示本次请求已改用的 Key。
  */
 sealed class AIStreamChunk {
     data class TextDelta(val text: String) : AIStreamChunk()
@@ -91,6 +102,8 @@ sealed class AIStreamChunk {
     data class Final(val response: AIResponse) : AIStreamChunk()
     /** 网络请求正在重试。仅用于 UI 实时展示，不进入上下文回放。[error] 为触发重试的错误摘要，供 UI 展示具体原因。 */
     data class Retrying(val attempt: Int, val maxRetries: Int, val error: RetryErrorInfo) : AIStreamChunk()
+    /** 当前 Key 不可用，已自动切到第 [newIndex]/[total] 个 Key 并重发本次请求。仅用于 UI 提示。 */
+    data class KeySwitched(val newIndex: Int, val total: Int) : AIStreamChunk()
 }
 
 interface AIProvider {
@@ -119,6 +132,14 @@ interface AIProvider {
 
     /** 自定义请求头 User-Agent；留空使用默认。 */
     var userAgent: String
+
+    /**
+     * 多 Key 自动切换钩子，由工作流在装配 provider 时注入；为 null 表示不启用（如生图等旁路）。
+     * 入参为本次失败异常、当前使用的 Key、本次请求已试过的 Key 集合。返回非 null 表示已切到
+     * [KeySwitchOutcome.newKey]，adapter 应改写 [apiKey] 并重发；返回 null 表示不是「Key 不可用」
+     * 类失败或候选已用尽（用尽时实现方抛 [AllKeysFailedException]）。
+     */
+    var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)?
 
     /**
      * 本次请求允许的最大输出 token 数，来自模型元数据的输出上限（models.dev `limit.output`）。
@@ -195,6 +216,18 @@ fun fixedTemperature(modelId: String): Float? {
  * already ends with a version segment (e.g. "https://host/v1", "https://host/api/v3", "https://host/v1beta")
  * so it isn't duplicated or conflicted with "v1/".
  */
+/**
+ * 上报一次 Key 失败并切到下一个可用 Key。返回 null 表示 [keySwitcher] 未注入、判定为非 Key 故障、
+ * 或没有可切换的候选；切换成功时改写 [AIProvider.apiKey] 并把新 Key 并入 [triedKeys]。
+ */
+suspend fun AIProvider.switchKeyOnFailure(error: Throwable, triedKeys: MutableSet<String>): KeySwitchOutcome? {
+    val switcher = keySwitcher ?: return null
+    val outcome = switcher(error, apiKey, triedKeys) ?: return null
+    apiKey = outcome.newKey
+    triedKeys += outcome.newKey
+    return outcome
+}
+
 fun joinUrl(baseUrl: String, path: String): String {
     val base = baseUrl.trim().trimEnd('/')
     val cleanPath = path.trimStart('/')

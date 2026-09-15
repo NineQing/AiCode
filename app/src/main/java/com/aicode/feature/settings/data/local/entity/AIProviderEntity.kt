@@ -16,10 +16,12 @@ data class AIProviderEntity(
     val apiKeys: String = "",
     /** 多 Key 取用策略：SEQUENTIAL / ROUND_ROBIN。 */
     val keyRotationStrategy: String = "SEQUENTIAL",
-    /** 同一个 Key 连续失败多少次后切换。 */
+    /** 已废弃：「连续失败达阈值才切」的旧阈值，保留列以兼容旧数据库（SQLite 3.18 无 DROP COLUMN）。 */
     val keyFailoverThreshold: Int = 2,
     /** 被切走的 Key 冷却分钟数；0 表示不冷却。 */
     val keyCooldownMinutes: Int = 5,
+    /** 命中即触发多 Key 自动切换的 HTTP 状态码，以逗号分隔持久化；空串表示用默认值。 */
+    val keySwitchStatusCodes: String = "",
     val baseUrl: String,
     val defaultModel: String,
     /** 可用模型列表，以换行分隔持久化。 */

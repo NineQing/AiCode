@@ -88,7 +88,8 @@ class StreamApiException(
     val retryAfterMillis: Long? = null
 ) : Exception(message.ifBlank { code ?: "stream error" })
 
-// 对齐 Codex CLI is_retryable()：这些错误码明确不可重试
+// 对齐 Codex CLI is_retryable()：这些错误码明确不可重试。
+// 限流与额度类在此列，是因为它们应直接交给多 Key 自动切换，而不是在同一 Key 上退避重试。
 private val NON_RETRYABLE_STREAM_CODES = setOf(
     "cyber_policy",
     "invalid_request_error",
@@ -97,6 +98,9 @@ private val NON_RETRYABLE_STREAM_CODES = setOf(
     "quota_exceeded",
     "usage_not_included",
     "usage_limit_reached",
+    "insufficient_quota",
+    "rate_limit_exceeded",
+    "rate_limit_error",
     "invalid_image_request"
 )
 
@@ -104,8 +108,8 @@ private val NON_RETRYABLE_STREAM_CODES = setOf(
  * 对应 opencode 的 isTransientError，并兼容 Android 的网络异常类型。
  *
  * 除传统的 IOException 判定外，还支持 HTTP 状态码感知：
- * - 429（速率限制）、408（请求超时）→ 可重试
- * - 5xx（500/502/503/504 等）→ 可重试（服务端瞬时故障）
+ * - 408（请求超时）、5xx（500/502/503/504 等）→ 可重试（服务端瞬时故障）
+ * - 429（限流）→ 不重试，交给多 Key 自动切换（换 Key 比等待更有效）
  * - 其他 4xx → 不重试（客户端错误，重试无意义）
  */
 fun isRetriableNetworkError(t: Throwable): Boolean {
@@ -122,10 +126,10 @@ fun isRetriableNetworkError(t: Throwable): Boolean {
         return true
     }
 
-    // HTTP 状态码感知：429/408/5xx 视为瞬时故障可重试
+    // HTTP 状态码感知：408/5xx 视为瞬时故障可重试；429 归多 Key 切换
     if (t is HttpException) {
         val code = t.code()
-        return code == 429 || code == 408 || code >= 500
+        return code == 408 || code >= 500
     }
 
     val message = t.message?.lowercase() ?: t.toString().lowercase()
@@ -260,10 +264,14 @@ private const val MAX_RETRY_AFTER_MILLIS = 60_000L
 /**
  * 在指数退避下重试 [block]（保持原方法名），用于非流式请求。
  *
+ * @param onKeyFailure 多 Key 切换回调：在判定为「不可重试」的失败时先调用，入参为
+ *        (触发失败, 是否允许重发)。返回 true 表示调用方已切 Key、可重置重试计数并重发；
+ *        返回 false 则抛出原异常。网络类失败（408/5xx/超时等）不会触发该回调。
  * @param onRetry 重试前回调，参数为 (当前重试次数, 最大重试次数)；用于通知上层"正在重试"。
  *                置于 [block] 之前以保证 `retryStaircase { ... }` 的 trailing lambda 仍绑定到 [block]。
  */
 suspend fun <T> retryStaircase(
+    onKeyFailure: (suspend (Throwable, Boolean) -> Boolean)? = null,
     onRetry: (suspend (attempt: Int, maxRetries: Int, error: RetryErrorInfo) -> Unit)? = null,
     block: suspend () -> T
 ): T {
@@ -275,7 +283,14 @@ suspend fun <T> retryStaircase(
             throw e
         } catch (e: Throwable) {
             coroutineContext.ensureActive()
-            if (attempt >= MAX_NETWORK_RETRIES || !isRetriableNetworkError(e)) throw e
+            if (!isRetriableNetworkError(e)) {
+                if (onKeyFailure?.invoke(e, true) == true) {
+                    attempt = 0
+                    continue
+                }
+                throw e
+            }
+            if (attempt >= MAX_NETWORK_RETRIES) throw e
             val wait = retryDelayMillis(attempt, e)
             FileLogger.w(TAG, "网络请求失败，第 ${attempt + 1}/$MAX_NETWORK_RETRIES 次重试（等待 ${wait}ms）: ${e.javaClass.simpleName} ${e.message}")
             onRetry?.invoke(attempt + 1, MAX_NETWORK_RETRIES, e.toRetryErrorInfo())
@@ -288,6 +303,9 @@ suspend fun <T> retryStaircase(
 /**
  * 流式请求的重试封装（保持原方法名）。
  *
+ * @param onKeyFailure 多 Key 切换回调：在判定为「不可重试」的失败时先调用，入参为
+ *        (触发失败, 是否允许重发)。仅当本次尝试尚未收到任何内容时才会传入允许重发；
+ *        已吐字时仍可能切换（供后续请求用新 Key）但不会重发，避免用户看到重复内容。
  * @param onRetry 重试前回调，参数为 (当前重试次数, 最大重试次数)；用于通知上层"正在重试"。
  *                回调在 delay 之前调用，确保 UI 能立即展示重试状态。声明为 suspend 以便
  *                调用方在其中通过 Flow 的 emit() 推送重试事件。
@@ -296,6 +314,7 @@ suspend fun <T> retryStaircase(
  *                  否则同一次请求内多次抖动会显示 1,2,3,4,5… 持续累加而不重新计数。
  */
 suspend fun streamWithStaircaseRetry(
+    onKeyFailure: (suspend (Throwable, Boolean) -> Boolean)? = null,
     attemptOnce: suspend (onContent: () -> Unit) -> Unit,
     onRetry: (suspend (attempt: Int, maxRetries: Int, error: RetryErrorInfo) -> Unit)? = null
 ) {
@@ -311,7 +330,14 @@ suspend fun streamWithStaircaseRetry(
             coroutineContext.ensureActive()
             // 本次尝试已成功收到过内容：视为新一轮请求，重置重试计数
             if (receivedContent) attempt = 0
-            if (attempt >= MAX_NETWORK_RETRIES || !isRetriableNetworkError(e)) throw e
+            if (!isRetriableNetworkError(e)) {
+                if (onKeyFailure?.invoke(e, !receivedContent) == true) {
+                    attempt = 0
+                    continue
+                }
+                throw e
+            }
+            if (attempt >= MAX_NETWORK_RETRIES) throw e
             val wait = retryDelayMillis(attempt, e)
             FileLogger.w(TAG, "流式请求失败，第 ${attempt + 1}/$MAX_NETWORK_RETRIES 次重试（等待 ${wait}ms）: ${e.javaClass.simpleName} ${e.message}")
             onRetry?.invoke(attempt + 1, MAX_NETWORK_RETRIES, e.toRetryErrorInfo())

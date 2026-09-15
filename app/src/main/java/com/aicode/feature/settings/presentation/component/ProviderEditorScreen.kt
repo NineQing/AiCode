@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -172,8 +173,10 @@ fun ProviderEditorScreen(
     var multiKeyEnabled by remember { mutableStateOf(initialProvider?.multiKeyEnabled ?: false) }
     val apiKeys = remember { mutableStateListOf<String>().apply { addAll(initialProvider?.apiKeys ?: emptyList()) } }
     var keyRotationStrategy by remember { mutableStateOf(initialProvider?.keyRotationStrategy ?: KeyRotationStrategy.SEQUENTIAL) }
-    var keyFailoverThreshold by remember { mutableIntStateOf(initialProvider?.keyFailoverThreshold ?: 2) }
     var keyCooldownMinutes by remember { mutableIntStateOf(initialProvider?.keyCooldownMinutes ?: 5) }
+    var keySwitchStatusCodes by remember {
+        mutableStateOf(initialProvider?.keySwitchStatusCodes?.joinToString(",") ?: "")
+    }
     var baseUrl by remember { mutableStateOf(initialProvider?.baseUrl ?: "") }
     var useFullUrl by remember { mutableStateOf(initialProvider?.useFullUrl ?: false) }
     var useResponseApi by remember { mutableStateOf(initialProvider?.useResponseApi ?: false) }
@@ -253,8 +256,8 @@ fun ProviderEditorScreen(
         multiKeyEnabled = multiKeyEnabled,
         apiKeys = apiKeys.toList(),
         keyRotationStrategy = keyRotationStrategy,
-        keyFailoverThreshold = keyFailoverThreshold,
         keyCooldownMinutes = keyCooldownMinutes,
+        keySwitchStatusCodes = keySwitchStatusCodes.split(",").mapNotNull { it.trim().toIntOrNull() },
         baseUrl = baseUrl.ifBlank { defaultProviderBaseUrl(type) },
         useFullUrl = useFullUrl,
         isEnabled = isEnabled,
@@ -806,12 +809,12 @@ fun ProviderEditorScreen(
         ProviderKeysPage(
             keys = apiKeys,
             strategy = keyRotationStrategy,
-            failoverThreshold = keyFailoverThreshold,
             cooldownMinutes = keyCooldownMinutes,
+            switchStatusCodes = keySwitchStatusCodes,
             onBack = { showKeysPage = false },
             onSetStrategy = { keyRotationStrategy = it },
-            onSetFailoverThreshold = { keyFailoverThreshold = it },
-            onSetCooldownMinutes = { keyCooldownMinutes = it }
+            onSetCooldownMinutes = { keyCooldownMinutes = it },
+            onSetSwitchStatusCodes = { keySwitchStatusCodes = it }
         )
     }
 
@@ -1590,7 +1593,7 @@ private fun keyRotationStrategyLabel(strategy: KeyRotationStrategy): String = st
 )
 
 /**
- * 多 Key 管理子页：Key 列表增删 + 取用策略 + 失败切换阈值 + 冷却时长。
+ * 多 Key 管理子页：Key 列表增删 + 取用策略 + 切换状态码 + 冷却时长。
  * 与代理页同一模式——就地渲染的内嵌页，改动写回编辑器状态，随提供商一起保存。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1598,12 +1601,12 @@ private fun keyRotationStrategyLabel(strategy: KeyRotationStrategy): String = st
 private fun ProviderKeysPage(
     keys: MutableList<String>,
     strategy: KeyRotationStrategy,
-    failoverThreshold: Int,
     cooldownMinutes: Int,
+    switchStatusCodes: String,
     onBack: () -> Unit,
     onSetStrategy: (KeyRotationStrategy) -> Unit,
-    onSetFailoverThreshold: (Int) -> Unit,
-    onSetCooldownMinutes: (Int) -> Unit
+    onSetCooldownMinutes: (Int) -> Unit,
+    onSetSwitchStatusCodes: (String) -> Unit
 ) {
     var keysVisible by remember { mutableStateOf(false) }
     Scaffold(
@@ -1640,6 +1643,7 @@ private fun ProviderKeysPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl),
@@ -1710,12 +1714,11 @@ private fun ProviderKeysPage(
 
             SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_failover))
             SettingsGroup {
-                StepperRow(
-                    title = stringResource(R.string.provider_multi_key_threshold),
-                    subtitle = stringResource(R.string.provider_multi_key_threshold_desc),
-                    valueText = stringResource(R.string.provider_multi_key_threshold_value, failoverThreshold),
-                    onDecrease = { onSetFailoverThreshold((failoverThreshold - 1).coerceAtLeast(1)) },
-                    onIncrease = { onSetFailoverThreshold((failoverThreshold + 1).coerceAtMost(10)) }
+                ProviderTextFieldRow(
+                    label = stringResource(R.string.provider_multi_key_status_codes),
+                    value = switchStatusCodes,
+                    onValueChange = { input -> onSetSwitchStatusCodes(input.filter { it.isDigit() || it == ',' }) },
+                    placeholder = stringResource(R.string.provider_multi_key_status_codes_hint)
                 )
                 SettingsDivider()
                 StepperRow(

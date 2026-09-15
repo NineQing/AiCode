@@ -60,6 +60,7 @@ import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Clock
+import compose.icons.feathericons.Key
 import compose.icons.feathericons.Star
 import kotlinx.coroutines.delay
 
@@ -155,6 +156,40 @@ internal fun RetryingBubble(attempt: Int, maxRetries: Int, error: RetryErrorInfo
                     )
                     TypingDots(color = MaterialTheme.colorScheme.primary)
                 }
+            }
+        }
+    }
+}
+
+/** 多 Key 自动切换期间的临时提示，不落库。展示当前 Key 不可用、已改用第 N/M 个 Key 重发。 */
+@Composable
+internal fun KeySwitchedBubble(newIndex: Int, total: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Surface(
+            shape = RoundedCornerShape(Radius.md, Radius.md, Radius.md, Radius.xs),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                Icon(
+                    FeatherIcons.Key,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = stringResource(R.string.chat_key_switched, newIndex, total),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                TypingDots(color = MaterialTheme.colorScheme.primary)
             }
         }
     }

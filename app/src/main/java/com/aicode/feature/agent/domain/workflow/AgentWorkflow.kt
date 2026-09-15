@@ -52,6 +52,9 @@ sealed class AgentEvent {
     /** 网络请求正在重试（首字节前失败触发自动重试）。仅用于 UI 实时展示，不落库。[error] 为触发重试的错误摘要。 */
     data class Retrying(val attempt: Int, val maxRetries: Int, val error: RetryErrorInfo) : AgentEvent()
 
+    /** 多 Key 自动切换：当前 Key 不可用，已改用第 [newIndex]/[total] 个 Key 重发本次请求。仅用于 UI 实时展示，不落库。 */
+    data class KeySwitched(val newIndex: Int, val total: Int) : AgentEvent()
+
     /** 正在进行上下文压缩。仅用于 UI 实时展示，不落库。 */
     data class CompactionStarted(val estimatedTokens: Int) : AgentEvent()
 

@@ -572,6 +572,19 @@ class AIAgentViewModel @Inject constructor(
         _retryStates.value = if (state == null) _retryStates.value - sessionId else _retryStates.value + (sessionId to state)
     }
 
+    /** 按 sessionId 维护的多 Key 切换提示；重新出内容或本轮结束时置 null。 */
+    private val _keySwitchStates = MutableStateFlow<Map<String, KeySwitchState?>>(emptyMap())
+    val keySwitchState: StateFlow<KeySwitchState?> = _currentSessionId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(null)
+            else _keySwitchStates.map { it[id] }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private fun setKeySwitchState(sessionId: String, state: KeySwitchState?) {
+        _keySwitchStates.value = if (state == null) _keySwitchStates.value - sessionId else _keySwitchStates.value + (sessionId to state)
+    }
+
     val pendingToolPermission = toolPermissionManager.pendingRequest
 
     /** 当前展示的授权弹窗所属会话标题（多会话并行时供弹窗标注归属）。会话不存在时回退空串。 */
@@ -1094,10 +1107,12 @@ class AIAgentViewModel @Inject constructor(
                 when (event) {
                     is AgentEvent.AssistantDelta -> {
                         setRetryState(sessionId, null)
+                        setKeySwitchState(sessionId, null)
                         setStreamingText(sessionId, event.accumulated)
                     }
                     is AgentEvent.ReasoningDelta -> {
                         setRetryState(sessionId, null)
+                        setKeySwitchState(sessionId, null)
                         setStreamingReasoning(sessionId, event.accumulated)
                     }
                     is AgentEvent.Retrying -> {
@@ -1106,9 +1121,16 @@ class AIAgentViewModel @Inject constructor(
                         // 否则重连后思维链重新生成而旧正文残留（workflow 已同步清空累积器）。
                         setStreamingText(sessionId, null)
                         setStreamingReasoning(sessionId, null)
+                        setKeySwitchState(sessionId, null)
+                    }
+                    is AgentEvent.KeySwitched -> {
+                        setKeySwitchState(sessionId, KeySwitchState(event.newIndex, event.total))
+                        setStreamingText(sessionId, null)
+                        setStreamingReasoning(sessionId, null)
                     }
                     is AgentEvent.CompactionStarted -> {
                         setRetryState(sessionId, null)
+                        setKeySwitchState(sessionId, null)
                         setStreamingText(sessionId, null)
                         setStreamingReasoning(sessionId, null)
                         setCompacting(sessionId, true)
@@ -1217,6 +1239,7 @@ class AIAgentViewModel @Inject constructor(
                     }
                     AgentEvent.Completed -> {
                         setRetryState(sessionId, null)
+                        setKeySwitchState(sessionId, null)
                         setCompacting(sessionId, false)
                         // 子代理会话完成时通知父会话（异步回调）
                         if (isSub) {
@@ -1277,6 +1300,7 @@ class AIAgentViewModel @Inject constructor(
             setStreamingReasoning(sessionId, null)
             setCompacting(sessionId, false)
             setRetryState(sessionId, null)
+            setKeySwitchState(sessionId, null)
 
             // 本轮未能搭车送达的后台通知：本轮结束且 job 已移除后，合并成一条发送
             flushPendingNotifications(sessionId)

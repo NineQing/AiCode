@@ -474,6 +474,7 @@
     <string name="chat_compaction_failed">Context compaction failed</string>
     <string name="chat_compressing_context">Compressing context</string>
     <string name="chat_retrying">Retrying %1$s/%2$s</string>
+    <string name="chat_key_switched">Switched to key %1$d of %2$d</string>
     <string name="chat_error_title">Request failed</string>
     <string name="retry_error_rate_limit">Rate limit</string>
     <string name="retry_error_server_overloaded">Server overloaded</string>
@@ -1191,7 +1192,7 @@
     <string name="proxy_test_invalid_config">Enter a valid server address and port (1-65535) first</string>
     <string name="provider_proxy_off">Off</string>
     <string name="provider_multi_key_title">Multi-Key Mode</string>
-    <string name="provider_multi_key_subtitle">Use several keys for one provider and switch automatically on rate limits or quota exhaustion</string>
+    <string name="provider_multi_key_subtitle">Use several keys for one provider and switch automatically when a key stops working</string>
     <string name="provider_multi_key_manage">Manage Keys</string>
     <string name="provider_multi_key_summary">%1$d keys · %2$s</string>
     <string name="provider_multi_key_list">Key List</string>
@@ -1205,9 +1206,8 @@
     <string name="provider_multi_key_strategy_round_robin">Round Robin</string>
     <string name="provider_multi_key_strategy_round_robin_desc">New sessions start on rotating keys to spread quota; a session keeps its key so prompt cache still hits</string>
     <string name="provider_multi_key_failover">Failover</string>
-    <string name="provider_multi_key_threshold">Switch Threshold</string>
-    <string name="provider_multi_key_threshold_desc">Consecutive failures on one key before switching (only auth, rate limit and quota errors count)</string>
-    <string name="provider_multi_key_threshold_value">%1$d</string>
+    <string name="provider_multi_key_status_codes">Auto-Switch Status Codes</string>
+    <string name="provider_multi_key_status_codes_hint">Comma-separated; leave empty for default 401,402,403,429</string>
     <string name="provider_multi_key_cooldown">Cooldown</string>
     <string name="provider_multi_key_cooldown_desc">How long a switched-away key stays out of the pool</string>
     <string name="provider_multi_key_cooldown_value">%1$d min</string>

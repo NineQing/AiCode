@@ -35,6 +35,7 @@ class OpenAIAdapter @Inject constructor(
 ) : AIProvider {
 
     override var apiKey = ""
+    override var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? = null
     override var baseUrl = "https://api.openai.com/"
     override var useFullUrl = false
     override var useResponseApi = false
@@ -110,8 +111,11 @@ class OpenAIAdapter @Inject constructor(
         )
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createChatCompletion(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -197,8 +201,11 @@ class OpenAIAdapter @Inject constructor(
         val request = buildResponsesRequest(systemPrompt, messages, tools, reasoningEffort, stream = false)
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createResponses(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -273,7 +280,15 @@ class OpenAIAdapter @Inject constructor(
 
         // 流式请求整体可重试；重试前上层会收到 Retrying 事件并清空已展示文本。
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
             // tool_call index -> 累积中的工具调用（保序）。
@@ -426,7 +441,15 @@ class OpenAIAdapter @Inject constructor(
         // 累积原始 SSE，整轮结束（或失败）后整体落盘，避免高频写盘。
         val rawSse = StringBuilder()
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
                     val acc = ResponsesStreamAccumulator()
 

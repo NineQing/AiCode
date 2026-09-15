@@ -62,6 +62,25 @@ class RetryPolicyTest {
     }
 
     @Test
+    fun retriable_network_error_classification() {
+        // 429 归多 Key 切换，不再走网络重试
+        assertEquals(false, isRetriableNetworkError(httpError(429)))
+        // 408 与 5xx 仍视为瞬时故障
+        assertEquals(true, isRetriableNetworkError(httpError(408)))
+        assertEquals(true, isRetriableNetworkError(httpError(500)))
+        assertEquals(true, isRetriableNetworkError(httpError(503)))
+        // 鉴权/权限/计费类由多 Key 切换处理，不重试
+        assertEquals(false, isRetriableNetworkError(httpError(401)))
+        assertEquals(false, isRetriableNetworkError(httpError(402)))
+        assertEquals(false, isRetriableNetworkError(httpError(403)))
+        // 流内限流/额度码同样直接交给多 Key 切换
+        assertEquals(false, isRetriableNetworkError(StreamApiException("rate_limit_exceeded", "m")))
+        assertEquals(false, isRetriableNetworkError(StreamApiException("insufficient_quota", "m")))
+        // 流内服务端故障仍可重试
+        assertEquals(true, isRetriableNetworkError(StreamApiException("server_is_overloaded", "m")))
+    }
+
+    @Test
     fun status_code_null_for_non_http_errors() {
         assertNull(SocketTimeoutException().toRetryErrorInfo().statusCode)
         assertNull(IOException().toRetryErrorInfo().statusCode)

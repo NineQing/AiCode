@@ -93,7 +93,7 @@ import kotlinx.coroutines.launch
  * 缓存 content 子组合——流式期间 targetState 一直不变，文本增长时不会重新调用 content，
  * 导致 [StreamingBubble] 收不到后续文本、停在首句。故改用枚举 + 直接 [when] 分发。
  */
-private enum class TailKind { THINKING, STREAMING, COMPACTING, RETRYING, NONE }
+private enum class TailKind { THINKING, STREAMING, COMPACTING, RETRYING, KEY_SWITCHED, NONE }
 
 /** 悬浮层（横幅/面板/输入框）与最后一条消息的间距。 */
 private val FLOATING_LAYER_GAP_DP = 8.dp
@@ -268,6 +268,7 @@ fun AIChatPanel(
     val runningTool by viewModel.runningTool.collectAsStateWithLifecycle()
     val isCompacting by viewModel.isCompacting.collectAsStateWithLifecycle()
     val retryState by viewModel.retryState.collectAsStateWithLifecycle()
+    val keySwitchState by viewModel.keySwitchState.collectAsStateWithLifecycle()
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val streamingReasoning by viewModel.streamingReasoning.collectAsStateWithLifecycle()
     val pendingPermission by viewModel.pendingToolPermission.collectAsStateWithLifecycle()
@@ -1013,9 +1014,11 @@ fun AIChatPanel(
                         val showStreaming = streaming != null && streaming.hasVisibleContent()
                         val showThinking = !showReasoning && !showStreaming && !isCompacting && isBusy && runningTool.isEmpty() && pendingPermission == null && pendingQuestion == null
                         val showRetrying = retryState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
+                        val showKeySwitched = keySwitchState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
                         val tailKind = when {
                             showStreaming -> TailKind.STREAMING
                             isCompacting -> TailKind.COMPACTING
+                            showKeySwitched -> TailKind.KEY_SWITCHED
                             showRetrying -> TailKind.RETRYING
                             showThinking -> TailKind.THINKING
                             else -> TailKind.NONE
@@ -1038,6 +1041,10 @@ fun AIChatPanel(
                                     TailKind.RETRYING -> {
                                         val rs = retryState
                                         if (rs != null) RetryingBubble(rs.attempt, rs.maxRetries, rs.error) else Box(Modifier)
+                                    }
+                                    TailKind.KEY_SWITCHED -> {
+                                        val ks = keySwitchState
+                                        if (ks != null) KeySwitchedBubble(ks.newIndex, ks.total) else Box(Modifier)
                                     }
                                     TailKind.NONE -> Box(Modifier)
                                 }

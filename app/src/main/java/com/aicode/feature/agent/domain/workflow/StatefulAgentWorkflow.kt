@@ -44,7 +44,9 @@ import com.aicode.feature.agent.data.local.entity.LlmCallRecordEntity
 import com.aicode.feature.agent.domain.provider.AnthropicAdapter
 import com.aicode.feature.agent.domain.provider.fixedTemperature
 import com.aicode.feature.agent.domain.provider.GeminiAdapter
-import com.aicode.feature.agent.domain.provider.isApiKeyFailure
+import com.aicode.feature.agent.domain.provider.AllKeysFailedException
+import com.aicode.feature.agent.domain.provider.KeySwitchOutcome
+import com.aicode.feature.agent.domain.provider.isKeySwitchFailure
 import com.aicode.feature.agent.domain.provider.OpenAIAdapter
 import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.domain.repository.AIProviderRepository
@@ -245,8 +247,31 @@ class StatefulAgentWorkflow @Inject constructor(
                 it.chatCacheKeyEnabled = config.openaiChatCacheKey
             }
         }
-        // 多 Key 模式下由轮换器决定本次用哪个 Key（会话内粘住，失败达阈值才切）。
-        provider.apiKey = keyRotator.activeKey(config, sessionId) ?: config.apiKey
+        // 多 Key 模式下由轮换器决定本次用哪个 Key（会话内粘住，Key 不可用时切下一个并重发）。
+        val activeKeys = config.effectiveApiKeys
+        provider.apiKey = keyRotator.activeKey(config, sessionId)
+            ?: throw IllegalStateException("「${config.name}」的 Key 均在冷却中，请稍后重试")
+        // 只有真正的多 Key 才需要自动切换：单 Key 冷却后没有可切换目标，只会把用户锁死一段时间。
+        val keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? =
+            if (activeKeys.size > 1) {
+                { error, failedKey, triedKeys ->
+                    if (!error.isKeySwitchFailure(config.effectiveKeySwitchStatusCodes)) {
+                        null
+                    } else {
+                        val switched = keyRotator.reportFailure(config.id, sessionId, failedKey, triedKeys)
+                        if (switched == null) {
+                            throw AllKeysFailedException(
+                                "「${config.name}」的 ${activeKeys.size} 个 Key 均失败：${error.message ?: error.javaClass.simpleName}",
+                                error
+                            )
+                        }
+                        KeySwitchOutcome(switched.newKey, switched.newIndex, switched.total)
+                    }
+                }
+            } else {
+                null
+            }
+        provider.keySwitcher = keySwitcher
         provider.baseUrl = config.baseUrl
         provider.model = config.effectiveModel
         provider.useFullUrl = config.useFullUrl
@@ -533,6 +558,15 @@ class StatefulAgentWorkflow @Inject constructor(
                                         lastReasoningDeltaSentAt = 0L
                                         send(AgentEvent.Retrying(chunk.attempt, chunk.maxRetries, chunk.error))
                                     }
+                                    is AIStreamChunk.KeySwitched -> {
+                                        acc.setLength(0)
+                                        reasoningAcc.setLength(0)
+                                        pendingTextDelta = null
+                                        pendingReasoningDelta = null
+                                        lastTextDeltaSentAt = 0L
+                                        lastReasoningDeltaSentAt = 0L
+                                        send(AgentEvent.KeySwitched(chunk.newIndex, chunk.total))
+                                    }
                                     is AIStreamChunk.Final -> {
                                         // 纯工具调用轮没有文本/思考增量，Final 是首个内容事件，兜底记为 TTFB
                                         if (ttfbElapsed == null) ttfbElapsed = SystemClock.elapsedRealtime() - callStartElapsed
@@ -545,7 +579,6 @@ class StatefulAgentWorkflow @Inject constructor(
                             flushPendingReasoningDelta()
                             val aiResponse = finalResponse ?: AIResponse(content = acc.toString())
                             callCompleted = true
-                            keyRotator.reportSuccess(providerInUse.providerId, providerInUse.apiKey)
                             // 将本轮 reasoning 附加到 AIResponse，以便 reduce 时存入 AssistantMessage 并在下一轮回传
                             val responseWithReasoning = if (reasoningAcc.isNotEmpty()) {
                                 aiResponse.copy(reasoning = reasoningAcc.toString())
@@ -566,19 +599,9 @@ class StatefulAgentWorkflow @Inject constructor(
                             if (partial.isNotEmpty() || reasoning.isNotBlank()) {
                                 send(AgentEvent.AssistantText(partial, emptyList(), reasoning))
                             }
-                            // 多 Key：仅鉴权/限流/配额类失败计数，达阈值则切到下一个 Key，
-                            // 并把切换结果拼进错误文案——用户看到的就是这条报错，不必再开新的 UI 通道。
-                            var errorText = "LLM 调用失败: ${e.message}"
-                            if (e.isApiKeyFailure()) {
-                                val switched = keyRotator.reportFailure(
-                                    providerInUse.providerId,
-                                    currentContext.sessionId,
-                                    providerInUse.apiKey
-                                )
-                                if (switched != null) {
-                                    errorText += "（已切换到第 ${switched.newIndex}/${switched.total} 个 Key，可重试）"
-                                }
-                            }
+                            // 多 Key 的自动切换与重发已在 adapter 内完成（见 AIProvider.keySwitcher）；
+                            // 走到这里说明不是 Key 问题、或候选 Key 已全部失败，直接上报原始错误。
+                            val errorText = "LLM 调用失败: ${e.message}"
                             actionQueue.addLast(AgentAction.LlmError(errorText))
                             callError = e.message ?: e.javaClass.simpleName
                         } finally {

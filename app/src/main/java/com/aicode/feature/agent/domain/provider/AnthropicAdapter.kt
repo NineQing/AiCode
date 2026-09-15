@@ -36,6 +36,7 @@ class AnthropicAdapter @Inject constructor(
 ) : AIProvider {
 
     override var apiKey = ""
+    override var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? = null
     override var baseUrl = "https://api.anthropic.com/"
     override var useFullUrl = false
     override var useResponseApi = false
@@ -90,8 +91,11 @@ class AnthropicAdapter @Inject constructor(
         )
         val seq = AILogger.logRequest(logSessionId, "Anthropic", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createMessage(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -169,8 +173,16 @@ class AnthropicAdapter @Inject constructor(
         val rawSse = StringBuilder()
 
         // 流式请求整体可重试；重试前上层会收到 Retrying 事件并清空已展示文本。
+        val triedKeys = mutableSetOf(apiKey)
         try {
             streamWithStaircaseRetry(
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
             // content block index -> 累积中的 tool_use（仅 tool_use 块建条目，保序）。

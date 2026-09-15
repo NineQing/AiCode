@@ -93,6 +93,8 @@ class AIProviderRepositoryImpl @Inject constructor(
                 .getOrDefault(KeyRotationStrategy.SEQUENTIAL),
             keyFailoverThreshold = keyFailoverThreshold,
             keyCooldownMinutes = keyCooldownMinutes,
+            keySwitchStatusCodes = keySwitchStatusCodes
+                .split(",").mapNotNull { it.trim().toIntOrNull() }.distinct(),
             baseUrl = baseUrl,
             defaultModel = defaultModel,
             models = modelList,
@@ -126,6 +128,7 @@ class AIProviderRepositoryImpl @Inject constructor(
             keyRotationStrategy = keyRotationStrategy.name,
             keyFailoverThreshold = keyFailoverThreshold,
             keyCooldownMinutes = keyCooldownMinutes,
+            keySwitchStatusCodes = keySwitchStatusCodes.joinToString(","),
             baseUrl = baseUrl,
             useFullUrl = useFullUrl,
             defaultModel = defaultModel,

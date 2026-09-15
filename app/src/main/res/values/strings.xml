@@ -240,6 +240,7 @@
     <string name="chat_attachment_uploaded">已上传 %1$s 个附件</string>
     <string name="chat_attachment_uploaded_partial">已上传 %1$s 个附件，部分附件未加入</string>
     <string name="chat_image_too_large">图片超过 %1$s，请压缩后重试</string>
+    <string name="chat_attachment_uploading">正在上传 %1$d 个文件…</string>
     <string name="chat_uploaded_to">已上传到 %1$s</string>
     <string name="chat_select_workspace_first">请先选择工作区</string>
     <string name="chat_read_file_failed">无法读取所选文件</string>

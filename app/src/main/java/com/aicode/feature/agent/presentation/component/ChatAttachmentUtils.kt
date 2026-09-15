@@ -177,36 +177,48 @@ internal suspend fun copyUriToWorkspace(
     val fileName = uniqueUploadName(fileAccess, attachmentsDir, safeUploadFileName(context, uri))
     val containerPath = "$attachmentsDir/$fileName"
 
-    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: error(unreadableFileMessage(context))
-
     val mimeType = if (includeImageData) {
         imageMimeType(context, uri, fileName)
     } else {
         fileMimeType(context, uri, fileName)
     }
-    if (includeImageData && bytes.size > MAX_IMAGE_UPLOAD_BYTES) error(imageLimitError(context))
 
-    // 写入工作区：本地模式落到宿主目录，远程模式经 SSH 落到远程工作区，AI 才能按容器路径读到
-    fileAccess.writeBytes(containerPath, bytes, overwrite = true)
-    // 缩略图与图片数据需要本地文件：本地模式直接给宿主文件，远程模式下载到临时文件
-    val localFile = fileAccess.copyToLocal(containerPath)
+    // 图片要整份读进来做 base64，先按 provider 报的大小拦一道；SIZE 拿不到时下面还有兜底判断。
+    if (includeImageData) {
+        val declared = context.contentSize(uri)
+        if (declared != null && declared > MAX_IMAGE_UPLOAD_BYTES) error(imageLimitError(context))
+    }
 
-    val image = if (includeImageData) {
-        AgentImage(
+    val sizeBytes: Long
+    val image: AgentImage?
+    if (includeImageData) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error(unreadableFileMessage(context))
+        if (bytes.size > MAX_IMAGE_UPLOAD_BYTES) error(imageLimitError(context))
+        fileAccess.writeBytes(containerPath, bytes, overwrite = true)
+        sizeBytes = bytes.size.toLong()
+        image = AgentImage(
             mimeType = mimeType,
             base64Data = Base64.getEncoder().encodeToString(bytes),
             path = containerPath
         )
     } else {
-        null
+        // 普通附件流式落盘：不再整份读进内存，于是文件多大都不会顶爆堆
+        sizeBytes = context.contentResolver.openInputStream(uri)?.use { input ->
+            fileAccess.writeStream(containerPath, input, overwrite = true)
+        } ?: error(unreadableFileMessage(context))
+        image = null
     }
+
+    // 缩略图与图片数据需要本地文件：本地模式直接给宿主文件，远程模式下载到临时文件
+    val localFile = fileAccess.copyToLocal(containerPath)
+
     UploadedWorkspaceFile(
         fileName = fileName,
         containerPath = containerPath,
         localPath = localFile.absolutePath,
         mimeType = mimeType,
-        sizeBytes = bytes.size.toLong(),
+        sizeBytes = sizeBytes,
         image = image
     )
 }
@@ -216,6 +228,13 @@ private fun Context.displayName(uri: Uri): String {
         val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
         if (index >= 0 && cursor.moveToFirst()) cursor.getString(index).orEmpty() else ""
     }.orEmpty()
+}
+
+private fun Context.contentSize(uri: Uri): Long? {
+    return contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+        if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) cursor.getLong(index) else null
+    }
 }
 
 private fun sanitizeUploadFileName(name: String): String {

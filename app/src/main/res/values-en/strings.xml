@@ -240,6 +240,7 @@
     <string name="chat_attachment_uploaded">%1$s attachments uploaded</string>
     <string name="chat_attachment_uploaded_partial">%1$s attachments uploaded, some were not added</string>
     <string name="chat_image_too_large">Image exceeds %1$s, please compress and retry</string>
+    <string name="chat_attachment_uploading">Uploading %1$d files…</string>
     <string name="chat_uploaded_to">Uploaded to %1$s</string>
     <string name="chat_select_workspace_first">Please select a workspace first</string>
     <string name="chat_read_file_failed">Cannot read the selected file</string>

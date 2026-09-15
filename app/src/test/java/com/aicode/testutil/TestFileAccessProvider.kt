@@ -4,6 +4,7 @@ import com.aicode.feature.workspace.domain.FileAccessProvider
 import com.aicode.feature.workspace.domain.FileEntry
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.NoSuchFileException
 
@@ -71,6 +72,13 @@ class TestFileAccessProvider : FileAccessProvider {
         if (file.exists() && !overwrite) throw FileAlreadyExistsException(file)
         file.parentFile?.mkdirs()
         FileOutputStream(file).use { it.write(bytes) }
+    }
+
+    override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long {
+        val file = File(path)
+        if (file.exists() && !overwrite) throw FileAlreadyExistsException(file)
+        file.parentFile?.mkdirs()
+        return FileOutputStream(file).use { out -> input.copyTo(out) }
     }
 
     override fun copyToLocal(path: String): File = File(path)

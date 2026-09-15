@@ -311,6 +311,7 @@ fun AIChatPanel(
         if (inputText != inputDraft) inputText = inputDraft
     }
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
+    var uploadingCount by remember { mutableStateOf(0) }
     var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
     val listState = rememberLazyListState()
@@ -500,17 +501,21 @@ fun AIChatPanel(
         scope.launch {
             var successCount = 0
             val failures = mutableListOf<String>()
-            selected.forEach { uri ->
-                runCatching {
-                    copyUriToWorkspace(context, uri, viewModel.fileAccess, includeImageData = images)
-                }.onSuccess { uploaded ->
-                    pendingAttachments = pendingAttachments + uploaded.toPendingAttachment()
-                    successCount += 1
-                }.onFailure { error ->
-                    failures += (error.message ?: uploadFallbackError(context))
+            uploadingCount = selected.size
+            try {
+                selected.forEach { uri ->
+                    runCatching {
+                        copyUriToWorkspace(context, uri, viewModel.fileAccess, includeImageData = images)
+                    }.onSuccess { uploaded ->
+                        pendingAttachments = pendingAttachments + uploaded.toPendingAttachment()
+                        successCount += 1
+                    }.onFailure { error ->
+                        failures += (error.message ?: uploadFallbackError(context))
+                    }
                 }
+            } finally {
+                uploadingCount = 0
             }
-
             // 结果提示：全失败展示首个错误；有文件被上限截断或上传失败时用 partial 文案；全成功用 success 文案。
             val skipped = uris.size - selected.size
             when {
@@ -1064,6 +1069,17 @@ fun AIChatPanel(
                     .onGloballyPositioned { if (it.size.height > 0) floatingLayerHeightPx = it.size.height }
             ) {
             StatusBanner(state = agentState)
+
+            // 退场动画期间 uploadingCount 已归零，直接读会淡出一个「正在上传 0 个文件」，
+            // 与 StatusBanner 同样用非空记忆值兜住退场。
+            val lastUploadingCount = rememberLastNonNull(uploadingCount.takeIf { it > 0 })
+            AnimatedVisibility(
+                visible = uploadingCount > 0,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                lastUploadingCount?.let { UploadingBanner(count = it) }
+            }
 
             // 三个面板都用「最后一次非空值」渲染：退出动画期间源状态已置空，直接在 content 里
             // 解引用会淡出一个空面板，看起来是瞬间消失而不是淡出。位移也一并补上——只淡入的话

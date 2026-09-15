@@ -3,6 +3,7 @@ package com.aicode.feature.workspace.domain
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
 import java.io.File
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,6 +53,9 @@ class DelegatingFileAccess @Inject constructor(
 
     override fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean) =
         delegate().writeBytes(path, bytes, overwrite)
+
+    override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long =
+        delegate().writeStream(path, input, overwrite)
 
     override fun copyToLocal(path: String): File = delegate().copyToLocal(path)
 

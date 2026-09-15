@@ -8,8 +8,11 @@ import com.aicode.feature.workspace.domain.WorkspacePathMapper.Companion.CONTAIN
 import kotlinx.coroutines.runBlocking
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.OutputStream
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.NoSuchFileException
 import javax.inject.Inject
@@ -124,6 +127,31 @@ class RemoteSftpFileAccess @Inject constructor(
             }
         }
     }
+
+    /**
+     * 把 [write] 产出的内容经远端命令的 stdin 流式送入，返回 (退出码, 写入字节数)。
+     * 与 [execWithStdin] 的区别是不预先持有完整内容：调用方在 [write] 里边读边写，内存占用恒定。
+     */
+    private fun execWithStdinStream(command: String, write: (OutputStream) -> Long): Pair<Int, Long> =
+        runBlocking {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val session = try {
+                    connection.startExecSessionWithStdin(command)
+                } catch (e: Exception) {
+                    throw RuntimeException(friendlySshError(e), e)
+                }
+                try {
+                    var written = 0L
+                    session.outputStream.use { out -> written = write(out) }
+                    BufferedReader(InputStreamReader(session.inputStream)).readText()
+                    runCatching { session.close() }
+                    (session.exitStatus ?: -1) to written
+                } catch (e: Exception) {
+                    runCatching { session.close() }
+                    throw e
+                }
+            }
+        }
 
     override fun readFile(path: String): String {
         val remote = toRemotePath(path)
@@ -246,6 +274,33 @@ class RemoteSftpFileAccess @Inject constructor(
         if (exit != 0) throw IOException("写入远程文件失败（退出码=$exit）：$remote")
     }
 
+    override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long {
+        val remote = toRemotePath(path)
+        if (exists(path) && !overwrite) throw FileAlreadyExistsException(File(remote))
+        ensureParentDir(remote)
+        // 先落到 .aicode-part 再 mv：传输中途断开时不会在目标位置留下半截文件
+        val tmp = "$remote.aicode-part"
+        val redirect = if (overwrite) ">" else ">>"
+        val (exit, written) = try {
+            execWithStdinStream("base64 -d $redirect ${shellQuote(tmp)}") { out ->
+                java.util.Base64.getEncoder().wrap(out).use { enc -> input.copyTo(enc) }
+            }
+        } catch (e: Exception) {
+            execExitCode("rm -f ${shellQuote(tmp)}")
+            throw e
+        }
+        if (exit != 0) {
+            execExitCode("rm -f ${shellQuote(tmp)}")
+            throw IOException("写入远程文件失败（退出码=$exit）：$remote")
+        }
+        val mvExit = execExitCode("mv -f ${shellQuote(tmp)} ${shellQuote(remote)}")
+        if (mvExit != 0) {
+            execExitCode("rm -f ${shellQuote(tmp)}")
+            throw IOException("移动远程临时文件失败（退出码=$mvExit）：$remote")
+        }
+        return written
+    }
+
     /** 确保远程文件的父目录存在；mkdir 失败时直接报错，避免后续写入落到不存在的目录。 */
     private fun ensureParentDir(remote: String) {
         val parent = remote.substringBeforeLast('/', "")
@@ -260,9 +315,20 @@ class RemoteSftpFileAccess @Inject constructor(
         if (!exists(path)) throw NoSuchFileException(File(remote))
         val tempFile = File.createTempFile("aicode_remote_", ".copy").apply { deleteOnExit() }
         return runCatching {
-            // base64 解码到本地临时文件
-            val b64 = execSync("base64 ${shellQuote(remote)} 2>/dev/null")
-            tempFile.writeBytes(java.util.Base64.getMimeDecoder().decode(b64))
+            runBlocking {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val session = connection.startExecSession("base64 ${shellQuote(remote)} 2>/dev/null")
+                    try {
+                        java.util.Base64.getMimeDecoder().wrap(session.inputStream).use { decoded ->
+                            FileOutputStream(tempFile).use { out -> decoded.copyTo(out) }
+                        }
+                        runCatching { session.close() }
+                    } catch (e: Exception) {
+                        runCatching { session.close() }
+                        throw e
+                    }
+                }
+            }
             tempFile
         }.getOrElse {
             tempFile.delete()

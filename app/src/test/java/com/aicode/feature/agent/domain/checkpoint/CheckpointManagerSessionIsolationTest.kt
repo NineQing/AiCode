@@ -13,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.InputStream
 
 /**
  * 活动 checkpoint 的会话归属。
@@ -184,6 +185,7 @@ class CheckpointManagerSessionIsolationTest {
         override fun listFiles(path: String): List<FileEntry> = throw UnsupportedOperationException()
         override fun readBytes(path: String): ByteArray = throw UnsupportedOperationException()
         override fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean) = throw UnsupportedOperationException()
+        override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long = throw UnsupportedOperationException()
         override fun listFilesRecursive(path: String, maxDepth: Int): List<String> = emptyList()
         override fun copyToLocal(path: String): File = throw UnsupportedOperationException()
         override fun deleteRecursively(path: String) = throw UnsupportedOperationException()

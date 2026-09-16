@@ -32,10 +32,10 @@ const val MAX_NETWORK_RETRIES = 6
 /**
  * 流式请求首字节等待超时：超过此时间未收到首个内容块即关闭流，触发可重试的 IOException。
  *
- * OkHttp 的 readTimeout（120s）是「相邻数据块之间」的等待上限，对慢启动/长思考留足空间；
- * 但首字节前若卡死，等待 120s 才超时体验过差，故用此应用层 watchdog 缩短到 60s。
+ * OkHttp 的 readTimeout 已设为无限制，首字节之前若卡死只能靠此应用层 watchdog 兜底，
+ * 故放宽到 5 分钟以容纳慢启动与长思考模型。
  */
-const val FIRST_BYTE_TIMEOUT_MS = 60_000L
+const val FIRST_BYTE_TIMEOUT_MS = 300_000L
 
 /**
  * 启动首字节超时 watchdog（作为当前协程的子协程）：在 [FIRST_BYTE_TIMEOUT_MS] 后

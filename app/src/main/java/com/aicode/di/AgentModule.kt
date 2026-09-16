@@ -148,11 +148,11 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        // 流式 SSE 下读超时是「相邻数据块之间」的等待上限；120s 给慢启动/长思考留足空间，
-        // 真正卡死由上层阶梯重试（RetryPolicy）兜底。
+        // 流式 SSE 下读超时是「相邻数据块之间」的等待上限，设为 0（无限制），
+        // 慢生成不会因块间隔超时被掐断；首字节前的卡死由上层 watchdog（RetryPolicy）兜底。
         return OkHttpClient.Builder()
             .connectTimeout(120, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
             .build()
     }

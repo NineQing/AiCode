@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -13,7 +14,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.themeDataStore by preferencesDataStore(name = "theme_prefs")
+private val Context.themeDataStore by preferencesDataStore(
+    name = "theme_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 enum class AppThemeMode(val labelRes: Int) {
     AUTO(R.string.theme_auto),

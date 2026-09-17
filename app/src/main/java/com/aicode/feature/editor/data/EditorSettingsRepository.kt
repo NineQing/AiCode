@@ -5,13 +5,17 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.editorSettingsDataStore by preferencesDataStore(name = "editor_prefs")
+private val Context.editorSettingsDataStore by preferencesDataStore(
+    name = "editor_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 const val MIN_EDITOR_FONT_SIZE_SP = 10
 const val MAX_EDITOR_FONT_SIZE_SP = 28

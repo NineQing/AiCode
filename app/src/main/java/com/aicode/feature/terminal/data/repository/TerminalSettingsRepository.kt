@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import com.aicode.feature.terminal.domain.font.TerminalFontManager
 import com.aicode.feature.terminal.domain.model.TerminalThemePreset
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -14,7 +15,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.terminalDataStore by preferencesDataStore(name = "terminal_settings_prefs")
+private val Context.terminalDataStore by preferencesDataStore(
+    name = "terminal_settings_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /** 终端配置模型。 */
 data class TerminalSettings(

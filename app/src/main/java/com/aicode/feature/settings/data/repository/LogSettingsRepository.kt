@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import com.aicode.core.util.LogLevel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +14,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.logDataStore by preferencesDataStore(name = "log_prefs")
+private val Context.logDataStore by preferencesDataStore(
+    name = "log_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /**
  * 持久化「日志最低记录等级」。等级以枚举名（字符串）存取。

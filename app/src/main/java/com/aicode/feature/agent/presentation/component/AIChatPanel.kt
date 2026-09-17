@@ -76,6 +76,7 @@ import com.aicode.feature.agent.presentation.hasVisibleContent
 import com.aicode.feature.settings.presentation.SettingsViewModel
 import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import compose.icons.FeatherIcons
@@ -344,7 +345,7 @@ fun AIChatPanel(
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
     }
     val activeModel = activeProvider?.effectiveModel.orEmpty()
-    val activeModelMetadata = modelMetadata[activeModel]
+    val activeModelMetadata = activeProvider?.let { modelMetadata[modelMetadataKey(it.id, activeModel)] }
     val canUploadFiles = projectRoot.isNotBlank() && activeModelMetadata?.supportsTools == true
     val canUploadImages = projectRoot.isNotBlank()
     val reasoningEffort by viewModel.currentSessionReasoningEffort.collectAsStateWithLifecycle()

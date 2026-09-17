@@ -71,6 +71,7 @@ import com.aicode.feature.workspace.domain.repository.RemoteRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.ProviderBalanceResult
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
 import com.aicode.feature.settings.domain.service.ProviderBalanceRunner
@@ -480,6 +481,7 @@ class SettingsViewModel @Inject constructor(
     private val _testResults = MutableStateFlow<Map<String, ModelTestResult>>(emptyMap())
     val testResults: StateFlow<Map<String, ModelTestResult>> = _testResults.asStateFlow()
 
+    /** 模型元数据缓存，键为 [modelMetadataKey]（渠道 + 模型）——单价与能力都可能因渠道而异。 */
     private val _modelMetadata = MutableStateFlow<Map<String, ModelMetadata>>(emptyMap())
     val modelMetadata: StateFlow<Map<String, ModelMetadata>> = _modelMetadata.asStateFlow()
 
@@ -1692,7 +1694,9 @@ class SettingsViewModel @Inject constructor(
         if (normalizedIds.isEmpty()) return
         viewModelScope.launch {
             val metadata = modelMetadataService.resolveAll(providerId, type, normalizedIds)
-            _modelMetadata.update { current -> current + metadata }
+            _modelMetadata.update { current ->
+                current + metadata.mapKeys { (model, _) -> modelMetadataKey(providerId, model) }
+            }
         }
     }
 
@@ -1715,7 +1719,8 @@ class SettingsViewModel @Inject constructor(
             for (provider in enabled) {
                 val ids = provider.models.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
                 if (ids.isEmpty()) continue
-                resolved += modelMetadataService.resolveAll(provider.id, provider.type, ids)
+                modelMetadataService.resolveAll(provider.id, provider.type, ids)
+                    .forEach { (model, meta) -> resolved[modelMetadataKey(provider.id, model)] = meta }
             }
             if (resolved.isNotEmpty()) {
                 _modelMetadata.update { it + resolved }

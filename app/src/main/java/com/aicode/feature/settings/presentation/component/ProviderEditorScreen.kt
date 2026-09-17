@@ -121,6 +121,7 @@ import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.data.repository.ProxyConfig
 import com.aicode.feature.settings.domain.model.ProxyType
 import com.aicode.feature.settings.domain.model.mergeModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.sanitized
 import com.aicode.feature.settings.presentation.FetchState
 import com.aicode.feature.settings.presentation.SettingsViewModel
@@ -711,7 +712,7 @@ fun ProviderEditorScreen(
                                     ) {
                                         ProviderModelRow(
                                             model = model,
-                                            metadata = mergeModelMetadata(model, modelMetadata[model], customMetadata["$providerId:$model"]),
+                                            metadata = mergeModelMetadata(model, modelMetadata[modelMetadataKey(providerId, model)], customMetadata[modelMetadataKey(providerId, model)]),
                                             testing = model in testing,
                                             result = testResults[model],
                                             onTest = { viewModel.testModel(currentConfig(), model) },
@@ -854,7 +855,7 @@ fun ProviderEditorScreen(
                 } else {
                     stringResource(R.string.common_add)
                 },
-                initial = editingModel?.let { mergeModelMetadata(it, modelMetadata[it], customMetadata["$providerId:$it"]) },
+                initial = editingModel?.let { mergeModelMetadata(it, modelMetadata[modelMetadataKey(providerId, it)], customMetadata[modelMetadataKey(providerId, it)]) },
                 onSave = { model, meta ->
                     val editing = editingModel
                     if (editing != null && model != editing) {
@@ -887,6 +888,7 @@ fun ProviderEditorScreen(
         key(fetchDialogKey) {
             FetchModelsDialog(
                 fetchState = fetchState,
+                providerId = providerId,
                 modelMetadata = modelMetadata,
                 existingModels = models,
                 onFetchModels = { viewModel.fetchModels(currentConfig()) },
@@ -1162,6 +1164,7 @@ private fun CapabilitySwitchRow(
 @Composable
 private fun FetchModelsDialog(
     fetchState: FetchState,
+    providerId: String,
     modelMetadata: Map<String, ModelMetadata>,
     existingModels: List<String>,
     onFetchModels: () -> Unit,
@@ -1301,7 +1304,7 @@ private fun FetchModelsDialog(
                                             }
                                             FetchModelRow(
                                                 model = m,
-                                                metadata = modelMetadata[m],
+                                                metadata = modelMetadata[modelMetadataKey(providerId, m)],
                                                 onAdd = { onAddModel(m) }
                                             )
                                         }

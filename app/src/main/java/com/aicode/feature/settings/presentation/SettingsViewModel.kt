@@ -184,7 +184,7 @@ data class TokenStatsUiState(
     val modelsPage: Int = 0,
     /** 模型总数。 */
     val modelsTotal: Int = 0,
-    /** 当前周期总费用（USD，按 models.dev 单价估算）。 */
+    /** 当前周期总费用（USD，渠道自定义单价优先，否则回退 models.dev 单价估算）。 */
     val totalCostUsd: Double = 0.0,
     /** 调用明细分页内每条记录的费用（key=记录 id，null=模型无单价）。 */
     val recentCallCosts: Map<Long, Double?> = emptyMap()
@@ -193,8 +193,7 @@ data class TokenStatsUiState(
 private data class ModelStatsPaging(
     val paged: List<com.aicode.feature.agent.data.local.dao.ModelCallStats>,
     val page: Int,
-    val total: Int,
-    val allModels: List<com.aicode.feature.agent.data.local.dao.ModelCallStats>
+    val total: Int
 )
 
 /** 技能列表页的 UI 状态：技能 + 来源作用域 + 启停状态。 */
@@ -781,27 +780,31 @@ class SettingsViewModel @Inject constructor(
                             val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
                             Triple(paged, safePage, total)
                         },
-                        combine(llmCallRecordDao.getModelStats(start), _modelStatsPage) { list, page ->
-                            val total = list.size
-                            val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
-                            val safePage = page.coerceIn(0, lastPage)
-                            val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
-                            ModelStatsPaging(paged, safePage, total, list)
-                        },
+                        combine(
+                            combine(llmCallRecordDao.getModelStats(start), _modelStatsPage) { list, page ->
+                                val total = list.size
+                                val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
+                                val safePage = page.coerceIn(0, lastPage)
+                                val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
+                                ModelStatsPaging(paged, safePage, total)
+                            },
+                            // 总费用必须带渠道聚合：自定义单价按渠道存储，丢渠道就会取错价。
+                            llmCallRecordDao.getModelProviderCostStats(start)
+                        ) { modelPaging, costStats -> modelPaging to costStats },
                         // 明细分页：页号或总数变化时重查当前页，其余聚合不重复计算
                         combine(_tokenStatsPage, llmCallRecordDao.getCallsCount(start)) { page, total -> page to total }
                             .flatMapLatest { (page, total) ->
                                 llmCallRecordDao.getRecentCalls(start, CALLS_PAGE_SIZE, page * CALLS_PAGE_SIZE)
                                     .map { calls -> Triple(calls, total, page) }
                             }
-                    ) { rawTrend, summary, (pProviders, pPage, pTotal), modelPaging, (calls, total, page) ->
+                    ) { rawTrend, summary, (pProviders, pPage, pTotal), (modelPaging, costStats), (calls, total, page) ->
                         val trend = padTrend(period, rawTrend, tz)
                         val costs = withContext(Dispatchers.IO) {
                             val perCall = calls.associate {
                                 it.record.id to callCostUsd(it.record.providerId, it.record.model, it.record.inputTokens.toLong(), it.record.cachedInputTokens.toLong(), it.record.outputTokens.toLong(), it.record.cacheCreationTokens.toLong())
                             }
-                            val periodTotal = modelPaging.allModels.sumOf { m ->
-                                callCostUsd(null, m.model, m.inputTokens, m.cachedInputTokens, m.outputTokens, m.cacheCreationTokens) ?: 0.0
+                            val periodTotal = costStats.sumOf { s ->
+                                callCostUsd(s.providerId, s.model, s.inputTokens, s.cachedInputTokens, s.outputTokens, s.cacheCreationTokens) ?: 0.0
                             }
                             perCall to periodTotal
                         }

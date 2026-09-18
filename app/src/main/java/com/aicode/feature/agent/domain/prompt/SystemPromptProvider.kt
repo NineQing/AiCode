@@ -19,6 +19,13 @@ import javax.inject.Singleton
 /**
  * 按模块组装系统提示词：稳定基线放最前（享受 KV Cache），仅日期为低频变化。
  * 每个 Source 维护内容缓存，避免重复读取与格式化。
+ *
+ * 片段分两类：
+ * - 静态基线：`prompts/` 顶层 `<NN>-<名称>.md`（见 [BASE_FRAGMENTS]），可被 `prompts.custom/` 按数字身份覆盖或新增；
+ * - 按需叶子：`prompts/agent/` 下的无数字片段（模式提醒、子代理基线、压缩/标题提示词），按精确同名覆盖。
+ *
+ * `prompts.custom/` 存在 [PromptFragmentResolver.DISABLE_BUILTIN_FILE] 时，主代理提示词只由自定义数字片段组成，
+ * 不再注入任何内置来源；此时用 `{{AICODE_*}}` 变量按需取回动态内容。
  */
 @Singleton
 class SystemPromptProvider @Inject constructor(
@@ -34,25 +41,22 @@ class SystemPromptProvider @Inject constructor(
     }
 
     private inner class StaticRuleSource : PromptSource {
-        private val fragments = listOf(
-            "00-identity.md",
-            "10-communication.md",
-            "15-project-rules.md",
-            "20-coding-discipline.md",
-            "30-comments.md",
-            "40-approach.md",
-            "50-safety.md",
-            "60-tools-and-paths.md",
-            "70-skills-and-mcp.md"
-        )
         @Volatile private var cached: String? = null
 
         override fun build(ctx: AgentContext): String {
-            return cached ?: fragments.joinToString("\n\n") { name ->
-                resolvePrompt(name)
-                    .replace(LEADING_COMMENT, "")
-                    .trim()
-            }.also { cached = it }
+            return cached ?: run {
+                val merged = PromptFragmentResolver.mergeStatic(
+                    BASE_FRAGMENTS.keys.toList(),
+                    PromptFragmentResolver.numberedFragments(customDir)
+                )
+                val pieces = merged.mapNotNull { (number, override) ->
+                    // 内置数字走 resolvePrompt（内部按数字身份查覆盖）；新增片段直接读自定义文件。
+                    val raw = BASE_FRAGMENTS[number]?.let { resolvePrompt(it) }
+                        ?: readFileOrNull(override)
+                    raw?.replace(LEADING_COMMENT, "")?.trim()?.takeIf { it.isNotEmpty() }
+                }
+                pieces.joinToString("\n\n").also { cached = it }
+            }
         }
     }
 
@@ -71,7 +75,7 @@ class SystemPromptProvider @Inject constructor(
                 return null
             }
 
-            val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" }}" }
+            val list = skills.joinToString("\n") { "- ${it.name}: ${it.description.ifBlank { "（无描述）" } }" }
             val content = "可用技能 (skills)（格式为 名称: 何时使用；相关时用 loadSkill 传入名称取完整正文，详见上文「技能」说明）：\n当清单里有与当前任务对口的技能时，在合适的时机主动 `loadSkill` 加载并按其正文行事，让技能辅助你更规范、更高效地完成工作，而不是仅凭默认流程硬做。\n$list"
             cachedByKey[key] = content
             trimIfNeeded()
@@ -175,11 +179,7 @@ class SystemPromptProvider @Inject constructor(
     }
 
     private inner class CurrentTimeSource : PromptSource {
-        override fun build(ctx: AgentContext): String {
-            val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
-            val currentTime = java.time.ZonedDateTime.now().format(formatter)
-            return "[System] 当前本地时间: $currentTime"
-        }
+        override fun build(ctx: AgentContext): String = "[System] 当前本地时间: ${currentDate()}"
     }
 
     private inner class MemoryListSource : PromptSource {
@@ -234,53 +234,93 @@ class SystemPromptProvider @Inject constructor(
     private val workspaceSource = WorkspaceSource()
     private val currentTimeSource = CurrentTimeSource()
 
+    private val customDir: File
+        get() = File(containerInstaller.aicodeDir, "prompts.custom")
+
+    /** 自定义目录顶层数字片段（数字身份 → 文件），进程内只扫一次（重启 App 才刷新）。 */
+    private val customFragmentsByNumber: Map<Int, File> by lazy {
+        PromptFragmentResolver.numberedFragments(customDir).toMap()
+    }
+
     fun build(agentContext: AgentContext): String {
         agentContext.agentDefinition?.let { return buildForSubAgent(it, agentContext) }
 
+        if (PromptFragmentResolver.isBuiltinDisabled(customDir)) {
+            return buildCustomOnly(agentContext)
+        }
+
         // 1. 获取各个 Source 的基线快照。
-        val staticContent = staticRuleSource.build(agentContext)
+        val rawStatic = staticRuleSource.build(agentContext)
         val skillsContent = activeSkillsSource.build(agentContext)
         val subAgentsContent = subAgentListSource.build(agentContext)
         val memoriesContent = memoryListSource.build(agentContext)
         val projectRules = projectRuleSource.build(agentContext)
-        
+
         // 2. Workspace 上下文固定输出（内容已精简，无需快照占位）
         val effectiveWorkspaceContent = workspaceSource.build(agentContext)
+        val timeContent = currentTimeSource.build(agentContext)
 
-        // 3. 组装最终提示词：把稳定不变的重头基线放最前面（享受 KV Cache），变化部分放末尾
+        // 3. 变量就地展开：片段里写了 {{AICODE_*}} 就替换为真实内容，并跳过下方对应的自动追加，避免重复。
+        val staticContent = renderVariables(
+            rawStatic,
+            skillsContent,
+            memoriesContent,
+            subAgentsContent,
+            projectRules,
+            effectiveWorkspaceContent,
+            currentDate()
+        )
+
+        // 4. 组装最终提示词：把稳定不变的重头基线放最前面（享受 KV Cache），变化部分放末尾
         return buildString {
             append(staticContent)
 
-            skillsContent?.let {
-                append("\n\n")
-                append(it)
-            }
+            if (SKILLS_VAR !in rawStatic) skillsContent?.let { append("\n\n"); append(it) }
+            if (SUBAGENTS_VAR !in rawStatic) subAgentsContent?.let { append("\n\n"); append(it) }
+            if (MEMORY_VAR !in rawStatic) memoriesContent?.let { append("\n\n"); append(it) }
+            if (PROJECT_RULES_VAR !in rawStatic) projectRules?.let { append("\n\n"); append(it) }
 
-            subAgentsContent?.let {
+            if (WORKSPACE_VAR !in rawStatic) {
                 append("\n\n")
-                append(it)
+                append(effectiveWorkspaceContent)
             }
-
-            memoriesContent?.let {
+            if (DATE_VAR !in rawStatic) {
                 append("\n\n")
-                append(it)
+                append(timeContent)
             }
-
-            projectRules?.let {
-                append("\n\n")
-                append(it)
-            }
-
-            append("\n\n")
-            append(effectiveWorkspaceContent)
-            append("\n\n")
-            append(currentTimeSource.build(agentContext))
         }
     }
 
     /**
+     * [PromptFragmentResolver.DISABLE_BUILTIN_FILE] 生效时：只输出 `prompts.custom/` 顶层的数字片段，
+     * 不注入任何内置来源；动态内容仅通过 `{{AICODE_*}}` 变量按需取回。
+     */
+    private fun buildCustomOnly(ctx: AgentContext): String {
+        val fragments = PromptFragmentResolver.numberedFragments(customDir)
+        if (fragments.isEmpty()) {
+            FileLogger.w(
+                TAG,
+                "已启用 ${PromptFragmentResolver.DISABLE_BUILTIN_FILE}，但 $customDir 下没有 <两位数字>-<名称>.md 片段，系统提示词为空"
+            )
+            return ""
+        }
+        val content = fragments
+            .mapNotNull { readFileOrNull(it.second)?.replace(LEADING_COMMENT, "")?.trim()?.takeIf { it.isNotEmpty() } }
+            .joinToString("\n\n")
+        return renderVariables(
+            content,
+            activeSkillsSource.build(ctx),
+            memoryListSource.build(ctx),
+            subAgentListSource.build(ctx),
+            projectRuleSource.build(ctx),
+            workspaceSource.build(ctx),
+            currentDate()
+        )
+    }
+
+    /**
      * 按子代理定义组装提示词：只注入 [AgentDefinition.inject] 列出的片段，再接 agent 自己的提示词。
-     * 不注入可用子代理清单（子代理不能嵌套派发）。
+     * 不注入可用子代理清单（子代理不能嵌套派发）。定义正文里的 `{{AICODE_*}}` 变量同样会展开。
      */
     private fun buildForSubAgent(
         definition: AgentDefinition,
@@ -297,7 +337,17 @@ class SystemPromptProvider @Inject constructor(
 
         append("当前角色 (subagent: ${definition.name})：你是一个由主代理派发的子代理，拥有独立上下文，看不到主对话历史。")
         append("专注完成本会话交给你的任务，并在最后一条回复里给出完整结论——主代理只能读到你的最后一条回复，中间过程与工具结果它看不到。\n\n")
-        append(definition.prompt)
+        append(
+            renderVariables(
+                definition.prompt,
+                activeSkillsSource.build(agentContext),
+                memoryListSource.build(agentContext),
+                subAgentListSource.build(agentContext),
+                projectRuleSource.build(agentContext),
+                workspaceSource.build(agentContext),
+                currentDate()
+            )
+        )
 
         if (InjectPart.SKILLS in definition.inject) {
             activeSkillsSource.build(agentContext)?.let {
@@ -324,40 +374,84 @@ class SystemPromptProvider @Inject constructor(
         append(currentTimeSource.build(agentContext))
     }
 
+    /** 把片段里的 `{{AICODE_*}}` 占位符替换为真实内容；未出现的占位符保持原样，不影响 `{{INSTRUCTION}}` 等其它占位符。 */
+    private fun renderVariables(
+        text: String,
+        skills: String?,
+        memories: String?,
+        subAgents: String?,
+        projectRules: String?,
+        workspace: String,
+        date: String
+    ): String {
+        var out = text
+        out = out.replace(SKILLS_VAR, skills.orEmpty())
+        out = out.replace(MEMORY_VAR, memories.orEmpty())
+        out = out.replace(SUBAGENTS_VAR, subAgents.orEmpty())
+        out = out.replace(PROJECT_RULES_VAR, projectRules.orEmpty())
+        out = out.replace(WORKSPACE_VAR, workspace)
+        out = out.replace(DATE_VAR, date)
+        return out
+    }
+
+    private fun currentDate(): String =
+        java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+
     /**
-     * 按优先级解析单个提示词片段：prompts.custom/（用户覆盖） > prompts/（本地默认副本） > assets（内置兑底）。
-     * 本地副本由 [ContainerInstaller.extractPrompts] 在启动时全量释放，
-     * App 升级后随之更新；用户只需在 prompts.custom/ 放同名文件即可覆盖，无需改内置。
+     * 按优先级解析单个提示词片段：
+     * - 名字是顶层 `<NN>-*.md`：先按数字身份在 `prompts.custom/` 顶层找覆盖（尾部名称可自由改），
+     * - 其余名字（含 `agent/` 子目录）：按精确同名在 `prompts.custom/<name>` 找覆盖；
+     * 再落到 `prompts/<name>`（本地默认副本），最后 assets（内置兜底）。
+     *
+     * 本地副本由 [ContainerInstaller.extractPrompts] 在启动时全量释放，App 升级后随之更新。
      */
     fun resolvePrompt(name: String): String {
-        val customDir = File(containerInstaller.aicodeDir, "prompts.custom")
-        val customFile = File(customDir, name)
-        if (customFile.isFile) {
-            try {
-                return customFile.bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "读取自定义提示词失败 $name: ${e.message}", e)
-            }
-        }
-        val defaultFile = File(File(containerInstaller.aicodeDir, "prompts"), name)
-        if (defaultFile.isFile) {
-            try {
-                return defaultFile.bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "读取本地提示词失败 $name: ${e.message}", e)
-            }
-        }
+        PromptFragmentResolver.parseNumber(name)
+            ?.let { number -> readFileOrNull(customFragmentsByNumber[number])?.let { return it } }
+        readFileOrNull(File(customDir, name))?.let { return it }
+        readFileOrNull(File(File(containerInstaller.aicodeDir, "prompts"), name))?.let { return it }
         return context.assets.open("prompts/$name").bufferedReader().use { it.readText() }
+    }
+
+    private fun readFileOrNull(file: File?): String? {
+        if (file == null || !file.isFile) return null
+        return try {
+            file.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "读取提示词失败 ${file.name}: ${e.message}", e)
+            null
+        }
     }
 
     private companion object {
         const val TAG = "SystemPromptProvider"
         const val AGENTS_FILE = "AGENTS.md"
         const val CLAUDE_FILE = "CLAUDE.md"
-        const val SUBAGENT_BASE_FILE = "90-subagent-base.md"
+        const val SUBAGENT_BASE_FILE = "agent/subagent-base.md"
         const val MAX_AGENTS_CHARS = 32_000
         /** 会话级缓存 key 数量上限：超过后整体清空，仅防长期累积；正常会话数远小于此。 */
         const val SOURCE_CACHE_LIMIT = 32
         val LEADING_COMMENT = Regex("(?s)^\\s*<!--.*?-->\\s*")
+
+        /** 内置静态基线：数字身份 → 规范文件名，决定默认拼接顺序。 */
+        val BASE_FRAGMENTS = linkedMapOf(
+            0 to "00-identity.md",
+            10 to "10-communication.md",
+            15 to "15-project-rules.md",
+            20 to "20-coding-discipline.md",
+            30 to "30-comments.md",
+            40 to "40-approach.md",
+            50 to "50-safety.md",
+            60 to "60-tools-and-paths.md",
+            70 to "70-skills-and-mcp.md"
+        )
+
+        // 片段里可用的运行期变量，渲染时替换为真实内容
+        const val SKILLS_VAR = "{{AICODE_SKILLS}}"
+        const val MEMORY_VAR = "{{AICODE_MEMORY}}"
+        const val SUBAGENTS_VAR = "{{AICODE_SUBAGENTS}}"
+        const val PROJECT_RULES_VAR = "{{AICODE_PROJECT_RULES}}"
+        const val WORKSPACE_VAR = "{{AICODE_WORKSPACE}}"
+        const val DATE_VAR = "{{AICODE_DATE}}"
     }
 }

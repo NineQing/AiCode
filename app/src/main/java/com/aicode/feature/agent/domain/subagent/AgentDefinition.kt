@@ -11,7 +11,7 @@ enum class AgentDefinitionScope { GLOBAL, PROJECT }
  * BASE 与 MAIN_RULES 互斥语义上并不强制，同时写则两者都注入（MAIN_RULES 在前）。
  */
 enum class InjectPart(val token: String) {
-    /** 子代理专用精简基线（`90-subagent-base.md`）：工具用法、路径约定、安全边界。 */
+    /** 子代理专用精简基线（`agent/subagent-base.md`）：工具用法、路径约定、安全边界。 */
     BASE("base"),
 
     /** 主代理的完整静态规则基线（`00`~`70` 全部片段），需要子代理与主代理行为完全一致时使用。 */

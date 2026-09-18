@@ -114,8 +114,8 @@ class StatefulAgentWorkflow @Inject constructor(
         const val TITLE_GENERATOR_FILE = "agent/title-generator.md"
         const val TITLE_MAX_CHARS = 50
         /** 模式提醒提示词：复用 prompts 目录文件（用户可自定义覆盖），切换时随消息注入而非进 system。 */
-        const val MODE_REMINDER_PLAN_FILE = "80-plan-mode.md"
-        const val MODE_REMINDER_AUTO_FILE = "81-auto-mode.md"
+        const val MODE_REMINDER_PLAN_FILE = "agent/plan-mode.md"
+        const val MODE_REMINDER_AUTO_FILE = "agent/auto-mode.md"
         val LEADING_COMMENT = Regex("(?s)^\\s*<!--.*?-->\\s*")
         /** 模型直出图片落盘目录（与 GenerateImageTool 保持一致）。 */
         const val GENERATED_IMAGE_DIR = "~/.aicode/generated-images"

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import com.aicode.feature.agent.domain.container.ContainerProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +16,10 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.containerDataStore by preferencesDataStore(name = "container_prefs")
+private val Context.containerDataStore by preferencesDataStore(
+    name = "container_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /** 下载镜像页里已下载/已安装的镜像记录，跨重启保留。 */
 @Serializable

@@ -42,6 +42,13 @@ data class ModelMetadata(
 }
 
 /**
+ * 模型元数据缓存的键。
+ * 元数据不能只按模型名索引：自定义单价按「提供商ID:模型名」存储，不同类型渠道对同一模型名的
+ * 自动匹配结果也不同，只按模型名会串台（拿别的渠道的单价/能力）。
+ */
+fun modelMetadataKey(providerId: String, model: String): String = "$providerId:$model"
+
+/**
  * 合并自定义元数据与自动解析（拉取/内置）元数据，自定义优先；窗口未填时保留自动值。
  * [base] 为空时构造兜底元数据（窗口 0，能力全 false）。
  */

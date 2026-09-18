@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.container.ConnectionState
@@ -31,7 +32,10 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.workspaceDataStore by preferencesDataStore(name = "workspace_prefs")
+private val Context.workspaceDataStore by preferencesDataStore(
+    name = "workspace_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /**
  * 管理 App 内的"工作区/项目"。

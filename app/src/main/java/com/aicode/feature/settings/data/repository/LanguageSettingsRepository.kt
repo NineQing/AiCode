@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -11,7 +12,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.languageDataStore by preferencesDataStore(name = "language_prefs")
+private val Context.languageDataStore by preferencesDataStore(
+    name = "language_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 private const val PREFS_NAME = "language_prefs_sync"
 private const val PREFS_KEY = "language_tag"

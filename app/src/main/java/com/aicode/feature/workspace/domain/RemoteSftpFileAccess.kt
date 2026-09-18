@@ -1,5 +1,6 @@
 package com.aicode.feature.workspace.domain
 
+import com.aicode.core.util.BoundedLineReader
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
 import com.aicode.feature.agent.domain.container.friendlySshError
@@ -22,6 +23,15 @@ private const val TAG = "RemoteSftpFileAccess"
 
 /** writeFile 单次 printf 传入的 base64 分块大小（4 的倍数），远小于 exec 的 MAX_ARG_STRLEN(128KB)。 */
 private const val BASE64_CHUNK = 48 * 1024
+
+/** 远程命令 stdout 上限（字符）：`readText()` 会把整条输出读进内存，`cat`/`base64` 大文件时直接 OOM。 */
+private const val MAX_REMOTE_EXEC_CHARS = 4 * 1024 * 1024
+
+/** `readBytes` 的 base64 输出上限（字符），约为 6MB 原始字节。 */
+private const val MAX_REMOTE_BASE64_CHARS = 8 * 1024 * 1024
+
+/** 远程命令输出超过上限时抛出：调用方据此给出「内容过大」提示，而不是误判为文件不存在。 */
+class RemoteOutputTooLargeException(message: String) : IOException(message)
 
 /**
  * [FileAccessProvider] 的远程实现：用 SSH exec channel 执行命令读写远程文件。
@@ -58,8 +68,11 @@ class RemoteSftpFileAccess @Inject constructor(
     private fun toDisplayPathFromRemote(remotePath: String): String =
         displayPathFor(remotePath, currentWorkspaceRoot())
 
-    /** 同步执行远程命令并返回完整 stdout。失败时抛友好异常。 */
-    private fun execSync(command: String): String = runBlocking {
+    /**
+     * 同步执行远程命令并返回 stdout。输出超过 [maxChars] 字符即抛 [RemoteOutputTooLargeException]——
+     * 不能用 `readText()`（它把整条输出读进内存，`cat`/`base64` 大文件时 OOM）。失败时抛友好异常。
+     */
+    private fun execSync(command: String, maxChars: Int = MAX_REMOTE_EXEC_CHARS): String = runBlocking {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val session = try {
                 connection.startExecSession(command)
@@ -67,9 +80,8 @@ class RemoteSftpFileAccess @Inject constructor(
                 throw RuntimeException(friendlySshError(e), e)
             }
             try {
-                val reader = BufferedReader(InputStreamReader(session.inputStream))
-                val output = reader.readText()
-                // readText 读到流结束，但 exitStatus 可能还没就绪——close 后才保证有值
+                val output = readBounded(session.inputStream, maxChars)
+                // 读到流结束（或主动关闭）后 exitStatus 才保证有值
                 runCatching { session.close() }
                 val exitCode = session.exitStatus
                 if (exitCode != null && exitCode != 0) {
@@ -83,12 +95,35 @@ class RemoteSftpFileAccess @Inject constructor(
         }
     }
 
+    /**
+     * 把 [input] 读到 [maxChars] 字符为止；超过即抛 [RemoteOutputTooLargeException]。
+     * 不能用 `readText()`——它会把整条输出读进内存，`cat`/`base64` 大文件时 OOM。
+     */
+    private fun readBounded(input: InputStream, maxChars: Int): String {
+        val reader = InputStreamReader(input)
+        val sb = StringBuilder(minOf(maxChars, 64 * 1024))
+        val buf = CharArray(8192)
+        var overflow = false
+        while (true) {
+            val n = reader.read(buf)
+            if (n < 0) break
+            if (sb.length + n > maxChars) {
+                overflow = true
+                break
+            }
+            sb.append(buf, 0, n)
+        }
+        runCatching { reader.close() }
+        if (overflow) throw RemoteOutputTooLargeException("远程命令输出超过 ${maxChars / 1024}KB，请缩小范围后重试")
+        return sb.toString()
+    }
+
     /** 同步执行远程命令，返回「输出 + 退出码」。startExecSession 抛异常（未连接）时向外抛。 */
-    private fun execSyncChecked(command: String): Pair<String, Int?> = runBlocking {
+    private fun execSyncChecked(command: String, maxChars: Int = MAX_REMOTE_EXEC_CHARS): Pair<String, Int?> = runBlocking {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val session = connection.startExecSession(command)
             try {
-                val output = BufferedReader(InputStreamReader(session.inputStream)).readText()
+                val output = readBounded(session.inputStream, maxChars)
                 runCatching { session.close() }
                 output to session.exitStatus
             } catch (e: Exception) {
@@ -176,6 +211,7 @@ class RemoteSftpFileAccess @Inject constructor(
         val remote = toRemotePath(path)
         val (output, exit) = runCatching { execSyncChecked("cat ${shellQuote(remote)}") }
             .getOrElse {
+                if (it is RemoteOutputTooLargeException) throw it
                 FileLogger.e(TAG, "readFile 失败: $remote", it)
                 throw NoSuchFileException(File(remote))
             }
@@ -184,12 +220,41 @@ class RemoteSftpFileAccess @Inject constructor(
         return output
     }
 
+    /**
+     * 惰性逐行读取：直接流式消费 `cat` 的 exec 输出，每次只物化当前一行（单行封顶 64K 字符），
+     * 整文件不进内存。调用方需自行保证在 IO 线程上迭代（见 [ReadFileTool]）。
+     */
     override fun readLines(path: String): Sequence<String> {
         val remote = toRemotePath(path)
-        val (output, exit) = runCatching { execSyncChecked("cat ${shellQuote(remote)}") }
-            .getOrElse { throw NoSuchFileException(File(remote)) }
-        if (exit != 0) throw NoSuchFileException(File(remote))
-        return output.lines().asSequence()
+        return sequence {
+            val session = try {
+                connection.startExecSession("cat ${shellQuote(remote)}")
+            } catch (e: Exception) {
+                throw NoSuchFileException(File(remote))
+            }
+            val reader = BoundedLineReader(InputStreamReader(session.inputStream))
+            var exit: Int? = null
+            fun finish() {
+                runCatching { reader.close() }
+                runCatching { session.close() }
+                exit = session.exitStatus
+            }
+            while (true) {
+                val line = try {
+                    reader.readLine()
+                } catch (e: Exception) {
+                    finish()
+                    throw NoSuchFileException(File(remote))
+                }
+                if (line == null) {
+                    finish()
+                    break
+                }
+                yield(line.text)
+            }
+            // cat 对不存在的文件退出码非零：兑现「文件不存在抛 NoSuchFileException」的接口契约。
+            if (exit != null && exit != 0) throw NoSuchFileException(File(remote))
+        }.constrainOnce()
     }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean, encoding: Charset) {
@@ -281,9 +346,10 @@ class RemoteSftpFileAccess @Inject constructor(
         val remote = toRemotePath(path)
         return runCatching {
             // 二进制用 base64 中转
-            val b64 = execSync("base64 ${shellQuote(remote)} 2>/dev/null")
+            val b64 = execSync("base64 ${shellQuote(remote)} 2>/dev/null", MAX_REMOTE_BASE64_CHARS)
             java.util.Base64.getMimeDecoder().decode(b64)
         }.getOrElse {
+            if (it is RemoteOutputTooLargeException) throw it
             FileLogger.e(TAG, "readBytes 失败: $remote", it)
             throw NoSuchFileException(File(remote))
         }

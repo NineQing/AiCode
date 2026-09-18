@@ -96,6 +96,7 @@ import com.aicode.feature.agent.presentation.AgentUIState
 import com.aicode.feature.agent.presentation.QueuedRequest
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import com.aicode.feature.workspace.presentation.component.WorkspaceIconButton
@@ -452,7 +453,7 @@ internal fun ChatInputBar(
                         // 这类模型可能强制开启推理，隐藏按钮会导致无法调档。
                         val availableEfforts = remember(activeProvider, modelMetadata) {
                             activeProvider?.let { provider ->
-                                modelMetadata[provider.effectiveModel]?.reasoningEffortOptions
+                                modelMetadata[modelMetadataKey(provider.id, provider.effectiveModel)]?.reasoningEffortOptions
                                     ?.let { ReasoningEffort.fromValues(it) }
                             }.orEmpty().ifEmpty { ReasoningEffort.entries }
                         }

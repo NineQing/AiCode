@@ -152,6 +152,14 @@ interface AIProvider {
     var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)?
 
     /**
+     * 多 Key 自动切换钩子，由工作流在装配 provider 时注入；为 null 表示不启用（如生图等旁路）。
+     * 入参为本次失败异常、当前使用的 Key、本次请求已试过的 Key 集合。返回非 null 表示已切到
+     * [KeySwitchOutcome.newKey]，adapter 应改写 [apiKey] 并重发；返回 null 表示不是「Key 不可用」
+     * 类失败或候选已用尽（用尽时实现方抛 [AllKeysFailedException]）。
+     */
+    var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)?
+
+    /**
      * 本次请求允许的最大输出 token 数，来自模型元数据的输出上限（models.dev `limit.output`）。
      * 调用前由工作流设置；为 null 时各 adapter 用自身默认值或不发该参数。
      */

@@ -10,6 +10,8 @@ import com.aicode.feature.agent.domain.tool.ToolResult
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.LineDiff
 import com.aicode.feature.workspace.domain.FileAccessProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -55,29 +57,32 @@ class ReadFileTool @Inject constructor(
 
             // 逐行流式读取，避免 readText() 整篇进内存导致移动端 OOM；
             // 只保留 [startLine, endCap] 窗口，并在累计字节超过 MAX_BYTES 时提前停止。
+            // 走 IO 线程：本地 File 读与远程 exec 流的阻塞读写都不应占着调用方线程。
             val sb = StringBuilder()
             var totalLines = 0
             var emittedLines = 0
             var byteCount = 0
             var truncatedByBytes = false
             var lineNo = 0
-            fileAccess.readLines(path).forEach { line ->
-                lineNo++
-                totalLines = lineNo
-                if (lineNo < startLine) return@forEach
-                if (lineNo > endCap) {
-                    // 已越过窗口，但仍需继续计数以得到准确 total_lines。
-                    return@forEach
-                }
-                if (!truncatedByBytes) {
-                    val lineBytes = line.toByteArray(Charsets.UTF_8).size + 1
-                    if (byteCount + lineBytes > MAX_BYTES && emittedLines > 0) {
-                        truncatedByBytes = true
-                    } else {
-                        if (emittedLines > 0) sb.append('\n')
-                        sb.append(line)
-                        byteCount += lineBytes
-                        emittedLines++
+            withContext(Dispatchers.IO) {
+                fileAccess.readLines(path).forEach { line ->
+                    lineNo++
+                    totalLines = lineNo
+                    if (lineNo < startLine) return@forEach
+                    if (lineNo > endCap) {
+                        // 已越过窗口，但仍需继续计数以得到准确 total_lines。
+                        return@forEach
+                    }
+                    if (!truncatedByBytes) {
+                        val lineBytes = line.toByteArray(Charsets.UTF_8).size + 1
+                        if (byteCount + lineBytes > MAX_BYTES && emittedLines > 0) {
+                            truncatedByBytes = true
+                        } else {
+                            if (emittedLines > 0) sb.append('\n')
+                            sb.append(line)
+                            byteCount += lineBytes
+                            emittedLines++
+                        }
                     }
                 }
             }

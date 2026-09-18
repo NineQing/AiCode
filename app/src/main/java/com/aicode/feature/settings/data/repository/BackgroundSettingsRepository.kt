@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -16,7 +17,10 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.backgroundDataStore by preferencesDataStore(name = "background_prefs")
+private val Context.backgroundDataStore by preferencesDataStore(
+    name = "background_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /**
  * 全局自定义背景图：图片文件拷贝到应用私有目录持久化（不依赖 content URI 授权），

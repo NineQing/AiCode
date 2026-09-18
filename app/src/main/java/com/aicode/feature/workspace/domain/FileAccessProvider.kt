@@ -34,13 +34,16 @@ data class FileEntry(
  */
 interface FileAccessProvider {
 
-    /** 读取文件全文文本。文件不存在时抛 [NoSuchFileException]。 */
+    /**
+     * 读取文件全文文本。文件不存在时抛 [NoSuchFileException]。
+     * 远程模式对超过实现上限的文件抛 [RemoteOutputTooLargeException]，避免整篇读进内存。
+     */
     fun readFile(path: String): String
 
     /**
-     * 逐行读取文件，供 [ReadFileTool] 按行窗口读取。
-     * 返回行序列；文件不存在时抛 [NoSuchFileException]。
-     * 本地实现用 useLines 流式读；远程实现先 SFTP 下载到临时文件再逐行读（或直接 SFTP 读流按行切）。
+     * 惰性逐行读取文件，供 [ReadFileTool] 按行窗口读取：读到哪算哪，整文件不进内存；
+     * 单行超过上限（默认 64K 字符）会被截断。
+     * 返回的序列仅供单次迭代，且调用方需在 IO 线程上迭代；文件不存在时抛 [NoSuchFileException]。
      */
     fun readLines(path: String): Sequence<String>
 
@@ -84,7 +87,7 @@ interface FileAccessProvider {
 
     /**
      * 读取文件原始字节。供 [ViewImageTool] 等需要二进制数据的工具使用。
-     * 远程模式下若调用方需要本地文件路径，改用 [copyToLocal]。
+     * 远程模式下若调用方需要本地文件路径，改用 [copyToLocal]；文件过大时抛 [RemoteOutputTooLargeException]。
      */
     fun readBytes(path: String): ByteArray
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -11,7 +12,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.defaultModelDataStore by preferencesDataStore(name = "default_model_prefs")
+private val Context.defaultModelDataStore by preferencesDataStore(
+    name = "default_model_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /**
  * 持久化「新会话默认模型」（providerId + model 两字符串）。

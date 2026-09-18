@@ -1,6 +1,8 @@
 package com.aicode.feature.agent.domain.container
 
+import com.aicode.core.util.BoundedLineReader
 import com.aicode.core.util.FileLogger
+import com.aicode.core.util.LINE_TRUNCATED_NOTE
 import com.aicode.R
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,9 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.Closeable
 import java.io.InputStreamReader
-import java.io.Reader
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -69,65 +69,6 @@ data class ProotInvocation(
      */
     val ptyEnvArray: Array<String>
         get() = (System.getenv() + env).map { "${it.key}=${it.value}" }.toTypedArray()
-}
-
-/**
- * 容器命令单行输出上限（字符）。`BufferedReader.readLine()` 遇到超长单行（命令把二进制/大文件
- * dump 到 stdout，如 `cat` 可执行文件、`base64` 大文件）会把整行拼进内存，设备上直接 OOM。
- * 超过上限即截断、丢弃该行余下内容，保证内存有界。
- */
-internal const val MAX_STREAM_LINE_CHARS = 64 * 1024
-
-/** 超长单行被截断后追加的提示行。 */
-internal const val LINE_TRUNCATED_NOTE = "[该行输出过长，已截断]"
-
-/** 一行输出；[truncated] 为 true 表示该行超过 [MAX_STREAM_LINE_CHARS] 被截断。 */
-internal class StreamLine(val text: String, val truncated: Boolean)
-
-/**
- * 逐行读取 [reader]，分行语义与 [java.io.BufferedReader.readLine] 一致（`\n` / `\r` / `\r\n`），
- * 但单行长度封顶 [maxChars]：达到上限后不再累积、继续消费该行余下内容并丢弃，避免超长单行 OOM。
- */
-internal class BoundedLineReader(
-    private val reader: Reader,
-    private val maxChars: Int = MAX_STREAM_LINE_CHARS
-) : Closeable {
-    private val buf = CharArray(8192)
-    private var pos = 0
-    private var len = 0
-    private var skipLf = false
-
-    override fun close() = reader.close()
-
-    fun readLine(): StreamLine? {
-        val sb = StringBuilder()
-        var truncated = false
-        var sawContent = false
-        while (true) {
-            if (pos >= len) {
-                if (len == -1) return if (sawContent) StreamLine(sb.toString(), truncated) else null
-                len = reader.read(buf)
-                pos = 0
-                continue
-            }
-            val c = buf[pos++]
-            if (skipLf) {
-                skipLf = false
-                if (c == '\n') continue
-            }
-            when (c) {
-                '\n' -> return StreamLine(sb.toString(), truncated)
-                '\r' -> {
-                    skipLf = true
-                    return StreamLine(sb.toString(), truncated)
-                }
-                else -> {
-                    sawContent = true
-                    if (sb.length < maxChars) sb.append(c) else truncated = true
-                }
-            }
-        }
-    }
 }
 
 @Singleton
@@ -359,11 +300,11 @@ class LinuxContainerEngine @Inject constructor(
         // 未就绪时不自动初始化，直接返回引导文案，由用户去终端页完成初始化。
         notReadyHint()?.let { return@withContext CommandResult(it, null) }
         val r = execCaptured(command, projectPath, timeoutMs)
-        CommandResult(r.output, r.exitCode)
+        CommandResult(r.output, r.exitCode, r.truncated)
     }
 
     /** 一次容器内执行的内部结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。 */
-    private data class ExecResult(val output: String, val exitCode: Int?)
+    private data class ExecResult(val output: String, val exitCode: Int?, val truncated: Boolean = false)
 
     /**
      * 仅在容器已就绪（rootfs 已安装）时执行命令；不会触发 rootfs 解压。
@@ -378,7 +319,7 @@ class LinuxContainerEngine @Inject constructor(
     ): CommandResult? {
         if (!containerInstaller.isInstalledFor(currentProfile)) return null
         val result = execCaptured(command, projectPath, timeoutMs)
-        return CommandResult(result.output, result.exitCode)
+        return CommandResult(result.output, result.exitCode, result.truncated)
     }
 
     override suspend fun runCommandSyncUnbounded(
@@ -388,7 +329,7 @@ class LinuxContainerEngine @Inject constructor(
     ): CommandResult = withContext(Dispatchers.IO) {
         notReadyHint()?.let { return@withContext CommandResult(it, null) }
         val r = execCaptured(command, projectPath, timeoutMs, unbounded = true)
-        CommandResult(r.output, r.exitCode)
+        CommandResult(r.output, r.exitCode, r.truncated)
     }
 
     /**
@@ -419,8 +360,9 @@ class LinuxContainerEngine @Inject constructor(
             }
 
             // 限幅累积：超大输出只保留开头+结尾，避免撑爆内存与模型上下文。
-            // 不限幅模式（unbounded）供需要完整输出的调用方使用（如 git diff），由上层自行兜底。
-            val output = if (unbounded) BoundedOutput(Int.MAX_VALUE, Int.MAX_VALUE) else BoundedOutput()
+            // 不限幅模式（unbounded）保留连续开头、到 MAX_UNBOUNDED_CHARS 为止，
+            // 超限即停止并置 truncated（调用方如 git 据此提示「输出过大」）。
+            val output = if (unbounded) BoundedOutput.hardCapped(MAX_UNBOUNDED_CHARS) else BoundedOutput()
             // 看门狗与读循环并发：超时则 destroy 进程，使阻塞的 readLine 立即返回 null 退出循环。
             var exitCode: Int? = null
             try {
@@ -448,10 +390,10 @@ class LinuxContainerEngine @Inject constructor(
                 FileLogger.w(TAG, "命令超时(${effectiveTimeout}ms)已终止: ${sanitizeCommandForLog(command)}")
                 output.append(timeoutNotice(effectiveTimeout))
                 output.append("\n")
-                ExecResult(output.build(), null)
+                ExecResult(output.build(), null, output.truncated)
             } else {
                 FileLogger.v(TAG, "命令完成(退出码 $exitCode，输出 ${output.totalChars} 字符): ${sanitizeCommandForLog(command)}")
-                ExecResult(output.build(), exitCode)
+                ExecResult(output.build(), exitCode, output.truncated)
             }
         } catch (e: CancellationException) {
             throw e

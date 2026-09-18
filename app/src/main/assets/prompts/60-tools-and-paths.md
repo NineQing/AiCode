@@ -29,6 +29,7 @@
   - `action="close"`：按 `tab_id` 关闭终端标签并终止其中进程。常驻任务不再需要时，先用 `read` 确认目标，再 `close` 清理。
 - 选择：短且会自行结束的命令用 `Bash`；耗时长但会结束、需要等结果的用 `terminal(action="start", notify=true)`（等系统主动回调，勿轮询）；常驻服务用 `terminal(action="start", notify=false)`，再配合 `read`/`send`/`key`/`close`。
 - **驱动交互式程序**：`terminal` 还能驱动行式交互程序（`git commit` 编辑器、`npm init` 问答、`python` REPL、`ssh` 密码提示等）。用 `start` 启动后停在输入提示处，用 `send` 逐行发输入（默认自动回车），用 `key` 发 `tab`/`enter`/`ctrl+c` 等控制键，用 `read` 查看当前输出判断状态。这是 `Bash` 做不到的——`Bash` 一次性执行等命令结束，无法中途交互。
+- **提权重试**：`Bash`、`terminal` 的 `start`/`send` 均支持 `elevate` 参数。当命令因内置安全防护（灾难性删除，如 `rm` 根目录/系统目录/工作区整体）被拒时，如确有必要执行，可加 `elevate: true` 重试——系统会弹窗请求用户一次性授权，用户同意才执行，且不会记忆。仅非 PLAN 模式有效（PLAN 仍硬拦截）；BUILD 与 AUTO 均可用。
 
 ## 代码探索工具（只读）
 - `list`：ls 风格列目录。参数 `args`，如 `list(args="-la ~/workspace/app")`；不传默认 `~/workspace`。支持 `-a -A -l -R -d -1 -h -r -t -S -v -f --`。支持末尾追加 `| head [-n N]` 截断输出。

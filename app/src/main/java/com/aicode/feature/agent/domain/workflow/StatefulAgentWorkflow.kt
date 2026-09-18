@@ -1141,12 +1141,13 @@ class StatefulAgentWorkflow @Inject constructor(
             ToolPermissionPolicyEngine.Verdict.ALLOW -> PermissionCheckResult(true)
             ToolPermissionPolicyEngine.Verdict.DENY -> PermissionCheckResult(false)
             ToolPermissionPolicyEngine.Verdict.ASK -> {
-                val request = tool.buildPermissionRequest(callId, arguments, argsPreview)
-                    .copy(
-                        rememberablePatterns = eval.rememberablePatterns,
-                        rememberDisabledReason = eval.rememberDisabledReason,
-                        sessionId = sessionId.orEmpty()
-                    )
+                val base = tool.buildPermissionRequest(callId, arguments, argsPreview)
+                val request = base.copy(
+                    title = eval.askTitle ?: base.title,
+                    rememberablePatterns = eval.rememberablePatterns,
+                    rememberDisabledReason = eval.rememberDisabledReason,
+                    sessionId = sessionId.orEmpty()
+                )
                 when (permissionManager.awaitApproval(request)) {
                     PermissionChoice.REJECT -> PermissionCheckResult(false, "用户拒绝执行该工具", "USER_REJECTED")
                     PermissionChoice.ONCE -> PermissionCheckResult(true)

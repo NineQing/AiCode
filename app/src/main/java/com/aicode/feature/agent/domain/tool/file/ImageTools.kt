@@ -342,6 +342,7 @@ class ViewImageTool @Inject constructor(
         provider.temperature = if (metadata.supportsCustomTemperature) fixedTemperature(config.effectiveModel) else null
         provider.firstByteTimeoutMs = generalSettingsRepository.firstByteTimeoutMs()
         provider.streamIdleTimeoutMs = generalSettingsRepository.streamIdleTimeoutMs()
+        provider.maxNetworkRetries = generalSettingsRepository.maxNetworkRetries()
         return provider
     }
 

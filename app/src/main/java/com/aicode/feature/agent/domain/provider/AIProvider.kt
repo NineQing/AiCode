@@ -177,6 +177,12 @@ interface AIProvider {
     var streamIdleTimeoutMs: Long
 
     /**
+     * 网络请求（含流式）的最大重试次数，不含首次请求；调用前由工作流按「通用设置 → 网络」写入。
+     * 默认 6；0 表示失败即抛出、不重试。
+     */
+    var maxNetworkRetries: Int
+
+    /**
      * 单轮补全。[tools] 会以提供商的 function-calling 格式真正发给模型，
      * 模型若决定调用工具，结果会出现在返回的 [AIResponse.toolCalls] 中。
      * [reasoningEffort] 为思考强度（"low"/"medium"/"high"），仅 OpenAI 系生效；

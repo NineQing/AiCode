@@ -37,6 +37,7 @@ class GeminiAdapter @Inject constructor(
     override var logSessionId: String? = null
     override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
     override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /** 自定义请求头：占位符替换后写出，完全覆盖同名默认头。 */
     override var customHeaders: Map<String, String> = emptyMap()
@@ -88,6 +89,7 @@ class GeminiAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         val response = try {
             retryStaircase(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
             ) {
                 api.generateContent(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
@@ -202,6 +204,7 @@ class GeminiAdapter @Inject constructor(
         try {
             val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, canRetry ->
                     val outcome = switchKeyOnFailure(e, triedKeys)
                     if (outcome != null && canRetry) {
@@ -390,6 +393,7 @@ class GeminiAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         val response = try {
             retryStaircase(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
             ) {
                 api.createInteraction(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
@@ -444,6 +448,7 @@ class GeminiAdapter @Inject constructor(
         try {
             val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, canRetry ->
                     val outcome = switchKeyOnFailure(e, triedKeys)
                     if (outcome != null && canRetry) {

@@ -207,6 +207,9 @@ fun SettingsScreen(
     val startupSessionMode by viewModel.startupSessionMode.collectAsStateWithLifecycle()
     val firstByteTimeoutSec by viewModel.firstByteTimeoutSec.collectAsStateWithLifecycle()
     val streamIdleTimeoutSec by viewModel.streamIdleTimeoutSec.collectAsStateWithLifecycle()
+    val maxNetworkRetries by viewModel.maxNetworkRetries.collectAsStateWithLifecycle()
+    val enterToSend by viewModel.enterToSend.collectAsStateWithLifecycle()
+    val compactionThresholdPercent by viewModel.compactionThresholdPercent.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val themePresetId by viewModel.themePresetId.collectAsStateWithLifecycle()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
@@ -734,7 +737,13 @@ fun SettingsScreen(
                     firstByteTimeoutSec = firstByteTimeoutSec,
                     onSetFirstByteTimeoutSec = { viewModel.setFirstByteTimeoutSec(it) },
                     streamIdleTimeoutSec = streamIdleTimeoutSec,
-                    onSetStreamIdleTimeoutSec = { viewModel.setStreamIdleTimeoutSec(it) }
+                    onSetStreamIdleTimeoutSec = { viewModel.setStreamIdleTimeoutSec(it) },
+                    maxNetworkRetries = maxNetworkRetries,
+                    onSetMaxNetworkRetries = { viewModel.setMaxNetworkRetries(it) },
+                    enterToSend = enterToSend,
+                    onToggleEnterToSend = { viewModel.setEnterToSend(it) },
+                    compactionThresholdPercent = compactionThresholdPercent,
+                    onSetCompactionThresholdPercent = { viewModel.setCompactionThresholdPercent(it) }
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,

@@ -51,11 +51,19 @@ internal fun GeneralSettingsSection(
     firstByteTimeoutSec: Int,
     onSetFirstByteTimeoutSec: (Int) -> Unit,
     streamIdleTimeoutSec: Int,
-    onSetStreamIdleTimeoutSec: (Int) -> Unit
+    onSetStreamIdleTimeoutSec: (Int) -> Unit,
+    maxNetworkRetries: Int,
+    onSetMaxNetworkRetries: (Int) -> Unit,
+    enterToSend: Boolean,
+    onToggleEnterToSend: (Boolean) -> Unit,
+    compactionThresholdPercent: Int,
+    onSetCompactionThresholdPercent: (Int) -> Unit
 ) {
     var showStartupSessionSheet by remember { mutableStateOf(false) }
     var editingFirstByteTimeout by remember { mutableStateOf(false) }
     var editingStreamIdleTimeout by remember { mutableStateOf(false) }
+    var editingMaxNetworkRetries by remember { mutableStateOf(false) }
+    var editingCompactionThreshold by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -78,6 +86,20 @@ internal fun GeneralSettingsSection(
                     )
                 }
             )
+            SettingsDivider()
+            SettingsRow(
+                icon = null,
+                title = stringResource(R.string.settings_compaction_threshold),
+                subtitle = stringResource(R.string.settings_compaction_threshold_desc),
+                onClick = { editingCompactionThreshold = true },
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.settings_percent_value, compactionThresholdPercent),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
         }
 
         SettingsGroupHeader(text = stringResource(R.string.settings_general_session))
@@ -91,6 +113,21 @@ internal fun GeneralSettingsSection(
                         text = stringResource(startupSessionMode.labelRes()),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
+        }
+
+        SettingsGroupHeader(text = stringResource(R.string.settings_general_input))
+        SettingsGroup {
+            SettingsRow(
+                icon = null,
+                title = stringResource(R.string.settings_enter_to_send),
+                subtitle = stringResource(R.string.settings_enter_to_send_desc),
+                trailing = {
+                    AppSwitch(
+                        checked = enterToSend,
+                        onCheckedChange = onToggleEnterToSend
                     )
                 }
             )
@@ -125,6 +162,20 @@ internal fun GeneralSettingsSection(
                     )
                 }
             )
+            SettingsDivider()
+            SettingsRow(
+                icon = null,
+                title = stringResource(R.string.settings_max_network_retries),
+                subtitle = stringResource(R.string.settings_max_network_retries_desc),
+                onClick = { editingMaxNetworkRetries = true },
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.settings_retries_count, maxNetworkRetries),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
         }
     }
 
@@ -140,9 +191,10 @@ internal fun GeneralSettingsSection(
     }
 
     if (editingFirstByteTimeout) {
-        TimeoutInputDialog(
+        NumberInputDialog(
             title = stringResource(R.string.settings_first_byte_timeout),
-            initialSec = firstByteTimeoutSec,
+            initialValue = firstByteTimeoutSec,
+            hint = stringResource(R.string.settings_timeout_input_hint),
             onConfirm = {
                 onSetFirstByteTimeoutSec(it)
                 editingFirstByteTimeout = false
@@ -152,14 +204,43 @@ internal fun GeneralSettingsSection(
     }
 
     if (editingStreamIdleTimeout) {
-        TimeoutInputDialog(
+        NumberInputDialog(
             title = stringResource(R.string.settings_stream_idle_timeout),
-            initialSec = streamIdleTimeoutSec,
+            initialValue = streamIdleTimeoutSec,
+            hint = stringResource(R.string.settings_timeout_input_hint),
             onConfirm = {
                 onSetStreamIdleTimeoutSec(it)
                 editingStreamIdleTimeout = false
             },
             onDismiss = { editingStreamIdleTimeout = false }
+        )
+    }
+
+    if (editingMaxNetworkRetries) {
+        NumberInputDialog(
+            title = stringResource(R.string.settings_max_network_retries),
+            initialValue = maxNetworkRetries,
+            hint = stringResource(R.string.settings_retries_input_hint),
+            onConfirm = {
+                onSetMaxNetworkRetries(it)
+                editingMaxNetworkRetries = false
+            },
+            onDismiss = { editingMaxNetworkRetries = false }
+        )
+    }
+
+    if (editingCompactionThreshold) {
+        NumberInputDialog(
+            title = stringResource(R.string.settings_compaction_threshold),
+            initialValue = compactionThresholdPercent,
+            hint = stringResource(R.string.settings_compaction_threshold_input_hint),
+            minValue = 1,
+            maxValue = 100,
+            onConfirm = {
+                onSetCompactionThresholdPercent(it)
+                editingCompactionThreshold = false
+            },
+            onDismiss = { editingCompactionThreshold = false }
         )
     }
 }
@@ -171,18 +252,22 @@ private fun timeoutLabel(sec: Int): String =
     else stringResource(R.string.settings_timeout_seconds, sec)
 
 /**
- * 超时时间输入弹窗：只接受非负整数秒，留空或填 0 即不限制。
+ * 数值输入弹窗：只接受非负整数，留空或填 0 按 0 处理（由调用方决定 0 的语义）。
  */
 @Composable
-private fun TimeoutInputDialog(
+private fun NumberInputDialog(
     title: String,
-    initialSec: Int,
+    initialValue: Int,
+    hint: String,
+    minValue: Int = 0,
+    maxValue: Int = Int.MAX_VALUE,
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var text by remember { mutableStateOf(if (initialSec > 0) initialSec.toString() else "") }
+    var text by remember { mutableStateOf(if (initialValue > 0) initialValue.toString() else "") }
     val parsed = text.trim().toIntOrNull()
-    val isValid = text.isBlank() || (parsed != null && parsed >= 0)
+    // 留空按 [minValue] 的语义处理：允许 0 的场景（超时/重试）视为不限制，否则视为未填。
+    val isValid = if (text.isBlank()) minValue <= 0 else parsed != null && parsed in minValue..maxValue
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -192,10 +277,9 @@ private fun TimeoutInputDialog(
             AppTextField(
                 value = text,
                 onValueChange = { input -> text = input.filter { it.isDigit() } },
-                placeholder = stringResource(R.string.settings_timeout_unlimited),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = !isValid,
-                supportingText = { Text(stringResource(R.string.settings_timeout_input_hint)) }
+                supportingText = { Text(hint) }
             )
         },
         confirmButton = {

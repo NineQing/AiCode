@@ -457,6 +457,15 @@ class SettingsViewModel @Inject constructor(
     private val _streamIdleTimeoutSec = MutableStateFlow(0)
     val streamIdleTimeoutSec: StateFlow<Int> = _streamIdleTimeoutSec.asStateFlow()
 
+    private val _maxNetworkRetries = MutableStateFlow(6)
+    val maxNetworkRetries: StateFlow<Int> = _maxNetworkRetries.asStateFlow()
+
+    private val _enterToSend = MutableStateFlow(false)
+    val enterToSend: StateFlow<Boolean> = _enterToSend.asStateFlow()
+
+    private val _compactionThresholdPercent = MutableStateFlow(90)
+    val compactionThresholdPercent: StateFlow<Int> = _compactionThresholdPercent.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -734,6 +743,24 @@ class SettingsViewModel @Inject constructor(
             launch {
                 generalSettingsRepository.streamIdleTimeoutSecFlow.collectLatest {
                     _streamIdleTimeoutSec.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.maxNetworkRetriesFlow.collectLatest {
+                    _maxNetworkRetries.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.enterToSendFlow.collectLatest {
+                    _enterToSend.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.compactionThresholdPercentFlow.collectLatest {
+                    _compactionThresholdPercent.value = it
                 }
             }
 
@@ -1289,6 +1316,27 @@ class SettingsViewModel @Inject constructor(
     fun setStreamIdleTimeoutSec(sec: Int) {
         viewModelScope.launch {
             generalSettingsRepository.setStreamIdleTimeoutSec(sec)
+        }
+    }
+
+    /** 网络请求最大重试次数；0 表示不重试。 */
+    fun setMaxNetworkRetries(count: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setMaxNetworkRetries(count)
+        }
+    }
+
+    /** 回车键是否直接发送消息。 */
+    fun setEnterToSend(enabled: Boolean) {
+        viewModelScope.launch {
+            generalSettingsRepository.setEnterToSend(enabled)
+        }
+    }
+
+    /** 自动压缩触发阈值（上下文窗口百分比，1..100）。 */
+    fun setCompactionThresholdPercent(percent: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setCompactionThresholdPercent(percent)
         }
     }
 

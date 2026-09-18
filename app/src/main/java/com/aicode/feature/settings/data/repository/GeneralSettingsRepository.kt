@@ -27,8 +27,9 @@ enum class StartupSessionMode {
 /**
  * 「通用设置」里的用户偏好。
  *
- * 目前三项：拉取模型成功后是否自动移除远端已不存在的本地模型（默认开启）、
- * 启动时进入新会话还是最近会话（默认新开会话），以及首字 / 数据块间隔超时（秒）。
+ * 目前六项：拉取模型成功后是否自动移除远端已不存在的本地模型（默认开启）、
+ * 启动时进入新会话还是最近会话（默认新开会话）、首字 / 数据块间隔超时（秒）、
+ * 网络请求的最大重试次数（默认 6），以及回车发送与自动压缩阈值。
  * DataStore 用法与 [KeepaliveSettingsRepository] 一致。
  */
 @Singleton
@@ -40,9 +41,18 @@ class GeneralSettingsRepository @Inject constructor(
         val STARTUP_SESSION_MODE_KEY = stringPreferencesKey("startup_session_mode")
         val FIRST_BYTE_TIMEOUT_SEC_KEY = intPreferencesKey("first_byte_timeout_sec")
         val STREAM_IDLE_TIMEOUT_SEC_KEY = intPreferencesKey("stream_idle_timeout_sec")
+        val MAX_NETWORK_RETRIES_KEY = intPreferencesKey("max_network_retries")
+        val ENTER_TO_SEND_KEY = booleanPreferencesKey("enter_to_send")
+        val COMPACTION_THRESHOLD_PERCENT_KEY = intPreferencesKey("compaction_threshold_percent")
 
         /** 首字超时默认 5 分钟，与原硬编码值一致。 */
         const val DEFAULT_FIRST_BYTE_TIMEOUT_SEC = 300
+
+        /** 网络重试次数默认 6，与原硬编码值一致。 */
+        const val DEFAULT_MAX_NETWORK_RETRIES = 6
+
+        /** 自动压缩阈值默认 90%，与原硬编码值一致。 */
+        const val DEFAULT_COMPACTION_THRESHOLD_PERCENT = 90
     }
 
     /** 拉取模型后自动对齐本地列表的开关流；未设置时回退到 true（默认开启）。 */
@@ -116,4 +126,50 @@ class GeneralSettingsRepository @Inject constructor(
     suspend fun restoreFirstByteTimeoutSec(sec: Int) = setFirstByteTimeoutSec(sec)
 
     suspend fun restoreStreamIdleTimeoutSec(sec: Int) = setStreamIdleTimeoutSec(sec)
+
+    /** 网络请求最大重试次数（不含首次请求）；0 表示不重试，未设置时回退到 6。 */
+    val maxNetworkRetriesFlow: Flow<Int> = context.generalDataStore.data.map {
+        (it[MAX_NETWORK_RETRIES_KEY] ?: DEFAULT_MAX_NETWORK_RETRIES).coerceAtLeast(0)
+    }
+
+    suspend fun setMaxNetworkRetries(count: Int) {
+        context.generalDataStore.edit { it[MAX_NETWORK_RETRIES_KEY] = count.coerceAtLeast(0) }
+    }
+
+    /** 装配 provider 前读取一次最大重试次数。 */
+    suspend fun maxNetworkRetries(): Int = maxNetworkRetriesFlow.first()
+
+    /** 备份快照：最大重试次数。 */
+    suspend fun maxNetworkRetriesSnapshot(): Int = maxNetworkRetriesFlow.first()
+
+    suspend fun restoreMaxNetworkRetries(count: Int) = setMaxNetworkRetries(count)
+
+    /** 回车键是否直接发送消息；默认关闭（回车换行，由发送按钮发送）。 */
+    val enterToSendFlow: Flow<Boolean> =
+        context.generalDataStore.data.map { it[ENTER_TO_SEND_KEY] ?: false }
+
+    suspend fun setEnterToSend(enabled: Boolean) {
+        context.generalDataStore.edit { it[ENTER_TO_SEND_KEY] = enabled }
+    }
+
+    /** 自动压缩触发阈值（上下文窗口的百分比）；默认 90，限定 1..100。 */
+    val compactionThresholdPercentFlow: Flow<Int> = context.generalDataStore.data.map {
+        (it[COMPACTION_THRESHOLD_PERCENT_KEY] ?: DEFAULT_COMPACTION_THRESHOLD_PERCENT).coerceIn(1, 100)
+    }
+
+    suspend fun setCompactionThresholdPercent(percent: Int) {
+        context.generalDataStore.edit { it[COMPACTION_THRESHOLD_PERCENT_KEY] = percent.coerceIn(1, 100) }
+    }
+
+    /** 压缩前读取一次触发阈值百分比。 */
+    suspend fun compactionThresholdPercent(): Int = compactionThresholdPercentFlow.first()
+
+    /** 备份快照：回车发送开关与压缩阈值。 */
+    suspend fun enterToSendSnapshot(): Boolean = enterToSendFlow.first()
+
+    suspend fun compactionThresholdPercentSnapshot(): Int = compactionThresholdPercentFlow.first()
+
+    suspend fun restoreEnterToSend(enabled: Boolean) = setEnterToSend(enabled)
+
+    suspend fun restoreCompactionThresholdPercent(percent: Int) = setCompactionThresholdPercent(percent)
 }

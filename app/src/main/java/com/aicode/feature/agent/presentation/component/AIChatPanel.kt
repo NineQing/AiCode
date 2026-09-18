@@ -1142,6 +1142,7 @@ fun AIChatPanel(
                 value = inputText,
                 onValueChange = { inputText = it; viewModel.updateInputDraft(it) },
                 onSend = sendMessage,
+                enterToSend = settingsViewModel?.enterToSend?.collectAsStateWithLifecycle()?.value ?: false,
                 onStop = { viewModel.stopAgent() },
                 isBusy = isBusy,
                 workspaceViewModel = workspaceViewModel,

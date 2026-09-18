@@ -46,6 +46,7 @@ class AnthropicAdapter @Inject constructor(
     override var logSessionId: String? = null
     override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
     override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /** 是否启用显式缓存断点（cache_control）。默认开启；第三方兼容网关严格校验未知字段时由设置项关闭。 */
     var cacheBreakpointsEnabled: Boolean = true
@@ -97,6 +98,7 @@ class AnthropicAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         val response = try {
             retryStaircase(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
             ) {
                 api.createMessage(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
@@ -179,6 +181,7 @@ class AnthropicAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         try {
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, canRetry ->
                     val outcome = switchKeyOnFailure(e, triedKeys)
                     if (outcome != null && canRetry) {

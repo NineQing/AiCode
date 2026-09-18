@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -102,6 +103,8 @@ internal fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    /** 回车键是否直接发送：开启后 IME 回车键变为「发送」，关闭则回车换行（默认）。 */
+    enterToSend: Boolean = false,
     onStop: () -> Unit,
     isBusy: Boolean,
     workspaceViewModel: WorkspaceViewModel?,
@@ -287,7 +290,16 @@ internal fun ChatInputBar(
                         )
                     },
                     enabled = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                    keyboardOptions = if (enterToSend) {
+                        KeyboardOptions(imeAction = ImeAction.Send)
+                    } else {
+                        KeyboardOptions(imeAction = ImeAction.Default)
+                    },
+                    keyboardActions = if (enterToSend) {
+                        KeyboardActions(onSend = { onSend() })
+                    } else {
+                        KeyboardActions.Default
+                    },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,

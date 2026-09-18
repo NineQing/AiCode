@@ -26,6 +26,17 @@
     <string name="settings_timeout_unlimited">不限制</string>
     <string name="settings_timeout_seconds">%1$d 秒</string>
     <string name="settings_timeout_input_hint">单位秒，填 0 表示不限制</string>
+    <string name="settings_max_network_retries">重试次数</string>
+    <string name="settings_max_network_retries_desc">网络失败后的指数退避重试次数</string>
+    <string name="settings_retries_count">%1$d 次</string>
+    <string name="settings_retries_input_hint">填 0 表示不重试</string>
+    <string name="settings_general_input">输入</string>
+    <string name="settings_enter_to_send">回车键发送消息</string>
+    <string name="settings_enter_to_send_desc">关闭时回车换行，由发送按钮发送</string>
+    <string name="settings_compaction_threshold">自动压缩阈值</string>
+    <string name="settings_compaction_threshold_desc">上下文用到窗口的这个比例时自动压缩</string>
+    <string name="settings_percent_value">%1$d%%</string>
+    <string name="settings_compaction_threshold_input_hint">填 1-100 的整数百分比</string>
     <string name="settings_vision_model">识图模型</string>
     <string name="settings_compaction_model">压缩模型</string>
     <string name="settings_title_model">标题总结模型</string>

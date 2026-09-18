@@ -45,6 +45,7 @@ class OpenAIAdapter @Inject constructor(
     override var logSessionId: String? = null
     override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
     override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /**
      * 是否在 Chat Completion 路径发送 `prompt_cache_key`（缓存 shard 路由）。
@@ -117,6 +118,7 @@ class OpenAIAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         val response = try {
             retryStaircase(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
             ) {
                 api.createChatCompletion(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
@@ -229,6 +231,7 @@ class OpenAIAdapter @Inject constructor(
         val triedKeys = mutableSetOf(apiKey)
         val response = try {
             retryStaircase(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
             ) {
                 api.createResponses(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
@@ -307,6 +310,7 @@ class OpenAIAdapter @Inject constructor(
         try {
             val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, canRetry ->
                     val outcome = switchKeyOnFailure(e, triedKeys)
                     if (outcome != null && canRetry) {
@@ -471,6 +475,7 @@ class OpenAIAdapter @Inject constructor(
         try {
             val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
                 onKeyFailure = { e, canRetry ->
                     val outcome = switchKeyOnFailure(e, triedKeys)
                     if (outcome != null && canRetry) {

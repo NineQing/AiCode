@@ -14,6 +14,7 @@ import com.aicode.feature.agent.domain.provider.AIProvider
 import com.aicode.feature.agent.domain.provider.AIResponse
 import com.aicode.feature.agent.presentation.MessageRole
 import com.aicode.feature.settings.data.remote.ModelMetadataService
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.domain.model.ModelContextPolicy
 import com.aicode.feature.settings.domain.model.ProviderType
 import android.os.SystemClock
@@ -26,7 +27,8 @@ class ContextCompactor @Inject constructor(
     private val agentMessageDao: AgentMessageDao,
     private val modelMetadataService: ModelMetadataService,
     private val systemPromptProvider: SystemPromptProvider,
-    private val llmCallRecordDao: LlmCallRecordDao
+    private val llmCallRecordDao: LlmCallRecordDao,
+    private val generalSettingsRepository: GeneralSettingsRepository
 ) {
 
     private companion object {
@@ -68,7 +70,8 @@ class ContextCompactor @Inject constructor(
         val windowMetadata = modelMetadataService.resolve(windowModel.providerId, inferProviderType(windowModel), windowModel.model)
         val summaryMetadata = modelMetadataService.resolve(aiProvider.providerId, inferProviderType(aiProvider), aiProvider.model)
         val contextLimit = windowMetadata.contextTokens.takeIf { it > 0 } ?: ModelContextPolicy.DEFAULT_CONTEXT_TOKENS
-        val triggerThreshold = (contextLimit * 0.9f).toInt()
+        // 触发阈值百分比由「通用设置 → 模型」配置（默认 90，见 GeneralSettingsRepository）。
+        val triggerThreshold = (contextLimit * generalSettingsRepository.compactionThresholdPercent() / 100.0).toInt()
         // 真实 usage 优先（含 system prompt + tools，与上下文窗口同口径）；取不到（0）回退本地估算
         val currentTokens = lastInputTokens.takeIf { it > 0 } ?: estimatedTokens
         val reachedThreshold = currentTokens >= triggerThreshold

@@ -338,6 +338,9 @@ class BackupManagerImpl @Inject constructor(
         startupSessionMode = if (options.appSettings) generalSettingsRepository.startupSessionModeSnapshot() else null,
         firstByteTimeoutSec = if (options.appSettings) generalSettingsRepository.firstByteTimeoutSecSnapshot() else 300,
         streamIdleTimeoutSec = if (options.appSettings) generalSettingsRepository.streamIdleTimeoutSecSnapshot() else 0,
+        maxNetworkRetries = if (options.appSettings) generalSettingsRepository.maxNetworkRetriesSnapshot() else 6,
+        enterToSend = if (options.appSettings) generalSettingsRepository.enterToSendSnapshot() else false,
+        compactionThresholdPercent = if (options.appSettings) generalSettingsRepository.compactionThresholdPercentSnapshot() else 90,
         logLevel = if (options.appSettings) logSettingsRepository.snapshot() else null,
         visionProviderId = if (options.appSettings) visionModelSettingsRepository.getVisionProviderId() else "",
         visionModel = if (options.appSettings) visionModelSettingsRepository.getVisionModel() else "",
@@ -616,6 +619,9 @@ class BackupManagerImpl @Inject constructor(
         generalSettingsRepository.restoreStartupSessionMode(meta.startupSessionMode)
         generalSettingsRepository.restoreFirstByteTimeoutSec(meta.firstByteTimeoutSec)
         generalSettingsRepository.restoreStreamIdleTimeoutSec(meta.streamIdleTimeoutSec)
+        generalSettingsRepository.restoreMaxNetworkRetries(meta.maxNetworkRetries)
+        generalSettingsRepository.restoreEnterToSend(meta.enterToSend)
+        generalSettingsRepository.restoreCompactionThresholdPercent(meta.compactionThresholdPercent)
         logSettingsRepository.restore(meta.logLevel)
         if (meta.visionProviderId.isNotBlank() || meta.visionModel.isNotBlank()) {
             visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel)

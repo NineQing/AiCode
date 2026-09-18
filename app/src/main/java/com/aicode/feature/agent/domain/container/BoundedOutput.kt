@@ -1,6 +1,12 @@
 package com.aicode.feature.agent.domain.container
 
 /**
+ * 不限幅命令（git diff / 文件内容等）的输出硬上限（字符）：超过即截断并置
+ * [CommandResult.outputTruncated]，避免无界输出撑爆内存。
+ */
+const val MAX_UNBOUNDED_CHARS = 8 * 1024 * 1024
+
+/**
  * 累积命令输出但限制内存占用：保留「开头 [headLimit] 个字符」与「结尾 [tailLimit] 个字符」，
  * 丢弃中间，避免超大输出（如 `cat` 大文件 / 安装日志）撑爆内存、模型上下文与 UI 渲染。
  *
@@ -56,15 +62,29 @@ class BoundedOutput(
         val omitted = total - head.length - tail.length
         return buildString {
             append(head)
-            append("\n\n…[输出过长，已省略中间 ")
-            append(omitted)
-            append(" 个字符；仅保留开头与结尾]…\n\n")
-            append(tail)
+            if (tail.isEmpty()) {
+                append("\n\n…[输出过长，已省略后续 ")
+                append(omitted)
+                append(" 个字符]…")
+            } else {
+                append("\n\n…[输出过长，已省略中间 ")
+                append(omitted)
+                append(" 个字符；仅保留开头与结尾]…\n\n")
+                append(tail)
+            }
         }
     }
 
     companion object {
         const val DEFAULT_HEAD = 20_000
         const val DEFAULT_TAIL = 20_000
+
+        /**
+         * 只保留开头、到 [maxChars] 字符为止的硬上限模式（tail 容量为 0）。
+         *
+         * 与默认的 head+tail 不同：省略提示只出现在**末尾**，因为调用方（git diff / 文件内容）
+         * 会按行解析输出，中间插入提示会破坏解析。
+         */
+        fun hardCapped(maxChars: Int): BoundedOutput = BoundedOutput(maxChars, 0)
     }
 }

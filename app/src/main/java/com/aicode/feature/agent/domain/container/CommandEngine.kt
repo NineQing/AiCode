@@ -11,8 +11,12 @@ sealed interface CommandEvent {
     data class Exit(val code: Int?) : CommandEvent
 }
 
-/** 一次命令执行的结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。 */
-data class CommandResult(val output: String, val exitCode: Int?)
+/**
+ * 一次命令执行的结果：限幅后的完整输出 + 退出码（超时/异常时为 null）。
+ * [outputTruncated] 为 true 表示输出超过了引擎上限被截断（不限幅通道见 [MAX_UNBOUNDED_CHARS]），
+ * 调用方不应把这种输出当作完整结果解析。
+ */
+data class CommandResult(val output: String, val exitCode: Int?, val outputTruncated: Boolean = false)
 
 /**
  * 命令执行后端抽象：把"在哪执行命令"从硬编码的本地 PRoot 解耦。
@@ -68,11 +72,13 @@ interface CommandEngine {
     ): CommandResult
 
     /**
-     * 同 [runCommandSyncWithExit]，但输出**不做限幅截断**（返回完整输出）。
+     * 同 [runCommandSyncWithExit]，但输出**不做限幅截断**（保留连续开头，不插省略提示）。
      * 供需要完整文本的调用方使用（如 git diff 页读取 diff/文件内容）：
      * AI 工具链路的默认限幅（[BoundedOutput] 头尾各 2 万字符）会把截断占位符
-     * 混入 diff 数据流，导致 UI 渲染出伪 diff 行。调用方须自行对超大输出兜底
-     * （如 diff 页的 2000 行/行长保护）。
+     * 混入 diff 数据流，导致 UI 渲染出伪 diff 行。
+     *
+     * 输出超过 [MAX_UNBOUNDED_CHARS] 字符即停止保留并置 [CommandResult.outputTruncated]，
+     * 调用方据此提示「输出过大」而不是拿半截数据解析。
      */
     suspend fun runCommandSyncUnbounded(
         command: String,

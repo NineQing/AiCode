@@ -291,6 +291,7 @@ class OpenAIAdapter @Inject constructor(
                 },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
+            val budget = StreamBudget()
             // tool_call index -> 累积中的工具调用（保序）。
             val toolAccs = LinkedHashMap<Int, OpenAIToolAcc>()
             var finishReason: String? = null
@@ -354,6 +355,7 @@ class OpenAIAdapter @Inject constructor(
                             // 文字增量
                             delta.get("content")?.takeIf { !it.isJsonNull }?.asString?.let { c ->
                                 if (c.isNotEmpty()) {
+                                    budget.add(c)
                                     textBuilder.append(c)
                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                     onContent()
@@ -371,6 +373,7 @@ class OpenAIAdapter @Inject constructor(
                                         el.asJsonObject.get("text")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
                                     }
                             if (!reasoningText.isNullOrEmpty()) {
+                                budget.add(reasoningText)
                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                 onContent()
                                 emit(AIStreamChunk.ReasoningDelta(reasoningText))
@@ -387,7 +390,7 @@ class OpenAIAdapter @Inject constructor(
                                 tc.get("id")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
                                 tc.getAsJsonObject("function")?.let { fn ->
                                     fn.get("name")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
-                                    fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { acc.args.append(it) }
+                                    fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { budget.add(it); acc.args.append(it) }
                                 }
                             }
                         } catch (e: CancellationException) {

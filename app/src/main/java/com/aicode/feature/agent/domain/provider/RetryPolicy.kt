@@ -101,7 +101,8 @@ private val NON_RETRYABLE_STREAM_CODES = setOf(
     "insufficient_quota",
     "rate_limit_exceeded",
     "rate_limit_error",
-    "invalid_image_request"
+    "invalid_image_request",
+    "response_too_large"
 )
 
 /**

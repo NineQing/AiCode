@@ -9,6 +9,7 @@ import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.LineDiff
 import com.aicode.feature.git.domain.GitCommandFailureException
+import com.aicode.feature.git.domain.GitOutputTooLargeException
 import com.aicode.feature.git.domain.GitErrorMessage
 import com.aicode.feature.git.domain.GitRepository
 import com.aicode.feature.git.domain.model.GitBranch
@@ -548,8 +549,15 @@ class GitViewModel @Inject constructor(
         newRef: String,
         contentProvider: suspend (String, String) -> String
     ): DiffData = withContext(Dispatchers.Default) {
-        val oldContent = contentProvider(oldRef, path)
-        val newContent = contentProvider(newRef, path)
+        val oldContent: String
+        val newContent: String
+        try {
+            oldContent = contentProvider(oldRef, path)
+            newContent = contentProvider(newRef, path)
+        } catch (e: GitOutputTooLargeException) {
+            FileLogger.i(TAG, "文件过大，跳过 diff 内容: $path")
+            return@withContext DiffData(path, oldRef, newRef, emptyList(), 0, 0, isLarge = true)
+        }
 
         // 二进制检测：git show 对二进制文件返回乱码，直接看是否含 NUL。
         if (oldContent.contains('\u0000') || newContent.contains('\u0000')) {

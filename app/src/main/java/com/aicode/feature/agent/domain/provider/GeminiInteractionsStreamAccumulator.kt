@@ -161,6 +161,7 @@ internal class GeminiInteractionsStreamAccumulator {
     }
 
     private val steps = LinkedHashMap<Int, StepAcc>()
+    private val budget = StreamBudget()
     private var status: String? = null
     private var statusDetail: String? = null
     private var usage = InteractionsUsage()
@@ -187,7 +188,7 @@ internal class GeminiInteractionsStreamAccumulator {
                 step.str("id")?.takeIf { it.isNotBlank() }?.let { acc.id = it }
                 step.str("name")?.takeIf { it.isNotBlank() }?.let { acc.name = it }
                 step.str("signature")?.let { acc.signature = it }
-                step.obj("arguments")?.let { acc.argsComplete = it.toString() }
+                step.obj("arguments")?.let { budget.add(it.toString()); acc.argsComplete = it.toString() }
             }
 
             eventType == InteractionEvent.STEP_DELTA -> {
@@ -197,6 +198,7 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.TEXT -> {
                         val text = delta.str("text").orEmpty()
                         if (text.isEmpty()) return null
+                        budget.add(text)
                         acc.text.append(text)
                         return InteractionsDelta.Text(text)
                     }
@@ -205,6 +207,7 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.THOUGHT_SUMMARY, InteractionDelta.THOUGHT -> {
                         val text = delta.obj("content")?.str("text") ?: delta.str("text").orEmpty()
                         if (text.isEmpty()) return null
+                        budget.add(text)
                         acc.summary.append(text)
                         return InteractionsDelta.Reasoning(text)
                     }
@@ -212,8 +215,11 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.THOUGHT_SIGNATURE ->
                         delta.str("signature")?.let { acc.signature = it }
 
-                    InteractionDelta.ARGUMENTS, InteractionDelta.ARGUMENTS_LEGACY ->
-                        acc.argsDelta.append(delta.str("arguments") ?: delta.str("partial_arguments").orEmpty())
+                    InteractionDelta.ARGUMENTS, InteractionDelta.ARGUMENTS_LEGACY -> {
+                        val args = delta.str("arguments") ?: delta.str("partial_arguments").orEmpty()
+                        budget.add(args)
+                        acc.argsDelta.append(args)
+                    }
                 }
             }
 

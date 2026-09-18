@@ -3,6 +3,7 @@ package com.aicode.feature.agent.domain.permission
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.tool.AgentTool
 import com.aicode.feature.agent.domain.tool.ToolCapability
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -24,10 +25,12 @@ import org.junit.Test
  */
 class ToolPermissionPolicyEngineTest {
 
-    private fun engine(vararg rules: PermissionRule): ToolPermissionPolicyEngine {
+    private fun engine(vararg rules: PermissionRule, safetyDisabled: Boolean = false): ToolPermissionPolicyEngine {
         val repo = mockk<PermissionRulesRepository>(relaxed = true)
         coEvery { repo.loadEffectiveForCurrentProject() } returns rules.toList()
-        return ToolPermissionPolicyEngine(repo)
+        val safety = mockk<ToolSafetySettingsRepository>(relaxed = true)
+        coEvery { safety.isSafetyInterceptionDisabled() } returns safetyDisabled
+        return ToolPermissionPolicyEngine(repo, safety)
     }
 
     private fun tool(vararg caps: ToolCapability): AgentTool {
@@ -108,6 +111,20 @@ class ToolPermissionPolicyEngineTest {
     fun autoMode_stillBlocksWorkspaceRm() = runTest {
         val e = engine()
         val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf ~/workspace/*"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun autoMode_disabledSafety_allowsCatastrophicRm() = runTest {
+        val e = engine(safetyDisabled = true)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
+    }
+
+    @Test
+    fun disabledSafety_buildMode_stillBlocksCatastrophicRm() = runTest {
+        val e = engine(safetyDisabled = true)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
     }
 
@@ -281,7 +298,7 @@ class ToolPermissionPolicyEngineTest {
     fun remember_dedupesAndAddsEach() = runTest {
         val repo = mockk<PermissionRulesRepository>(relaxed = true)
         coEvery { repo.add(any(), any()) } just runs
-        val e = ToolPermissionPolicyEngine(repo)
+        val e = ToolPermissionPolicyEngine(repo, mockk(relaxed = true))
 
         e.remember("Bash", listOf("git pull", "git pull", "ls"), PermissionScope.PROJECT)
 

@@ -67,6 +67,7 @@ import com.aicode.feature.settings.data.repository.ProxySettingsRepository
 import com.aicode.feature.settings.data.repository.ScreenOnSettingsRepository
 import com.aicode.feature.settings.data.repository.StartupSessionMode
 import com.aicode.feature.settings.data.repository.ThemeSettingsRepository
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
 import com.aicode.feature.settings.data.repository.ImageGenModelSettingsRepository
 import com.aicode.feature.settings.data.repository.VisionModelSettingsRepository
@@ -287,6 +288,7 @@ class SettingsViewModel @Inject constructor(
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val permissionRulesRepository: PermissionRulesRepository,
+    private val toolSafetySettingsRepository: ToolSafetySettingsRepository,
     private val skillRepository: SkillRepository,
     private val agentDefinitionRepository: AgentDefinitionRepository,
     private val toolRegistry: ToolRegistry,
@@ -536,6 +538,9 @@ class SettingsViewModel @Inject constructor(
 
     val currentProjectName: StateFlow<String?> = permissionRulesRepository.currentProjectNameFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _disableSafetyInterception = MutableStateFlow(false)
+    val disableSafetyInterception: StateFlow<Boolean> = _disableSafetyInterception.asStateFlow()
 
     private val _activeProfileId = MutableStateFlow(ContainerProfile.BUILTIN_ID)
     val activeProfileId: StateFlow<String> = _activeProfileId.asStateFlow()
@@ -849,6 +854,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 permissionRulesRepository.currentProjectRulesFlow.collectLatest {
                     _projectRules.value = it
+                }
+            }
+
+            launch {
+                toolSafetySettingsRepository.disableSafetyInterceptionFlow.collectLatest {
+                    _disableSafetyInterception.value = it
                 }
             }
 
@@ -1969,6 +1980,10 @@ class SettingsViewModel @Inject constructor(
     fun promoteRuleToGlobal(rule: PermissionRule) {
         val name = currentProjectName.value ?: return
         viewModelScope.launch { permissionRulesRepository.promoteToGlobal(name, rule) }
+    }
+
+    fun setDisableSafetyInterception(disabled: Boolean) {
+        viewModelScope.launch { toolSafetySettingsRepository.setDisableSafetyInterception(disabled) }
     }
 }
 

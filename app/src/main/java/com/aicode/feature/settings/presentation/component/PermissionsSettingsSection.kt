@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aicode.R
 import com.aicode.core.theme.Spacing
+import com.aicode.core.ui.AppSwitch
 import com.aicode.core.ui.SwipeToDeleteRow
 import com.aicode.feature.agent.domain.permission.PermissionDecision
 import com.aicode.feature.agent.domain.permission.PermissionRule
@@ -39,11 +40,12 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckCircle
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Plus
+import compose.icons.feathericons.Shield
 import compose.icons.feathericons.XCircle
 
 /**
  * 「工具授权」二级页：与设置页其它二级页一致的 iOS 分组列表。
- * 按「当前项目 / 全局」分组列出已保存的授权规则，分组可折叠收起；
+ * 顶部是「安全防护」开关；其下按「当前项目 / 全局」分组列出已保存的授权规则，分组可折叠收起；
  * 规则左滑删除；项目规则可「提升为全局」。
  */
 @Composable
@@ -51,6 +53,8 @@ internal fun PermissionsSection(
     projectName: String?,
     projectRules: List<PermissionRule>,
     globalRules: List<PermissionRule>,
+    disableSafetyInterception: Boolean,
+    onToggleSafetyInterception: (Boolean) -> Unit,
     onDeleteProject: (PermissionRule) -> Unit,
     onPromote: (PermissionRule) -> Unit,
     onDeleteGlobal: (PermissionRule) -> Unit
@@ -66,6 +70,21 @@ internal fun PermissionsSection(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
+        SettingsGroupHeader(text = stringResource(R.string.perm_safety_group))
+        SettingsGroup {
+            SettingsRow(
+                icon = FeatherIcons.Shield,
+                title = stringResource(R.string.perm_disable_safety_interception),
+                subtitle = stringResource(R.string.perm_disable_safety_interception_desc),
+                trailing = {
+                    AppSwitch(
+                        checked = disableSafetyInterception,
+                        onCheckedChange = onToggleSafetyInterception
+                    )
+                }
+            )
+        }
+
         CollapsibleGroupHeader(
             text = if (projectName != null) {
                 stringResource(R.string.perm_current_project, projectName)

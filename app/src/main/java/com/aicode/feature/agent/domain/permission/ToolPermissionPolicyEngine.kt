@@ -2,6 +2,7 @@ package com.aicode.feature.agent.domain.permission
 
 import com.aicode.feature.agent.domain.tool.AgentTool
 import com.aicode.feature.agent.domain.tool.ToolCapability
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
@@ -22,7 +23,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ToolPermissionPolicyEngine @Inject constructor(
-    private val rulesRepo: PermissionRulesRepository
+    private val rulesRepo: PermissionRulesRepository,
+    private val toolSafetySettings: ToolSafetySettingsRepository
 ) {
     private companion object {
         /** 以 `command` 参数承载 shell 命令、按命令前缀做指令级匹配的工具。 */
@@ -68,8 +70,9 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
 
         if (mode == com.aicode.feature.agent.domain.model.AgentMode.AUTO) {
-            // AUTO 模式放行所有权限，但仍保留灾难性 rm 防护（根目录/系统目录删除）
-            if (isShellTool(toolName, args)) {
+            // AUTO 模式放行所有权限；灾难性 rm 防护（根目录/系统目录删除）默认保留，
+            // 可在「工具授权」设置中关闭（禁用安全拦截）。
+            if (!toolSafetySettings.isSafetyInterceptionDisabled() && isShellTool(toolName, args)) {
                 val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
                 if (command != null) {
                     val analysis = ShellCommandParser.analyze(command)

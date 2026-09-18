@@ -529,6 +529,8 @@
     <!-- Chat Input Bar -->
     <string name="chat_input_placeholder">输入消息与 AI 聊天…</string>
     <string name="chat_queue_hint">AI 工作中，回车发送将自动排队</string>
+    <string name="chat_input_expand">展开输入框</string>
+    <string name="chat_input_fullscreen_title">全屏输入</string>
     <string name="chat_queue_title">待发送队列（%1$d）</string>
     <string name="chat_queue_remove">移除排队消息</string>
     <string name="chat_upload_file">上传文件</string>

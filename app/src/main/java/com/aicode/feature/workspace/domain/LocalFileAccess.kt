@@ -1,6 +1,7 @@
 package com.aicode.feature.workspace.domain
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.util.boundedLines
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -32,7 +33,7 @@ class LocalFileAccess @Inject constructor(
     override fun readLines(path: String): Sequence<String> {
         val file = resolve(path)
         if (!file.exists()) throw NoSuchFileException(file)
-        return file.bufferedReader().useLines { it.toList() }.asSequence()
+        return file.bufferedReader().boundedLines()
     }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean) {

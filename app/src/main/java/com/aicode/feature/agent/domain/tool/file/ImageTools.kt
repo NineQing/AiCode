@@ -359,7 +359,7 @@ class ViewImageTool @Inject constructor(
 
             val originalOk = sourceMime in ORIGINAL_MIME_TYPES
             val encoded = when (detail) {
-                "original" -> if (originalOk) {
+                "original" -> if (originalOk && fileSize <= MAX_ORIGINAL_BYTES) {
                     originalImage(path, bounds, sourceMime, fileSize)
                 } else {
                     encodePreview(file, bounds, HIGH_MAX_EDGE, HIGH_TARGET_BYTES, detail)

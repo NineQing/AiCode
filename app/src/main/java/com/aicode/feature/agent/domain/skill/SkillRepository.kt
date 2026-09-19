@@ -3,6 +3,7 @@ package com.aicode.feature.agent.domain.skill
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.workspace.domain.FileAccessProvider
 import com.aicode.feature.workspace.domain.LocalFileAccess
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -95,6 +96,21 @@ class SkillRepository @Inject constructor(
         } else {
             projectDirectorySkillSource.skillsRoot
         }
+
+    /**
+     * 从 Markdown 文本导入技能到指定作用域；[fallbackName] 为 frontmatter 缺 name 时的兜底名。
+     * 名称非法 / 同名冲突 / 正文为空时整体失败，不落盘。
+     */
+    fun importMarkdown(text: String, fallbackName: String, scope: SkillScope): SkillImportReport =
+        SkillImporter.importMarkdown(providerFor(scope), skillsRoot(scope), existingNamesIn(scope), text, fallbackName)
+
+    /** 从 zip 输入流导入技能（可含多个技能目录）到指定作用域。 */
+    fun importZip(input: InputStream, fallbackName: String, scope: SkillScope): SkillImportReport =
+        SkillImporter.importArchive(providerFor(scope), skillsRoot(scope), existingNamesIn(scope), input, fallbackName)
+
+    /** 指定作用域下已有技能名（小写），供导入查重。 */
+    private fun existingNamesIn(scope: SkillScope): Set<String> =
+        listAllSkills().filter { it.scope == scope }.map { it.skill.name.lowercase() }.toSet()
 
     /** 删除指定作用域的技能（删除其目录，不可恢复）。返回是否成功。 */
     fun deleteSkill(name: String, scope: SkillScope): Boolean {

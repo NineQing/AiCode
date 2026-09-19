@@ -2,6 +2,7 @@ package com.aicode.feature.settings.presentation
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aicode.core.net.AppProxy
@@ -30,6 +31,8 @@ import com.aicode.feature.agent.domain.permission.PermissionRule
 import com.aicode.feature.agent.domain.permission.PermissionRulesRepository
 import com.aicode.feature.agent.domain.skill.SkillConfigRepository
 import com.aicode.feature.agent.domain.skill.SkillForm
+import com.aicode.feature.agent.domain.skill.SkillImportError
+import com.aicode.feature.agent.domain.skill.SkillImportReport
 import com.aicode.feature.agent.domain.skill.SkillRepository
 import com.aicode.feature.agent.domain.skill.SkillSaveError
 import com.aicode.feature.agent.domain.skill.SkillScope
@@ -237,6 +240,13 @@ sealed interface SkillSaveState {
     data class Failed(val error: SkillSaveError) : SkillSaveState
 }
 
+/** 技能导入的 UI 状态：空闲 / 导入中 / 完成（含结果报告）。 */
+sealed interface SkillImportState {
+    data object Idle : SkillImportState
+    data object Running : SkillImportState
+    data class Done(val report: SkillImportReport) : SkillImportState
+}
+
 /** 子代理编辑页的保存结果：UI 据此决定是退回列表还是就地报错。 */
 sealed interface SubAgentSaveState {
     data object Idle : SubAgentSaveState
@@ -324,6 +334,12 @@ class SettingsViewModel @Inject constructor(
         const val CACHE_WRITE_MARKUP = 1.25
         /** 背景透明度停止拖动后的落盘延迟。 */
         const val BACKGROUND_ALPHA_WRITE_DEBOUNCE_MS = 80L
+
+        /** 技能文件导入接受的扩展名（小写，不含点）。 */
+        val MARKDOWN_EXTENSIONS = setOf("md", "markdown", "txt")
+
+        /** 技能压缩包导入接受的扩展名（小写，不含点）。 */
+        val ZIP_EXTENSIONS = setOf("zip")
     }
 
     /** 终端个性化配置。 */
@@ -500,6 +516,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _skillSaveState = MutableStateFlow<SkillSaveState>(SkillSaveState.Idle)
     val skillSaveState: StateFlow<SkillSaveState> = _skillSaveState.asStateFlow()
+
+    private val _skillImportState = MutableStateFlow<SkillImportState>(SkillImportState.Idle)
+    val skillImportState: StateFlow<SkillImportState> = _skillImportState.asStateFlow()
 
     private val _subAgents = MutableStateFlow<List<SubAgentUiEntry>>(emptyList())
     val subAgents: StateFlow<List<SubAgentUiEntry>> = _subAgents.asStateFlow()
@@ -1063,6 +1082,71 @@ class SettingsViewModel @Inject constructor(
 
     fun clearSkillSaveState() {
         _skillSaveState.value = SkillSaveState.Idle
+    }
+
+    /**
+     * 从所选 Markdown 文件导入技能：读取文本并写入指定作用域。
+     * 扩展名不在白名单内直接报「类型不支持」，不落盘。
+     */
+    fun importSkillFromMarkdown(uri: Uri, scope: SkillScope) {
+        if (_skillImportState.value is SkillImportState.Running) return
+        _skillImportState.value = SkillImportState.Running
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                val name = queryDisplayName(uri)
+                if (!name.hasExtension(MARKDOWN_EXTENSIONS)) {
+                    SkillImportReport(emptyList(), fatal = SkillImportError.UNSUPPORTED_FILE)
+                } else {
+                    runCatching {
+                        val text = context.contentResolver.openInputStream(uri)
+                            ?.bufferedReader()?.use { it.readText() }
+                            ?: throw java.io.IOException("openInputStream returned null")
+                        skillRepository.importMarkdown(text, name.substringBeforeLast('.'), scope)
+                    }.getOrElse { SkillImportReport(emptyList(), fatal = SkillImportError.IO_FAILED) }
+                }
+            }
+            finishSkillImport(report)
+        }
+    }
+
+    /** 从所选 zip 压缩包导入技能（可含多个技能），写入指定作用域。 */
+    fun importSkillsFromZip(uri: Uri, scope: SkillScope) {
+        if (_skillImportState.value is SkillImportState.Running) return
+        _skillImportState.value = SkillImportState.Running
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                val name = queryDisplayName(uri)
+                if (!name.hasExtension(ZIP_EXTENSIONS)) {
+                    SkillImportReport(emptyList(), fatal = SkillImportError.UNSUPPORTED_FILE)
+                } else {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            skillRepository.importZip(input, name.substringBeforeLast('.'), scope)
+                        } ?: throw java.io.IOException("openInputStream returned null")
+                    }.getOrElse { SkillImportReport(emptyList(), fatal = SkillImportError.INVALID_ARCHIVE) }
+                }
+            }
+            finishSkillImport(report)
+        }
+    }
+
+    private suspend fun finishSkillImport(report: SkillImportReport) {
+        _skillImportState.value = SkillImportState.Done(report)
+        if (report.imported.isNotEmpty()) refreshSkills()
+    }
+
+    fun clearSkillImportState() {
+        _skillImportState.value = SkillImportState.Idle
+    }
+
+    /** 查询所选文件的显示名（含扩展名）；取不到时回退到 URI 末段。 */
+    private fun queryDisplayName(uri: Uri): String {
+        val queried = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        return queried ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty()
     }
 
     /** 重新扫描子代理定义（进入设置页 / 删除后调用，反映盘上增删改）。 */
@@ -2002,3 +2086,10 @@ private fun sha256(text: String): String =
     java.security.MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray())
         .joinToString("") { "%02x".format(it) }
+
+/** 文件名的扩展名（小写，不含点）是否在 [exts] 白名单内。 */
+private fun String.hasExtension(exts: Set<String>): Boolean {
+    val dot = lastIndexOf('.')
+    if (dot < 0 || dot == length - 1) return false
+    return substring(dot + 1).lowercase() in exts
+}

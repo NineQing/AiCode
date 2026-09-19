@@ -3,6 +3,8 @@ package com.aicode.feature.settings.presentation.component
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
@@ -79,7 +81,10 @@ import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.presentation.SettingsViewModel
+import com.aicode.feature.settings.presentation.SkillImportState
 import com.aicode.feature.settings.presentation.SkillUiEntry
+import com.aicode.feature.agent.domain.skill.SkillImportError
+import com.aicode.feature.agent.domain.skill.SkillScope
 import com.aicode.feature.settings.presentation.SubAgentUiEntry
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
@@ -195,6 +200,7 @@ fun SettingsScreen(
     val mcpReloading by viewModel.mcpReloading.collectAsStateWithLifecycle()
     val skills by viewModel.skills.collectAsStateWithLifecycle()
     val skillSaveState by viewModel.skillSaveState.collectAsStateWithLifecycle()
+    val skillImportState by viewModel.skillImportState.collectAsStateWithLifecycle()
     val subAgents by viewModel.subAgents.collectAsStateWithLifecycle()
     val subAgentSaveState by viewModel.subAgentSaveState.collectAsStateWithLifecycle()
     val globalRules by viewModel.globalRules.collectAsStateWithLifecycle()
@@ -319,6 +325,16 @@ fun SettingsScreen(
     var skillEditorReturn by remember { mutableStateOf(SettingsSection.Skills) }
     // 保存后要在详情页展示的技能名：列表刷新是异步的，先记名字等刷新完再换快照。
     var pendingSkillName by remember { mutableStateOf<String?>(null) }
+    // 「添加技能」底部弹层：选择作用域后走手动新建 / 文件导入 / 压缩包导入。
+    var showSkillAddSheet by remember { mutableStateOf(false) }
+    var skillImportScope by remember { mutableStateOf(SkillScope.GLOBAL) }
+    // 技能文件 / 压缩包选择器：结果交给 ViewModel 读取并落盘到所选作用域。
+    val skillFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importSkillFromMarkdown(uri, skillImportScope)
+    }
+    val skillZipLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importSkillsFromZip(uri, skillImportScope)
+    }
     var selectedSubAgent by remember { mutableStateOf<SubAgentUiEntry?>(null) }
     var subAgentToDelete by remember { mutableStateOf<SubAgentUiEntry?>(null) }
     // 子代理编辑目标：null 表示新建一个；编辑现有定义时指向被编辑的条目。
@@ -492,6 +508,7 @@ fun SettingsScreen(
             current == SettingsSection.SkillEditor -> SkillEditorScreen(
                 initial = editingSkill,
                 saveState = skillSaveState,
+                defaultScope = skillImportScope,
                 onSave = { form, scope -> viewModel.saveSkill(form, scope, editingSkill?.name) },
                 onSaved = { savedName ->
                     viewModel.clearSkillSaveState()
@@ -640,9 +657,7 @@ fun SettingsScreen(
                             }
                         }
                         SettingsSection.Skills -> IconButton(onClick = {
-                            editingSkill = null
-                            skillEditorReturn = SettingsSection.Skills
-                            section = SettingsSection.SkillEditor
+                            showSkillAddSheet = true
                         }) {
                             Icon(
                                 FeatherIcons.Plus,
@@ -975,6 +990,28 @@ fun SettingsScreen(
         )
     }
 
+    if (showSkillAddSheet) {
+        SkillAddSheet(
+            scope = skillImportScope,
+            onScopeChange = { skillImportScope = it },
+            onManual = {
+                showSkillAddSheet = false
+                editingSkill = null
+                skillEditorReturn = SettingsSection.Skills
+                section = SettingsSection.SkillEditor
+            },
+            onPickFile = {
+                showSkillAddSheet = false
+                skillFileLauncher.launch(arrayOf("text/*", "application/octet-stream"))
+            },
+            onPickZip = {
+                showSkillAddSheet = false
+                skillZipLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            },
+            onDismiss = { showSkillAddSheet = false }
+        )
+    }
+
     if (showThemeSheet) {
         ThemeSelectionSheet(
             selected = themeMode,
@@ -1059,6 +1096,8 @@ fun SettingsScreen(
             }
         )
     }
+
+    SkillImportResultDialog(state = skillImportState, onDismiss = { viewModel.clearSkillImportState() })
 
     subAgentToDelete?.let { target ->
         AlertDialog(
@@ -1374,4 +1413,70 @@ internal fun SettingsMenu(
         }
     }
 
+}
+
+/** 导入结果弹窗：导入中显示转圈；完成时展示成功数量与逐个跳过原因（整体失败则直接报错误）。 */
+@Composable
+private fun SkillImportResultDialog(state: SkillImportState, onDismiss: () -> Unit) {
+    when (state) {
+        SkillImportState.Idle -> Unit
+        SkillImportState.Running -> AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.skills_import_running)) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            },
+            confirmButton = {}
+        )
+        is SkillImportState.Done -> {
+            val report = state.report
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.skills_import_result_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        val fatal = report.fatal
+                        if (fatal != null) {
+                            Text(stringResource(fatal.messageRes()))
+                        } else {
+                            Text(
+                                stringResource(
+                                    if (report.failures.isEmpty()) R.string.skills_import_success
+                                    else R.string.skills_import_partial,
+                                    report.imported.size,
+                                    report.failures.size
+                                )
+                            )
+                            report.failures.forEach { failure ->
+                                Text(
+                                    text = stringResource(
+                                        R.string.skills_import_failure_line,
+                                        failure.name,
+                                        stringResource(failure.error.messageRes())
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_got_it)) }
+                }
+            )
+        }
+    }
+}
+
+private fun SkillImportError.messageRes(): Int = when (this) {
+    SkillImportError.INVALID_NAME -> R.string.skills_import_error_invalid_name
+    SkillImportError.NAME_CONFLICT -> R.string.skills_import_error_name_conflict
+    SkillImportError.EMPTY_CONTENT -> R.string.skills_import_error_empty_content
+    SkillImportError.NO_SKILL_FOUND -> R.string.skills_import_error_no_skill
+    SkillImportError.INVALID_ARCHIVE -> R.string.skills_import_error_invalid_archive
+    SkillImportError.UNSUPPORTED_FILE -> R.string.skills_import_error_unsupported_file
+    SkillImportError.IO_FAILED -> R.string.skills_import_error_io
 }

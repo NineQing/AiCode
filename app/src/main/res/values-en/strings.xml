@@ -855,7 +855,7 @@
 
     <!-- Skills Settings -->
     <string name="skills_empty">No skills installed</string>
-    <string name="skills_empty_hint">Tap + in the top bar to create one, or put a folder containing SKILL.md into ~/.aicode/skills/</string>
+    <string name="skills_empty_hint">Tap + in the top bar to create or import one, or put a folder containing SKILL.md into ~/.aicode/skills/</string>
     <string name="skills_no_project_skills">No skills for the current project</string>
     <string name="skills_no_global_skills">No global skills</string>
     <string name="skills_enable">Enable</string>
@@ -864,7 +864,7 @@
     <string name="skills_delete_confirm_message">This will delete the skill directory of \"%1$s\". This action cannot be undone. Delete?</string>
     <string name="skills_description">Description</string>
     <string name="skills_instructions">Instructions</string>
-    <string name="skills_add">New skill</string>
+    <string name="skills_add">Add skill</string>
     <string name="skills_edit">Edit skill</string>
     <string name="skills_editor_new">New skill</string>
     <string name="skills_editor_edit">Edit skill</string>
@@ -879,6 +879,25 @@
     <string name="skills_editor_error_empty_instructions">The instructions cannot be empty</string>
     <string name="skills_editor_error_name_conflict">A skill with this name already exists in this scope</string>
     <string name="skills_editor_error_io">Failed to write the skill file, please try again</string>
+    <string name="skills_add_sheet_title">Add skill</string>
+    <string name="skills_add_manual">Create manually</string>
+    <string name="skills_add_manual_desc">Fill in the name and content to create one from scratch</string>
+    <string name="skills_add_from_file">Import from file</string>
+    <string name="skills_add_from_file_desc">Pick a .md file with the instruction body</string>
+    <string name="skills_add_from_zip">Import from archive</string>
+    <string name="skills_add_from_zip_desc">Pick a .zip; may contain multiple skills</string>
+    <string name="skills_import_running">Importing…</string>
+    <string name="skills_import_result_title">Import result</string>
+    <string name="skills_import_success">Imported %1$d skill(s)</string>
+    <string name="skills_import_partial">Imported %1$d, skipped %2$d</string>
+    <string name="skills_import_failure_line">%1$s: %2$s</string>
+    <string name="skills_import_error_invalid_name">invalid name</string>
+    <string name="skills_import_error_name_conflict">a skill with the same name already exists</string>
+    <string name="skills_import_error_empty_content">empty content</string>
+    <string name="skills_import_error_no_skill">no skill found in the archive</string>
+    <string name="skills_import_error_invalid_archive">cannot read the archive; make sure it is a valid .zip</string>
+    <string name="skills_import_error_unsupported_file">unsupported file type</string>
+    <string name="skills_import_error_io">failed to write the skill file</string>
 
     <!-- Subagent Settings -->
     <string name="settings_subagents">Subagents</string>

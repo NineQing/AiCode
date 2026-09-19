@@ -32,22 +32,25 @@ object SkillParser {
             return null
         }
 
+        return parseText(text, dir.substringAfterLast('/').ifBlank { dir }).copy(dirPath = dir)
+    }
+
+    /**
+     * 从原始 Markdown 文本解析技能（不依赖磁盘），供文件/压缩包导入使用。
+     * [fallbackName] 为 frontmatter 缺 name 时的兜底（通常传源文件名或所在目录名）。
+     */
+    fun parseText(text: String, fallbackName: String): Skill {
         val (frontmatter, body) = splitAndParseFrontmatter(text)
 
-        // name 优先取 frontmatter，缺省回退到目录名
-        val name = frontmatter["name"]?.toString()?.takeIf { it.isNotBlank() }
-            ?: dir.substringAfterLast('/').ifBlank { dir }
+        // name 优先取 frontmatter，缺省回退到兜底名
+        val name = frontmatter["name"]?.toString()?.takeIf { it.isNotBlank() } ?: fallbackName
         val description = (frontmatter["description"]?.toString() ?: "").take(MAX_DESC_CHARS)
 
         val requiredTools = try {
             val toolsRaw = frontmatter["required_tools"]
-            if (toolsRaw is List<*>) {
-                toolsRaw.filterIsInstance<String>()
-            } else {
-                emptyList()
-            }
+            if (toolsRaw is List<*>) toolsRaw.filterIsInstance<String>() else emptyList()
         } catch (e: Exception) {
-            FileLogger.w(TAG, "解析 required_tools 失败: $dir/$fileName", e)
+            FileLogger.w(TAG, "解析 required_tools 失败", e)
             emptyList()
         }
 
@@ -55,7 +58,7 @@ object SkillParser {
             name = name,
             description = description,
             requiredTools = requiredTools,
-            dirPath = dir,
+            dirPath = null,
             instructions = body.trim()
         )
     }

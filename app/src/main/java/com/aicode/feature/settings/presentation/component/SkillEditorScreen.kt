@@ -56,13 +56,14 @@ internal fun SkillEditorScreen(
     saveState: SkillSaveState,
     onSave: (SkillForm, SkillScope) -> Unit,
     onSaved: (String) -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    defaultScope: SkillScope = SkillScope.GLOBAL
 ) {
     var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
     var description by rememberSaveable { mutableStateOf(initial?.description ?: "") }
     var instructions by rememberSaveable { mutableStateOf(initial?.instructions ?: "") }
     var scopeIsGlobal by rememberSaveable {
-        mutableStateOf(initial?.scope?.let { it == SkillScope.GLOBAL } ?: true)
+        mutableStateOf(initial?.scope?.let { it == SkillScope.GLOBAL } ?: (defaultScope == SkillScope.GLOBAL))
     }
 
     LaunchedEffect(saveState) {

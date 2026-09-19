@@ -40,7 +40,7 @@ interface FileAccessProvider {
     /**
      * 逐行读取文件，供 [ReadFileTool] 按行窗口读取。
      * 返回行序列；文件不存在时抛 [NoSuchFileException]。
-     * 本地实现用 useLines 流式读；远程实现先 SFTP 下载到临时文件再逐行读（或直接 SFTP 读流按行切）。
+     * 本地实现用 useLines 流式读；远程实现经 SFTP 读取全文后按行切分。
      */
     fun readLines(path: String): Sequence<String>
 

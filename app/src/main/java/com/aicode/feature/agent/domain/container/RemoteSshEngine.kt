@@ -31,8 +31,8 @@ private const val TAG = "RemoteSshEngine"
 /**
  * [CommandEngine] 的远程 SSH 实现：用 sshj exec channel 在远程服务器上执行命令。
  *
- * 共享一个 [RemoteSshConnection]（持有 sshj [SSHClient]），与 [RemoteSftpFileAccess]
- * 复用同一 SSH 连接——命令执行用 exec channel，文件读写用 SFTP channel。
+ * 共享一个 [RemoteSshConnection]（持有 sshj [SSHClient]）执行命令；文件读写由 [RemoteSftpFileAccess]
+ * 走另一条独立的 SFTP transport（见 [RemoteSshConnection.sftp]），两者隔离互不影响。
  *
  * 与 [LinuxContainerEngine] 的语义对应：
  * - [ensureInstalled]：建立/维持 SSH 连接（对应本地解压 rootfs）；
@@ -205,7 +205,7 @@ class RemoteSshEngine @Inject constructor(
                     }
                 }
                 stderrJob.join()
-                // sshj 的 exitStatus 在流 EOF 后未必就绪，close 后才保证有值（同 RemoteSftpFileAccess.execSync）
+                // sshj 的 exitStatus 在流 EOF 后未必就绪，close 后才保证有值
                 runCatching { session.close() }
                 exitCode = session.exitStatus
             }

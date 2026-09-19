@@ -59,7 +59,6 @@
     <string name="settings_shizuku_hint_not_running">Tap to open Shizuku and start the service</string>
     <string name="settings_shizuku_hint_denied">Tap to request Shizuku permission</string>
     <string name="settings_shizuku_hint_ready">Authorized — AI can run commands via adb shell</string>
-    <string name="settings_shizuku_desc">Shizuku lets this app run commands as adb shell (uid 2000): pm / am / cmd system commands, reading and writing /sdcard, etc. Install and start the Shizuku app first, then authorize here. Once enabled, the AI gains a tool named Shizuku.</string>
     <string name="settings_backup">Backup &amp; Restore</string>
     <string name="settings_about">About</string>
     <string name="settings_language">Language</string>
@@ -999,7 +998,11 @@
     <string name="perm_promote_to_global">Promote to global</string>
     <string name="perm_safety_group">Safety</string>
     <string name="perm_disable_safety_interception">Disable safety interception</string>
-    <string name="perm_disable_safety_interception_desc">When on, AUTO mode no longer blocks catastrophic deletes (rm of root, system dirs, or the workspace), and the Shizuku tool no longer prompts</string>
+    <string name="perm_disable_safety_interception_desc">When on, AUTO mode stops blocking catastrophic deletes and Shizuku prompts</string>
+    <string name="perm_safety_confirm_title">Disable safety interception?</string>
+    <string name="perm_safety_confirm_message">Once disabled, AUTO mode no longer blocks catastrophic deletes and no longer prompts for the Shizuku tool. Proceed with caution.</string>
+    <string name="perm_safety_confirm_action">Confirm (%1$d)</string>
+    <string name="perm_safety_confirm_action_ready">Confirm</string>
 
     <!-- Provider Editor -->
     <string name="provider_section_basic">General</string>

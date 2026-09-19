@@ -33,7 +33,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.aicode.R
 import com.aicode.core.theme.Spacing
-import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.shizuku.ShizukuState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Bell
@@ -257,12 +256,6 @@ internal fun AppPermissionsSection(
                 }
             )
         }
-        Text(
-            text = stringResource(R.string.settings_shizuku_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.semanticColors.subtleText,
-            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
-        )
     }
 
     if (showStorageDeniedDialog) {

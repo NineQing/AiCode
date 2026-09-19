@@ -59,7 +59,6 @@
     <string name="settings_shizuku_hint_not_running">点击打开 Shizuku 并启动服务</string>
     <string name="settings_shizuku_hint_denied">点击申请 Shizuku 授权</string>
     <string name="settings_shizuku_hint_ready">已获授权，AI 可通过 adb shell 执行命令</string>
-    <string name="settings_shizuku_desc">Shizuku 让本应用以 adb shell（uid 2000）身份执行命令，可运行 pm / am / cmd 等系统命令、读写 /sdcard。需先安装并启动 Shizuku 应用，再在此授权。开启后 AI 将获得名为 Shizuku 的工具。</string>
     <string name="settings_backup">备份与还原</string>
     <string name="settings_about">关于</string>
     <string name="settings_language">语言</string>
@@ -999,7 +998,11 @@
     <string name="perm_promote_to_global">提升为全局</string>
     <string name="perm_safety_group">安全防护</string>
     <string name="perm_disable_safety_interception">禁用安全拦截</string>
-    <string name="perm_disable_safety_interception_desc">开启后，AUTO 模式下连灾难性删除（rm 根目录/系统目录/工作区）也不再拦截，Shizuku 工具也不再逐次弹窗</string>
+    <string name="perm_disable_safety_interception_desc">开启后 AUTO 模式下不再拦截灾难性删除，Shizuku 也不再逐次确认</string>
+    <string name="perm_safety_confirm_title">确认禁用安全拦截？</string>
+    <string name="perm_safety_confirm_message">禁用后，AUTO 模式下连灾难性删除也不再拦截，Shizuku 工具也不再逐次确认。请谨慎操作。</string>
+    <string name="perm_safety_confirm_action">确认（%1$d）</string>
+    <string name="perm_safety_confirm_action_ready">确认</string>
 
     <!-- Provider Editor -->
     <string name="provider_section_basic">基本信息</string>

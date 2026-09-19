@@ -72,6 +72,36 @@ interface AgentMessageDao {
     @Query("SELECT * FROM agent_messages WHERE content LIKE '%' || :query || '%' ORDER BY timestamp ASC")
     suspend fun searchMessages(query: String): List<AgentMessageEntity>
 
+    /**
+     * 跨会话搜索某工作区下的聊天记录：命中用户 / 助手正文，排除已压缩与内部摘要行。
+     * [escapedQuery] 已由调用方转义 LIKE 通配符（`!` `%` `_`），配合 SQL 里的 ESCAPE '!'。
+     */
+    @Query(
+        """
+        SELECT m.id AS messageId,
+               m.sessionId AS sessionId,
+               s.title AS sessionTitle,
+               m.role AS role,
+               m.content AS content,
+               m.timestamp AS timestamp
+        FROM agent_messages m
+        JOIN chat_sessions s ON s.id = m.sessionId
+        WHERE s.workspacePath = :workspacePath
+          AND m.isCompacted = 0
+          AND m.isContextSummary = 0
+          AND m.isCompactionMarker = 0
+          AND m.role IN ('USER', 'ASSISTANT')
+          AND m.content LIKE '%' || :escapedQuery || '%' ESCAPE '!'
+        ORDER BY m.timestamp DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchInWorkspace(workspacePath: String, escapedQuery: String, limit: Int): List<ChatSearchMatch>
+
+    /** 指定会话中时间戳不早于 [timestamp] 的消息条数（含并列时间戳），供定位时确定所需分页上限。 */
+    @Query("SELECT COUNT(*) FROM agent_messages WHERE sessionId = :sessionId AND timestamp >= :timestamp")
+    suspend fun countMessagesFromTimestamp(sessionId: String, timestamp: Long): Int
+
     @Query("SELECT * FROM agent_messages ORDER BY timestamp ASC")
     suspend fun getAllOnce(): List<AgentMessageEntity>
 
@@ -111,6 +141,16 @@ interface AgentMessageDao {
     )
     suspend fun sessionStorageUsage(limit: Int): List<SessionStorageUsage>
 }
+
+/** 跨会话聊天记录搜索的命中投影（[AgentMessageDao.searchInWorkspace] 的投影）。 */
+data class ChatSearchMatch(
+    val messageId: String,
+    val sessionId: String,
+    val sessionTitle: String,
+    val role: String,
+    val content: String,
+    val timestamp: Long
+)
 
 /** 单个会话的消息占用估算（[AgentMessageDao.sessionStorageUsage] 的投影）。 */
 data class SessionStorageUsage(

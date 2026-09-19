@@ -372,6 +372,8 @@ fun AppNavigation(
     val browseState by agentViewModel.browseState.collectAsStateWithLifecycle()
     val browseClipboard by agentViewModel.browseClipboard.collectAsStateWithLifecycle()
     val pasteConflict by agentViewModel.pasteConflict.collectAsStateWithLifecycle()
+    val chatSearchQuery by agentViewModel.chatSearchQuery.collectAsStateWithLifecycle()
+    val chatSearchState by agentViewModel.chatSearchState.collectAsStateWithLifecycle()
 
     // ── 导出会话：SAF 保存文件 ──
     var pendingExportSessionId by remember { mutableStateOf<String?>(null) }
@@ -517,6 +519,14 @@ fun AppNavigation(
             onNavigateToSettings = {
                 navController.navigate("settings")
                 if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
+            },
+            searchQuery = chatSearchQuery,
+            searchState = chatSearchState,
+            onSearchQueryChange = { agentViewModel.updateChatSearchQuery(it) },
+            onClearSearch = { agentViewModel.clearChatSearch() },
+            onOpenSearchHit = { hit ->
+                agentViewModel.openChatSearchHit(hit)
+                if (!permanentDrawer) scope.launch { drawerState.close() }
             }
         )
     }

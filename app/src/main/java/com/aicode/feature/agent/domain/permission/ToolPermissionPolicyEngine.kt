@@ -20,6 +20,9 @@ import javax.inject.Singleton
  *   5) 否则 → ASK，可记忆前缀为各段的「程序名」或「程序名+子命令」（对 git/npm 等子命令分发器，
  *      记 `git pull` 而非 `git`，使不同子命令各自独立授权）。
  * 非 shell 的 ASK 工具按整工具（pattern=`*`）匹配。
+ *
+ * [SHIZUKU_TOOL]（Shizuku）按高危处理：无论内置白名单或已记忆规则，一律 ASK 且不可记忆；
+ * AUTO 模式也不自动放行（除非已开启「禁用安全拦截」）。
  */
 @Singleton
 class ToolPermissionPolicyEngine @Inject constructor(
@@ -28,7 +31,13 @@ class ToolPermissionPolicyEngine @Inject constructor(
 ) {
     private companion object {
         /** 以 `command` 参数承载 shell 命令、按命令前缀做指令级匹配的工具。 */
-        val SHELL_TOOLS = setOf("Bash")
+        val SHELL_TOOLS = setOf("Bash", SHIZUKU_TOOL)
+
+        /** Shizuku 工具：以 adb shell 身份直接操作宿主 Android 系统，按高危处理（一律弹窗、不可记忆）。 */
+        const val SHIZUKU_TOOL = "Shizuku"
+
+        const val REASON_SHIZUKU =
+            "Shizuku 直接以 adb shell 身份操作宿主 Android 系统，权限高危，仅支持单次放行，不可记忆"
 
         /**
          * 合并后的终端会话工具：其 `start` 动作承载 shell 命令，需走指令级前缀匹配；
@@ -115,7 +124,8 @@ class ToolPermissionPolicyEngine @Inject constructor(
         if (mode == com.aicode.feature.agent.domain.model.AgentMode.AUTO) {
             // AUTO 模式放行所有权限；灾难性 rm 防护（根目录/系统目录删除）默认保留，
             // 可在「工具授权」设置中关闭（禁用安全拦截）。遭遇拦截时仍可凭 elevate 参数提权重试。
-            if (!toolSafetySettings.isSafetyInterceptionDisabled() && isShellTool(toolName, args)) {
+            val safetyDisabled = toolSafetySettings.isSafetyInterceptionDisabled()
+            if (!safetyDisabled && isShellTool(toolName, args)) {
                 val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
                 if (command != null) {
                     val analysis = ShellCommandParser.analyze(command)
@@ -126,6 +136,10 @@ class ToolPermissionPolicyEngine @Inject constructor(
                         return elevationOrDeny(REASON_UNANALYZABLE_DESTRUCTIVE, args)
                     }
                 }
+            }
+            // Shizuku 直接操作宿主系统，AUTO 下也不自动放行，仍需逐次确认（除非已开启「禁用安全拦截」）。
+            if (toolName == SHIZUKU_TOOL && !safetyDisabled) {
+                return EvalResult(Verdict.ASK, emptyList(), rememberDisabledReason = REASON_SHIZUKU)
             }
             return EvalResult(Verdict.ALLOW, emptyList())
         }
@@ -148,7 +162,11 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
 
         val rules = rulesRepo.loadEffectiveForCurrentProject().filter { it.toolName == toolName }
-        return if (isShellTool(toolName, args)) evaluateShell(rules, args) else evaluateGeneric(rules, capabilities)
+        return if (isShellTool(toolName, args)) {
+            evaluateShell(rules, args, forceAsk = toolName == SHIZUKU_TOOL)
+        } else {
+            evaluateGeneric(rules, capabilities)
+        }
     }
 
     private fun isDangerousTool(toolName: String, args: Map<String, JsonElement>, capabilities: Set<ToolCapability>): Boolean {
@@ -301,7 +319,11 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
     }
 
-    private fun evaluateShell(rules: List<PermissionRule>, args: Map<String, JsonElement>): EvalResult {
+    private fun evaluateShell(
+        rules: List<PermissionRule>,
+        args: Map<String, JsonElement>,
+        forceAsk: Boolean = false
+    ): EvalResult {
         val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
             ?: return EvalResult(Verdict.ASK, emptyList())
 
@@ -321,17 +343,22 @@ class ToolPermissionPolicyEngine @Inject constructor(
             return EvalResult(Verdict.DENY, emptyList(), denyReason = "该命令被项目权限规则策略禁止执行")
         }
 
-        // 2) 不可静态判定 → 必须弹窗、不可记忆（内置白名单也不适用）。
+        // 2) Shizuku 高危工具：无论内置白名单或已记忆规则，一律弹窗且不可记忆。
+        if (forceAsk) {
+            return EvalResult(Verdict.ASK, emptyList(), rememberDisabledReason = REASON_SHIZUKU)
+        }
+
+        // 3) 不可静态判定 → 必须弹窗、不可记忆（内置白名单也不适用）。
         if (!analysis.analyzable) return EvalResult(Verdict.ASK, emptyList())
 
-        // 3) 内置安全白名单：每段都命中安全前缀（ls/git status 等）→ 自动放行，不弹窗。
+        // 4) 内置安全白名单：每段都命中安全前缀（ls/git status 等）→ 自动放行，不弹窗。
         if (analysis.segments.isNotEmpty() &&
             analysis.segments.all { BuiltInSafeCommands.isSafe(it) }
         ) {
             return EvalResult(Verdict.ALLOW, emptyList())
         }
 
-        // 4) 已记忆的 ALLOW：每段都命中 → 放行。
+        // 5) 已记忆的 ALLOW：每段都命中 → 放行。
         // 对 rm 命令进行精细化校验：避免存量或宽泛的 "rm"/"rm -rf" 无目标规则放行高风险删除
         val allAllowed = analysis.segments.isNotEmpty() &&
             analysis.segments.all { seg ->
@@ -349,7 +376,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
             }
         if (allAllowed) return EvalResult(Verdict.ALLOW, emptyList())
 
-        // 5) 否则弹窗，可记忆前缀（子命令分发器记 程序名+子命令）。
+        // 6) 否则弹窗，可记忆前缀（子命令分发器记 程序名+子命令）。
         val hasRmUnrememberable = analysis.segments.any { seg ->
             val rmInfo = ShellCommandParser.parseRmInfo(seg)
             rmInfo.isRm && (rmInfo.targetPaths.isEmpty() || rmInfo.isRecursive || rmInfo.isWildcard)

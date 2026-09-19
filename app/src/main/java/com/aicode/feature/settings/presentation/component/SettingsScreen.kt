@@ -81,6 +81,7 @@ import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.presentation.SettingsViewModel
+import com.aicode.feature.settings.presentation.ShizukuViewModel
 import com.aicode.feature.settings.presentation.SkillImportState
 import com.aicode.feature.settings.presentation.SkillUiEntry
 import com.aicode.feature.agent.domain.skill.SkillImportError
@@ -909,14 +910,23 @@ fun SettingsScreen(
                     onPromote = { viewModel.promoteRuleToGlobal(it) },
                     onDeleteGlobal = { viewModel.deleteGlobalRule(it) }
                 )
-                SettingsSection.AppPermissions -> AppPermissionsSection(
-                    keepaliveEnabled = keepaliveEnabled,
-                    onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
-                    screenOnEnabled = screenOnEnabled,
-                    onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
-                    agentSoundEnabled = agentSoundEnabled,
-                    onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) }
-                )
+                SettingsSection.AppPermissions -> {
+                    val shizukuViewModel: ShizukuViewModel =
+                        androidx.hilt.navigation.compose.hiltViewModel()
+                    val shizukuState by shizukuViewModel.state.collectAsStateWithLifecycle()
+                    AppPermissionsSection(
+                        keepaliveEnabled = keepaliveEnabled,
+                        onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
+                        screenOnEnabled = screenOnEnabled,
+                        onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
+                        agentSoundEnabled = agentSoundEnabled,
+                        onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) },
+                        shizukuState = shizukuState,
+                        onRequestShizukuPermission = { shizukuViewModel.requestPermission() },
+                        onOpenShizuku = { shizukuViewModel.openShizukuApp() },
+                        onRefreshShizuku = { shizukuViewModel.refresh() }
+                    )
+                }
                 SettingsSection.Backup -> {
                     val backupViewModel: com.aicode.feature.backup.presentation.BackupViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()

@@ -92,6 +92,15 @@
 # ---- Compose ----
 -dontwarn androidx.compose.**
 
+# ---- Shizuku（UserService 以 adb shell 身份执行命令）----
+# UserService 实现类由 Shizuku 在 shell 进程中按类名反射加载，类名与构造器不可被混淆/裁剪。
+-keep class com.aicode.feature.agent.domain.shizuku.ShizukuShellService { *; }
+# AIDL 接口与 Stub 跨进程传递，保持不混淆。
+-keep interface com.aicode.feature.agent.domain.shizuku.IShizukuShellService { *; }
+-keep class com.aicode.feature.agent.domain.shizuku.IShizukuShellService$Stub { *; }
+-keep class rikka.shizuku.** { *; }
+-dontwarn rikka.shizuku.**
+
 # ---- Termux terminal-emulator/view（native + JNI）----
 -keep class com.termux.terminal.** { *; }
 -keep class com.termux.view.** { *; }

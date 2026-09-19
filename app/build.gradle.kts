@@ -204,6 +204,8 @@ android {
 
     buildFeatures {
         compose = true
+        // UserService 走 AIDL 跨进程接口（app/src/main/aidl），显式开启以免依赖 AGP 默认值。
+        aidl = true
     }
 
 
@@ -379,6 +381,11 @@ dependencies {
     // WorkManager — 保活兜底：周期检查 TerminalKeepaliveService 存活并拉起（KeepaliveWorker）
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
+
+    // Shizuku：以 adb shell（uid 2000）身份执行命令。api 提供 Shizuku 类与 UserService 绑定，
+    // provider 注册 ShizukuProvider（见 AndroidManifest）以跨进程获取 binder。
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Core Android
     implementation("androidx.core:core:1.16.0")

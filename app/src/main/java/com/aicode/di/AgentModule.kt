@@ -37,6 +37,7 @@ import com.aicode.feature.agent.domain.tool.container.ExecuteCommandTool
 import com.aicode.feature.agent.domain.tool.container.TerminalSessionTool
 import com.aicode.feature.agent.domain.tool.explorer.ListFilesTool
 import com.aicode.feature.agent.domain.tool.explorer.SearchCodeTool
+import com.aicode.feature.agent.domain.tool.shizuku.ShizukuTool
 import com.aicode.feature.agent.domain.tool.skill.LoadSkillTool
 import com.aicode.feature.agent.domain.tool.question.AskUserQuestionTool
 import com.aicode.feature.agent.domain.tool.todo.TodoTool
@@ -271,6 +272,7 @@ object AgentModule {
         editFileTool: EditFileTool,
         generateImageTool: GenerateImageTool,
         executeCommandTool: ExecuteCommandTool,
+        shizukuTool: ShizukuTool,
         terminalSessionTool: TerminalSessionTool,
         listFilesTool: ListFilesTool,
         searchCodeTool: SearchCodeTool,
@@ -293,6 +295,7 @@ object AgentModule {
             register("editFile", editFileTool)
             register("generateImage", generateImageTool)
             register("Bash", executeCommandTool)
+            register("Shizuku", shizukuTool)
             register("terminal", terminalSessionTool)
             register("list", listFilesTool)
             register("search", searchCodeTool)

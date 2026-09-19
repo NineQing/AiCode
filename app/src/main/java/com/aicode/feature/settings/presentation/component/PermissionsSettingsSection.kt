@@ -13,13 +13,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,6 +47,7 @@ import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.XCircle
+import kotlinx.coroutines.delay
 
 /**
  * 「工具授权」二级页：与设置页其它二级页一致的 iOS 分组列表。
@@ -61,6 +67,8 @@ internal fun PermissionsSection(
 ) {
     var projectExpanded by rememberSaveable { mutableStateOf(true) }
     var globalExpanded by rememberSaveable { mutableStateOf(true) }
+    // 开启「禁用安全拦截」前先弹强制确认框（确认按钮 5 秒倒计时）；关闭无需确认。
+    var showSafetyConfirm by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -79,7 +87,10 @@ internal fun PermissionsSection(
                 trailing = {
                     AppSwitch(
                         checked = disableSafetyInterception,
-                        onCheckedChange = onToggleSafetyInterception
+                        onCheckedChange = { enabled ->
+                            if (enabled) showSafetyConfirm = true
+                            else onToggleSafetyInterception(false)
+                        }
                     )
                 }
             )
@@ -135,6 +146,56 @@ internal fun PermissionsSection(
 
         FooterNote(stringResource(R.string.perm_rules_short))
     }
+
+    if (showSafetyConfirm) {
+        SafetyConfirmDialog(
+            onConfirm = {
+                onToggleSafetyInterception(true)
+                showSafetyConfirm = false
+            },
+            onDismiss = { showSafetyConfirm = false }
+        )
+    }
+}
+
+/** 「禁用安全拦截」确认框的倒计时秒数。 */
+private const val SAFETY_CONFIRM_COUNTDOWN_SECONDS = 5
+
+/** 开启「禁用安全拦截」前的强制确认框：确认按钮带 5 秒倒计时，倒计时结束前不可点。 */
+@Composable
+private fun SafetyConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var secondsLeft by remember { mutableIntStateOf(SAFETY_CONFIRM_COUNTDOWN_SECONDS) }
+    LaunchedEffect(Unit) {
+        while (secondsLeft > 0) {
+            delay(1_000)
+            secondsLeft--
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.perm_safety_confirm_title)) },
+        text = { Text(stringResource(R.string.perm_safety_confirm_message)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = secondsLeft == 0
+            ) {
+                Text(
+                    if (secondsLeft > 0) {
+                        stringResource(R.string.perm_safety_confirm_action, secondsLeft)
+                    } else {
+                        stringResource(R.string.perm_safety_confirm_action_ready)
+                    }
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
 }
 
 /**

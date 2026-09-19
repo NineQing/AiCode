@@ -26,6 +26,7 @@ import com.aicode.feature.agent.domain.tool.ToolParameter
 import com.aicode.feature.agent.domain.tool.ToolResult
 import com.aicode.feature.settings.data.remote.ModelMetadataService
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.data.repository.VisionModelSettingsRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ProviderType
@@ -55,6 +56,7 @@ class ViewImageTool @Inject constructor(
     private val visionSessionStore: VisionSessionStore,
     private val aiProviderRepository: AIProviderRepository,
     private val defaultModelSettingsRepository: DefaultModelSettingsRepository,
+    private val generalSettingsRepository: GeneralSettingsRepository,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val modelMetadataService: ModelMetadataService,
     private val sessionUseCase: SessionUseCase,
@@ -338,6 +340,9 @@ class ViewImageTool @Inject constructor(
         val metadata = modelMetadataService.resolve(config.id, config.type, config.effectiveModel)
         provider.maxOutputTokens = metadata.outputTokens
         provider.temperature = if (metadata.supportsCustomTemperature) fixedTemperature(config.effectiveModel) else null
+        provider.firstByteTimeoutMs = generalSettingsRepository.firstByteTimeoutMs()
+        provider.streamIdleTimeoutMs = generalSettingsRepository.streamIdleTimeoutMs()
+        provider.maxNetworkRetries = generalSettingsRepository.maxNetworkRetries()
         return provider
     }
 
@@ -359,7 +364,7 @@ class ViewImageTool @Inject constructor(
 
             val originalOk = sourceMime in ORIGINAL_MIME_TYPES
             val encoded = when (detail) {
-                "original" -> if (originalOk) {
+                "original" -> if (originalOk && fileSize <= MAX_ORIGINAL_BYTES) {
                     originalImage(path, bounds, sourceMime, fileSize)
                 } else {
                     encodePreview(file, bounds, HIGH_MAX_EDGE, HIGH_TARGET_BYTES, detail)

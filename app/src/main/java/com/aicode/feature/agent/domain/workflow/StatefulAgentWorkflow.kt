@@ -42,13 +42,16 @@ import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.settings.data.remote.ModelMetadataService
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.data.repository.ProviderKeyRotator
 import com.aicode.feature.settings.data.repository.TitleModelSettingsRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.agent.domain.provider.AnthropicAdapter
 import com.aicode.feature.agent.domain.provider.fixedTemperature
 import com.aicode.feature.agent.domain.provider.GeminiAdapter
-import com.aicode.feature.agent.domain.provider.isApiKeyFailure
+import com.aicode.feature.agent.domain.provider.AllKeysFailedException
+import com.aicode.feature.agent.domain.provider.KeySwitchOutcome
+import com.aicode.feature.agent.domain.provider.isKeySwitchFailure
 import com.aicode.feature.agent.domain.provider.OpenAIAdapter
 import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.domain.repository.AIProviderRepository
@@ -93,6 +96,7 @@ class StatefulAgentWorkflow @Inject constructor(
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
     private val titleModelSettingsRepository: TitleModelSettingsRepository,
     private val defaultModelSettingsRepository: DefaultModelSettingsRepository,
+    private val generalSettingsRepository: GeneralSettingsRepository,
     private val sessionUseCase: SessionUseCase,
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
     private val checkpointManager: CheckpointManager,
@@ -110,8 +114,8 @@ class StatefulAgentWorkflow @Inject constructor(
         const val TITLE_GENERATOR_FILE = "agent/title-generator.md"
         const val TITLE_MAX_CHARS = 50
         /** 模式提醒提示词：复用 prompts 目录文件（用户可自定义覆盖），切换时随消息注入而非进 system。 */
-        const val MODE_REMINDER_PLAN_FILE = "80-plan-mode.md"
-        const val MODE_REMINDER_AUTO_FILE = "81-auto-mode.md"
+        const val MODE_REMINDER_PLAN_FILE = "agent/plan-mode.md"
+        const val MODE_REMINDER_AUTO_FILE = "agent/auto-mode.md"
         val LEADING_COMMENT = Regex("(?s)^\\s*<!--.*?-->\\s*")
         /** 模型直出图片落盘目录（与 GenerateImageTool 保持一致）。 */
         const val GENERATED_IMAGE_DIR = "~/.aicode/generated-images"
@@ -254,8 +258,31 @@ class StatefulAgentWorkflow @Inject constructor(
                 it.chatCacheKeyEnabled = config.openaiChatCacheKey
             }
         }
-        // 多 Key 模式下由轮换器决定本次用哪个 Key（会话内粘住，失败达阈值才切）。
-        provider.apiKey = keyRotator.activeKey(config, sessionId) ?: config.apiKey
+        // 多 Key 模式下由轮换器决定本次用哪个 Key（会话内粘住，Key 不可用时切下一个并重发）。
+        val activeKeys = config.effectiveApiKeys
+        provider.apiKey = keyRotator.activeKey(config, sessionId)
+            ?: throw IllegalStateException("「${config.name}」的 Key 均在冷却中，请稍后重试")
+        // 只有真正的多 Key 才需要自动切换：单 Key 冷却后没有可切换目标，只会把用户锁死一段时间。
+        val keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? =
+            if (activeKeys.size > 1) {
+                { error, failedKey, triedKeys ->
+                    if (!error.isKeySwitchFailure(config.effectiveKeySwitchStatusCodes)) {
+                        null
+                    } else {
+                        val switched = keyRotator.reportFailure(config.id, sessionId, failedKey, triedKeys)
+                        if (switched == null) {
+                            throw AllKeysFailedException(
+                                "「${config.name}」的 ${activeKeys.size} 个 Key 均失败：${error.message ?: error.javaClass.simpleName}",
+                                error
+                            )
+                        }
+                        KeySwitchOutcome(switched.newKey, switched.newIndex, switched.total)
+                    }
+                }
+            } else {
+                null
+            }
+        provider.keySwitcher = keySwitcher
         provider.baseUrl = config.baseUrl
         provider.model = config.effectiveModel
         provider.useFullUrl = config.useFullUrl
@@ -268,6 +295,9 @@ class StatefulAgentWorkflow @Inject constructor(
         provider.maxOutputTokens = metadata.outputTokens
         // 元数据说不接受自定义温度就不发该字段（kimi-k3、gpt-5 系带了直接 400）；允许的只发官方固定值。
         provider.temperature = if (metadata.supportsCustomTemperature) fixedTemperature(config.effectiveModel) else null
+        provider.firstByteTimeoutMs = generalSettingsRepository.firstByteTimeoutMs()
+        provider.streamIdleTimeoutMs = generalSettingsRepository.streamIdleTimeoutMs()
+        provider.maxNetworkRetries = generalSettingsRepository.maxNetworkRetries()
         return provider
     }
 
@@ -544,6 +574,15 @@ class StatefulAgentWorkflow @Inject constructor(
                                         lastReasoningDeltaSentAt = 0L
                                         send(AgentEvent.Retrying(chunk.attempt, chunk.maxRetries, chunk.error))
                                     }
+                                    is AIStreamChunk.KeySwitched -> {
+                                        acc.setLength(0)
+                                        reasoningAcc.setLength(0)
+                                        pendingTextDelta = null
+                                        pendingReasoningDelta = null
+                                        lastTextDeltaSentAt = 0L
+                                        lastReasoningDeltaSentAt = 0L
+                                        send(AgentEvent.KeySwitched(chunk.newIndex, chunk.total))
+                                    }
                                     is AIStreamChunk.Final -> {
                                         // 纯工具调用轮没有文本/思考增量，Final 是首个内容事件，兜底记为 TTFB
                                         if (ttfbElapsed == null) ttfbElapsed = SystemClock.elapsedRealtime() - callStartElapsed
@@ -567,7 +606,6 @@ class StatefulAgentWorkflow @Inject constructor(
                             val (persistedImages, attachments) =
                                 if (aiResponse.images.isNotEmpty()) persistModelImages(aiResponse.images) else emptyList<AgentImage>() to emptyList()
                             callCompleted = true
-                            keyRotator.reportSuccess(providerInUse.providerId, providerInUse.apiKey)
                             // 将本轮 reasoning 附加到 AIResponse，以便 reduce 时存入 AssistantMessage 并在下一轮回传
                             val responseWithReasoning = if (reasoningAcc.isNotEmpty()) {
                                 aiResponse.copy(reasoning = reasoningAcc.toString())
@@ -605,19 +643,9 @@ class StatefulAgentWorkflow @Inject constructor(
                             if (partial.isNotEmpty() || reasoning.isNotBlank()) {
                                 send(AgentEvent.AssistantText(partial, emptyList(), reasoning))
                             }
-                            // 多 Key：仅鉴权/限流/配额类失败计数，达阈值则切到下一个 Key，
-                            // 并把切换结果拼进错误文案——用户看到的就是这条报错，不必再开新的 UI 通道。
-                            var errorText = "LLM 调用失败: ${e.message}"
-                            if (e.isApiKeyFailure()) {
-                                val switched = keyRotator.reportFailure(
-                                    providerInUse.providerId,
-                                    currentContext.sessionId,
-                                    providerInUse.apiKey
-                                )
-                                if (switched != null) {
-                                    errorText += "（已切换到第 ${switched.newIndex}/${switched.total} 个 Key，可重试）"
-                                }
-                            }
+                            // 多 Key 的自动切换与重发已在 adapter 内完成（见 AIProvider.keySwitcher）；
+                            // 走到这里说明不是 Key 问题、或候选 Key 已全部失败，直接上报原始错误。
+                            val errorText = "LLM 调用失败: ${e.message}"
                             actionQueue.addLast(AgentAction.LlmError(errorText))
                             callError = e.message ?: e.javaClass.simpleName
                         } finally {
@@ -1119,12 +1147,13 @@ class StatefulAgentWorkflow @Inject constructor(
             ToolPermissionPolicyEngine.Verdict.ALLOW -> PermissionCheckResult(true)
             ToolPermissionPolicyEngine.Verdict.DENY -> PermissionCheckResult(false)
             ToolPermissionPolicyEngine.Verdict.ASK -> {
-                val request = tool.buildPermissionRequest(callId, arguments, argsPreview)
-                    .copy(
-                        rememberablePatterns = eval.rememberablePatterns,
-                        rememberDisabledReason = eval.rememberDisabledReason,
-                        sessionId = sessionId.orEmpty()
-                    )
+                val base = tool.buildPermissionRequest(callId, arguments, argsPreview)
+                val request = base.copy(
+                    title = eval.askTitle ?: base.title,
+                    rememberablePatterns = eval.rememberablePatterns,
+                    rememberDisabledReason = eval.rememberDisabledReason,
+                    sessionId = sessionId.orEmpty()
+                )
                 when (permissionManager.awaitApproval(request)) {
                     PermissionChoice.REJECT -> PermissionCheckResult(false, "用户拒绝执行该工具", "USER_REJECTED")
                     PermissionChoice.ONCE -> PermissionCheckResult(true)

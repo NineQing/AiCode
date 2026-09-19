@@ -1,13 +1,11 @@
 package com.aicode.feature.workspace.domain
 
+import net.schmizz.sshj.xfer.FilePermission
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 远程模式下 AI 路径 ↔ 远程真实路径的映射与 stat 输出解析（[RemoteSftpFileAccess] 的纯逻辑部分）。
+ * 远程模式下 AI 路径 ↔ 远程真实路径的映射，以及 SFTP 权限位格式化（[RemoteSftpFileAccess] 的纯逻辑部分）。
  */
 class RemoteSftpFileAccessMappingTest {
 
@@ -69,59 +67,34 @@ class RemoteSftpFileAccessMappingTest {
         assertEquals("/etc/passwd", displayPathFor("/etc/passwd", wsRoot))
     }
 
-    // ---------- shellQuote：单引号转义 ----------
+    // ---------- formatPermissions：SFTP 权限集合 → rwx 字符串 ----------
 
     @Test
-    fun shell_quote_wraps_plain_path() {
-        assertEquals("'/data/ws/a b.txt'", shellQuote("/data/ws/a b.txt"))
-        assertEquals("''", shellQuote(""))
+    fun format_permissions_typical_file() {
+        assertEquals(
+            "rw-r--r--",
+            formatPermissions(
+                setOf(FilePermission.USR_R, FilePermission.USR_W, FilePermission.GRP_R, FilePermission.OTH_R)
+            )
+        )
     }
 
     @Test
-    fun shell_quote_escapes_single_quote() {
-        assertEquals("'/data/it'\\''s.txt'", shellQuote("/data/it's.txt"))
-    }
-
-    // ---------- parseStatEntryLine：stat 输出行解析 ----------
-
-    @Test
-    fun parse_stat_regular_file() {
-        val entry = parseStatEntryLine("$wsRoot/src/Main.kt|regular file|2048|1700000000|-rw-r--r--")
-        assertEquals("Main.kt", entry?.name)
-        assertFalse(entry?.isDirectory ?: true)
-        assertEquals(2048L, entry?.size)
-        assertEquals(1700000000000L, entry?.lastModified)
-        assertEquals("rw-r--r--", entry?.permissions)
-        assertNull(entry?.localFile)
+    fun format_permissions_directory() {
+        assertEquals(
+            "rwxr-xr-x",
+            formatPermissions(
+                setOf(
+                    FilePermission.USR_R, FilePermission.USR_W, FilePermission.USR_X,
+                    FilePermission.GRP_R, FilePermission.GRP_X,
+                    FilePermission.OTH_R, FilePermission.OTH_X
+                )
+            )
+        )
     }
 
     @Test
-    fun parse_stat_directory() {
-        val entry = parseStatEntryLine("$wsRoot/src|directory|4096|1700000000|drwxr-xr-x")
-        assertEquals("src", entry?.name)
-        assertTrue(entry?.isDirectory ?: false)
-        assertEquals("rwxr-xr-x", entry?.permissions)
-    }
-
-    @Test
-    fun parse_stat_ignores_broken_lines() {
-        assertNull(parseStatEntryLine("a|b"))
-        assertNull(parseStatEntryLine("|regular file|1|2|3"))
-    }
-
-    @Test
-    fun parse_stat_filters_dot_entries_keeps_hidden() {
-        // .* glob 会带上 . 与 ..，应过滤；隐藏项（.git）保留
-        assertNull(parseStatEntryLine("$wsRoot/.|directory|4096|1700000000|drwxr-xr-x"))
-        assertNull(parseStatEntryLine("$wsRoot/..|directory|4096|1700000000|drwxr-xr-x"))
-        val hidden = parseStatEntryLine("$wsRoot/.git|directory|4096|1700000000|drwxr-xr-x")
-        assertEquals(".git", hidden?.name)
-    }
-
-    @Test
-    fun parse_stat_tolerates_bad_numbers() {
-        val entry = parseStatEntryLine("$wsRoot/f.txt|regular file|abc|notatime|---------")
-        assertEquals(0L, entry?.size)
-        assertEquals(0L, entry?.lastModified)
+    fun format_permissions_empty() {
+        assertEquals("---------", formatPermissions(emptySet()))
     }
 }

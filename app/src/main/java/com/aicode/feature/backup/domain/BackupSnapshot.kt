@@ -30,6 +30,13 @@ data class BackupSnapshot(
     val keepaliveEnabled: Boolean = false,
     val screenOnEnabled: Boolean = false,
     val agentSoundEnabled: Boolean = false,
+    val autoRemoveStaleModels: Boolean = true,
+    val startupSessionMode: String? = null,
+    val firstByteTimeoutSec: Int = 300,
+    val streamIdleTimeoutSec: Int = 0,
+    val maxNetworkRetries: Int = 6,
+    val enterToSend: Boolean = false,
+    val compactionThresholdPercent: Int = 90,
     val logLevel: String? = null,
     val visionProviderId: String = "",
     val visionModel: String = "",
@@ -58,6 +65,13 @@ data class BackupMetadata(
     val keepaliveEnabled: Boolean = false,
     val screenOnEnabled: Boolean = false,
     val agentSoundEnabled: Boolean = false,
+    val autoRemoveStaleModels: Boolean = true,
+    val startupSessionMode: String? = null,
+    val firstByteTimeoutSec: Int = 300,
+    val streamIdleTimeoutSec: Int = 0,
+    val maxNetworkRetries: Int = 6,
+    val enterToSend: Boolean = false,
+    val compactionThresholdPercent: Int = 90,
     val logLevel: String? = null,
     val visionProviderId: String = "",
     val visionModel: String = "",
@@ -89,6 +103,13 @@ fun BackupSnapshot.toMetadata() = BackupMetadata(
     keepaliveEnabled = keepaliveEnabled,
     screenOnEnabled = screenOnEnabled,
     agentSoundEnabled = agentSoundEnabled,
+    autoRemoveStaleModels = autoRemoveStaleModels,
+    startupSessionMode = startupSessionMode,
+    firstByteTimeoutSec = firstByteTimeoutSec,
+    streamIdleTimeoutSec = streamIdleTimeoutSec,
+    maxNetworkRetries = maxNetworkRetries,
+    enterToSend = enterToSend,
+    compactionThresholdPercent = compactionThresholdPercent,
     logLevel = logLevel,
     visionProviderId = visionProviderId,
     visionModel = visionModel,
@@ -126,7 +147,9 @@ data class ProviderDto(
     val keyFailoverThreshold: Int? = null,
     val keyCooldownMinutes: Int? = null,
     /** 自定义面板 (DIY) 脚本参数（JSON 编码）；null 表示旧备份无此字段，导入时回退为空。 */
-    val scriptParams: String? = null
+    val scriptParams: String? = null,
+    /** 多 Key 自动切换状态码（逗号分隔）；null 表示旧备份无此字段，导入时回退空串（即默认码表）。 */
+    val keySwitchStatusCodes: String? = null
 )
 
 @Serializable

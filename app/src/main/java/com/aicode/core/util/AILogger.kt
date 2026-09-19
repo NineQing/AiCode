@@ -29,6 +29,12 @@ object AILogger {
     private const val TAG = "AILogger"
     private const val MAX_AGE_DAYS = 7
     private const val MAX_FILE_BYTES = 20 * 1024 * 1024 // 单会话文件上限 20MB（每轮重发完整历史，增长快）
+    /** 原始 SSE 日志缓冲字符上限：流式响应体量无上限，整段累积再 toString 会在移动端把堆顶爆。 */
+    private const val MAX_RAW_SSE_CHARS = 512 * 1024
+    private const val TRUNCATED_SSE_MARKER = "\n...[raw SSE 已截断]\n"
+    /** 请求/响应体写入日志的单段上限（字符）：长历史 / 大附件整段序列化再拼接会在移动端 OOM。 */
+    private const val MAX_LOGGED_CHARS = 2 * 1024 * 1024
+    private const val LOG_TRUNCATED_MARKER = "\n...[日志内容过长，已截断]"
 
     private val ioExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "ai-logger").apply { isDaemon = true }
@@ -99,6 +105,22 @@ object AILogger {
         write(sessionId, text)
     }
 
+    /**
+     * 把一行原始 SSE 追加到 [sb]，超过 [MAX_RAW_SSE_CHARS] 后停止累积。
+     *
+     * 原始 SSE 仅用于离线诊断；若整段无上限累积，最后 `toString()` 会在移动端 OOM（曾致 release 崩溃）。
+     */
+    fun appendRawSse(sb: StringBuilder, line: String) {
+        if (sb.length >= MAX_RAW_SSE_CHARS) return
+        val room = MAX_RAW_SSE_CHARS - sb.length
+        if (line.length + 1 <= room) {
+            sb.append(line).append('\n')
+        } else {
+            sb.append(line, 0, maxOf(room - TRUNCATED_SSE_MARKER.length, 0))
+            sb.append(TRUNCATED_SSE_MARKER)
+        }
+    }
+
     /** 记录一次请求失败（取消不算失败，不应走到这里）。[seq] 必须来自对应 [logRequest] 的返回值。 */
     fun logError(sessionId: String?, provider: String, throwable: Throwable, seq: Int) {
         val text = buildString {
@@ -146,11 +168,47 @@ object AILogger {
 
     private fun now(): String = timestampFormat.format(java.time.Instant.now())
 
+    /**
+     * 序列化用于日志的对象。长度封顶 [MAX_LOGGED_CHARS]：大对象经有界 [LimitWriter] 序列化，
+     * 避免超大请求/响应体（长历史、大附件）整段进内存、再被日志拼接复制而 OOM。
+     */
     private fun stringify(body: Any?): String = when (body) {
-        null -> "null"
-        is String -> body
-        else -> runCatching { gson.toJson(body) }.getOrElse { body.toString() }
-    }.let(MediaRedactor::redact)
+        null -> MediaRedactor.redact("null")
+        is String -> MediaRedactor.redact(body.truncateForLog())
+        else -> {
+            val writer = LimitWriter(MAX_LOGGED_CHARS)
+            runCatching { gson.toJson(body, writer) }.fold(
+                onSuccess = { MediaRedactor.redact(writer.result()) },
+                onFailure = { MediaRedactor.redact(body.toString().truncateForLog()) }
+            )
+        }
+    }
+
+    /** 截断超长文本并追加提示，限定单段日志的内存占用。 */
+    private fun String.truncateForLog(): String =
+        if (length <= MAX_LOGGED_CHARS) this else take(MAX_LOGGED_CHARS) + LOG_TRUNCATED_MARKER
+
+    /** 有界 [java.io.Writer]：写入超过 [limit] 字符后丢弃后续内容，避免超大对象序列化整段进内存。 */
+    private class LimitWriter(private val limit: Int) : java.io.Writer() {
+        private val sb = StringBuilder()
+        private var truncated = false
+
+        override fun write(cbuf: CharArray, off: Int, len: Int) {
+            if (sb.length >= limit) {
+                truncated = true
+                return
+            }
+            val n = minOf(limit - sb.length, len)
+            sb.append(cbuf, off, n)
+            if (n < len) truncated = true
+        }
+
+        override fun flush() {}
+
+        override fun close() {}
+
+        fun result(): String = if (truncated) sb.toString() + LOG_TRUNCATED_MARKER else sb.toString()
+    }
 
     private fun write(sessionId: String?, text: String) {
         val dir = logDir ?: return // 未初始化则直接丢弃，避免在无目录时报错刷屏

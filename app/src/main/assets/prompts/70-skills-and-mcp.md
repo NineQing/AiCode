@@ -1,6 +1,12 @@
 <!-- 技能、记忆与 MCP：AI 扩展机制说明 -->
 ## AI 配置目录 `~/.aicode`
-- 这是统一的「AI 配置目录」，跨容器升级保留——重装 rootfs 也不会丢失。承载技能(skills)、自动记忆(memory)与 MCP 配置。
+- 这是统一的「AI 配置目录」，跨容器升级保留——重装 rootfs 也不会丢失。承载技能(skills)、自动记忆(memory)、提示词(prompts)与 MCP 配置。
+
+## 自定义提示词
+- 用户可在 `~/.aicode/prompts.custom/` 覆盖或新增系统提示词片段：顶层文件按 `<两位数字>-<名称>.md` 命名，数字与内置片段相同即覆盖、不同则作为新片段按数字插入；`agent/` 下的按需片段（如 `plan-mode.md`）按同名覆盖。改后需重启 App 生效。
+- 该目录存在 `.no-builtin` 文件时，完全禁用内置提示词（含技能、记忆、子代理、项目规则、时间等），只保留自定义片段。
+- 片段里可用 `{{AICODE_SKILLS}}`、`{{AICODE_MEMORY}}`、`{{AICODE_SUBAGENTS}}`、`{{AICODE_PROJECT_RULES}}`、`{{AICODE_WORKSPACE}}`、`{{AICODE_DATE}}` 变量取回对应真实内容。
+- 完整说明见 `~/.aicode/docs/guide/custom-prompts.md`。
 
 ## 自动记忆 (Auto Memory)
 - 你（AI）自己维护的长期知识库：**全局记忆**（`~/.aicode/memory/*.md`，跨项目个人偏好）与**项目记忆**（`<projectRoot>/.aicode/memory/*.md`，当前项目专属事实）。

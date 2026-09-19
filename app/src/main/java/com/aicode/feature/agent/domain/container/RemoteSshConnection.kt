@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -28,11 +27,12 @@ import javax.inject.Singleton
 private const val TAG = "RemoteSshConnection"
 
 /**
- * 共享的 SSH 连接管理器：持有单个 sshj [SSHClient]，供 [RemoteSshEngine]（exec channel）
- * 与 [RemoteSftpFileAccess]（SFTP channel）复用同一 SSH 连接。
+ * 共享的 SSH 连接管理器：持有两条独立的 sshj [SSHClient]——exec 通道供 [RemoteSshEngine] 执行命令，
+ * SFTP 通道供 [RemoteSftpFileAccess] 读写文件。两者隔离，SFTP 的 Buffer 溢出不会拖垮命令通道。
  *
  * 连接配置（host/port/username/auth）由调用方在 [connect] 时传入。连接断开后下次 [connect]
- * 重新建立。所有操作串行化（[mutex]），避免并发导致 sshj 状态错乱。
+ * 重新建立；SFTP 通道按需惰性建立（见 [sftp]）。exec 侧操作串行化（[mutex]），SFTP 侧由
+ * [RemoteSftpFileAccess] 串行化（sshj 的 SFTPClient 非线程安全）。
  */
 @Singleton
 class RemoteSshConnection @Inject constructor(
@@ -43,10 +43,19 @@ class RemoteSshConnection @Inject constructor(
     @Volatile
     private var sshClient: SSHClient? = null
 
+    /**
+     * 独立的 SFTP 通道：与 exec 各用一条 SSH transport。sshj 的 SFTP 有间歇性 Buffer 溢出
+     * （hierynomus/sshj#461），共用 transport 时崩溃会一并拖垮 Bash/终端；分开后只影响文件通道，
+     * 崩溃由 [invalidateSftp] + 下次 [sftp] 重建兜底。
+     */
+    @Volatile
+    private var sftpSshClient: SSHClient? = null
+
     @Volatile
     private var sftpClient: SFTPClient? = null
 
     private val mutex = Mutex()
+    private val sftpLock = Mutex()
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     /** 连接状态流，供 UI 显示指示器、工作区初始化等待连接就绪。 */
@@ -73,28 +82,7 @@ class RemoteSshConnection @Inject constructor(
         _connectionState.value = ConnectionState.CONNECTING
         try {
             withContext(Dispatchers.IO) {
-                val client = SSHClient().apply {
-                    addHostKeyVerifier(hostKeyVerifier)
-                    connect(config.host, config.port)
-                    when (val auth = config.auth) {
-                        is RemoteAuth.Password -> authPassword(config.username, auth.password)
-                        is RemoteAuth.PrivateKey -> {
-                            val keyProvider = if (auth.passphrase != null) {
-                                loadKeys(auth.privateKeyPath, auth.passphrase)
-                            } else {
-                                loadKeys(auth.privateKeyPath)
-                            }
-                            authPublickey(config.username, keyProvider)
-                        }
-                    }
-                    // 启用 SSH 心跳保活，防止空闲超时断连
-                    runCatching {
-                        connection.keepAlive?.let {
-                            it.setKeepAliveInterval(30)
-                            it.start()
-                        }
-                    }
-                }
+                val client = newSshClient(config)
                 sshClient = client
                 // 查远程真实 home（root 是 /root，普通用户是 /home/xxx），供文件工具展开 ~
                 runCatching {
@@ -134,11 +122,42 @@ class RemoteSshConnection @Inject constructor(
     }
 
     private fun disconnectInternal() {
-        runCatching { sftpClient?.close() }
+        closeSftpInternal()
         runCatching { sshClient?.disconnect() }
-        sftpClient = null
         sshClient = null
         _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    /** 关闭并清空独立 SFTP 通道；下次 [sftp] 会按当前 config 重建。 */
+    private fun closeSftpInternal() {
+        runCatching { sftpClient?.close() }
+        runCatching { sftpSshClient?.disconnect() }
+        sftpClient = null
+        sftpSshClient = null
+    }
+
+    /** 建立一条 SSH transport 并完成认证与保活（exec 与 SFTP 各建一条）。 */
+    private fun newSshClient(config: RemoteConnectionConfig): SSHClient = SSHClient().apply {
+        addHostKeyVerifier(hostKeyVerifier)
+        connect(config.host, config.port)
+        when (val auth = config.auth) {
+            is RemoteAuth.Password -> authPassword(config.username, auth.password)
+            is RemoteAuth.PrivateKey -> {
+                val keyProvider = if (auth.passphrase != null) {
+                    loadKeys(auth.privateKeyPath, auth.passphrase)
+                } else {
+                    loadKeys(auth.privateKeyPath)
+                }
+                authPublickey(config.username, keyProvider)
+            }
+        }
+        // 启用 SSH 心跳保活，防止空闲超时断连
+        runCatching {
+            connection.keepAlive?.let {
+                it.setKeepAliveInterval(30)
+                it.start()
+            }
+        }
     }
 
     fun isConnected(): Boolean =
@@ -155,23 +174,40 @@ class RemoteSshConnection @Inject constructor(
         return cmd
     }
 
+    /**
+     * 开 exec 会话但**保留 stdin 可写**，供大内容经 stdin 传输（避免命令行参数超过远端 ARG_MAX）。
+     * 调用方负责写入并关闭 [Session.Command.outputStream]、读取输出、关闭 session。
+     */
+    fun startExecSessionWithStdin(command: String): Session.Command {
+        val client = sshClient ?: throw IllegalStateException("SSH 未连接")
+        return client.startSession().exec(command)
+    }
+
     /** 开一个新的 Session，供调用方分配 PTY 并启动 shell。调用方负责关闭 Session。 */
     fun startShellSession(): Session {
         val client = sshClient ?: throw IllegalStateException("SSH 未连接")
         return client.startSession()
     }
 
-    /** 获取共享的 SFTP client（惰性创建）。调用方不应关闭它——由 [disconnect] 统一管理。 */
-    suspend fun getSftpClient(): SFTPClient = mutex.withLock {
-        sftpClient?.takeIf { sshClient?.isConnected == true }?.let { return@withLock it }
-        val client = sshClient ?: throw IllegalStateException("SSH 未连接")
+    /**
+     * 获取独立的 SFTP client（惰性建立第二条 SSH 连接，与 exec 隔离）。调用方不应关闭它——
+     * 由 [disconnect] 统一管理。连接失效（未连接/未认证）时丢弃重建，覆盖 SFTP 通道崩溃后的自愈。
+     */
+    suspend fun sftp(): SFTPClient = sftpLock.withLock {
+        val cfg = config ?: throw IllegalStateException("SSH 未配置")
+        sftpClient
+            ?.takeIf { sftpSshClient?.isConnected == true && sftpSshClient?.isAuthenticated == true }
+            ?.let { return@withLock it }
+        closeSftpInternal()
+        val client = withContext(Dispatchers.IO) { newSshClient(cfg) }
+        sftpSshClient = client
         val sftp = withContext(Dispatchers.IO) { client.newSFTPClient() }
         sftpClient = sftp
         sftp
     }
 
-    /** [getSftpClient] 的阻塞版，供非 suspend 调用方（如 [RemoteSftpFileAccess]）使用。 */
-    fun getSftpClientBlocking(): SFTPClient = runBlocking { getSftpClient() }
+    /** 丢弃当前 SFTP 通道（通道异常后调用），下次 [sftp] 会重建。 */
+    suspend fun invalidateSftp() = sftpLock.withLock { closeSftpInternal() }
 
     /** 若已配置但未连接，立即尝试重连一次。返回是否最终连通。供 App 回到前台时主动触发。 */
     suspend fun tryReconnectIfDisconnected(): Boolean {
@@ -223,6 +259,9 @@ class RemoteSshConnection @Inject constructor(
     /**
      * 更新 ~/workspace 符号链接指向当前选中工作区的远程路径，让 AI 用 ~/workspace/... 路径时
      * Bash 命令（pwd 等）能直接访问到正确的工作区目录。应在工作区选中/初始化后调用。
+     *
+     * `~/workspace` 已是真实目录时跳过（工作区根被配成了 `~/workspace` 的情况）：此时 `ln` 会把
+     * 链接建到该目录**内部**，形成自引用死循环，破坏整个工作区；跳过时命令链路会回退到真实路径。
      */
     suspend fun updateWorkspaceSymlink(workspacePath: String) {
         val client = sshClient ?: return
@@ -231,9 +270,15 @@ class RemoteSshConnection @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 val session = client.startSession()
-                val cmd = session.exec("ln -sfn '$ws' ~/workspace 2>/dev/null; echo done")
-                java.io.BufferedReader(java.io.InputStreamReader(cmd.inputStream)).readText()
+                val cmd = session.exec(
+                    "if [ -d ~/workspace ] && [ ! -L ~/workspace ]; then echo skip; " +
+                        "else ln -sfn '$ws' ~/workspace 2>/dev/null; echo done; fi"
+                )
+                val out = java.io.BufferedReader(java.io.InputStreamReader(cmd.inputStream)).readText().trim()
                 session.close()
+                if (out == "skip") {
+                    FileLogger.w(TAG, "~/workspace 已是真实目录，跳过符号链接（工作区根可能配成了 ~/workspace）")
+                }
             }.onFailure { FileLogger.w(TAG, "更新 workspace 符号链接失败: $ws", it) }
         }
     }

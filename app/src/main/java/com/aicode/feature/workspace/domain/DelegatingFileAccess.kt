@@ -3,6 +3,7 @@ package com.aicode.feature.workspace.domain
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
 import java.io.File
+import java.io.InputStream
 import java.nio.charset.Charset
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,10 +47,16 @@ class DelegatingFileAccess @Inject constructor(
 
     override fun listFiles(path: String): List<FileEntry> = delegate().listFiles(path)
 
+    override fun listFilesRecursive(path: String, maxDepth: Int): List<String> =
+        delegate().listFilesRecursive(path, maxDepth)
+
     override fun readBytes(path: String): ByteArray = delegate().readBytes(path)
 
     override fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean) =
         delegate().writeBytes(path, bytes, overwrite)
+
+    override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long =
+        delegate().writeStream(path, input, overwrite)
 
     override fun copyToLocal(path: String): File = delegate().copyToLocal(path)
 

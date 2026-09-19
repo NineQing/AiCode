@@ -85,10 +85,21 @@ data class AIResponse(
 }
 
 /**
+ * 一次 Key 切换的结果：新 Key 与其在候选列表中的序号（1 起），供 adapter 改写凭据并通知 UI。
+ */
+data class KeySwitchOutcome(val newKey: String, val newIndex: Int, val total: Int)
+
+/**
+ * 所有候选 Key 都失败时抛出。文案已包含原始失败原因，交由上层原样展示。
+ */
+class AllKeysFailedException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
  * 流式补全过程中向上游推送的分块。
  * [TextDelta] 为模型新吐出的一小段文字（增量，非累积）；
  * [Final] 在本轮结束时给出完整结果（聚合后的文字 + 工具调用），供 Agent 循环驱动后续工具执行。
  * [Retrying] 在网络重试时推送，供 UI 展示"正在重试"提示。
+ * [KeySwitched] 在多 Key 自动切换时推送，供 UI 提示本次请求已改用的 Key。
  */
 sealed class AIStreamChunk {
     data class TextDelta(val text: String) : AIStreamChunk()
@@ -105,6 +116,8 @@ sealed class AIStreamChunk {
     data class Final(val response: AIResponse) : AIStreamChunk()
     /** 网络请求正在重试。仅用于 UI 实时展示，不进入上下文回放。[error] 为触发重试的错误摘要，供 UI 展示具体原因。 */
     data class Retrying(val attempt: Int, val maxRetries: Int, val error: RetryErrorInfo) : AIStreamChunk()
+    /** 当前 Key 不可用，已自动切到第 [newIndex]/[total] 个 Key 并重发本次请求。仅用于 UI 提示。 */
+    data class KeySwitched(val newIndex: Int, val total: Int) : AIStreamChunk()
 }
 
 interface AIProvider {
@@ -139,6 +152,14 @@ interface AIProvider {
     var customHeaders: Map<String, String>
 
     /**
+     * 多 Key 自动切换钩子，由工作流在装配 provider 时注入；为 null 表示不启用（如生图等旁路）。
+     * 入参为本次失败异常、当前使用的 Key、本次请求已试过的 Key 集合。返回非 null 表示已切到
+     * [KeySwitchOutcome.newKey]，adapter 应改写 [apiKey] 并重发；返回 null 表示不是「Key 不可用」
+     * 类失败或候选已用尽（用尽时实现方抛 [AllKeysFailedException]）。
+     */
+    var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)?
+
+    /**
      * 本次请求允许的最大输出 token 数，来自模型元数据的输出上限（models.dev `limit.output`）。
      * 调用前由工作流设置；为 null 时各 adapter 用自身默认值或不发该参数。
      */
@@ -150,6 +171,24 @@ interface AIProvider {
      * 带上任何值都会 400。
      */
     var temperature: Float?
+
+    /**
+     * 流式请求等待首个内容块的上限（毫秒），调用前由工作流按「通用设置 → 网络」写入。
+     * 默认 5 分钟；0 表示不限制，此时仅靠连接超时与手动取消兜底。
+     */
+    var firstByteTimeoutMs: Long
+
+    /**
+     * 流式响应中相邻两个数据块之间的最大等待（毫秒），0（默认）表示不限制。
+     * 非 0 时超过该间隔未收到任何数据即关闭流，触发可重试的 IOException。
+     */
+    var streamIdleTimeoutMs: Long
+
+    /**
+     * 网络请求（含流式）的最大重试次数，不含首次请求；调用前由工作流按「通用设置 → 网络」写入。
+     * 默认 6；0 表示失败即抛出、不重试。
+     */
+    var maxNetworkRetries: Int
 
     /**
      * 单轮补全。[tools] 会以提供商的 function-calling 格式真正发给模型，
@@ -237,6 +276,18 @@ fun fixedTemperature(modelId: String): Float? {
  * 若未来出现「base 与 path 版本段不同、且应以 path 版本为准」的源，需在此改写成
  * 相等才去重、不等则直接拼接，而不是无条件丢弃 path 版本段。
  */
+/**
+ * 上报一次 Key 失败并切到下一个可用 Key。返回 null 表示 [keySwitcher] 未注入、判定为非 Key 故障、
+ * 或没有可切换的候选；切换成功时改写 [AIProvider.apiKey] 并把新 Key 并入 [triedKeys]。
+ */
+suspend fun AIProvider.switchKeyOnFailure(error: Throwable, triedKeys: MutableSet<String>): KeySwitchOutcome? {
+    val switcher = keySwitcher ?: return null
+    val outcome = switcher(error, apiKey, triedKeys) ?: return null
+    apiKey = outcome.newKey
+    triedKeys += outcome.newKey
+    return outcome
+}
+
 fun joinUrl(baseUrl: String, path: String): String {
     val base = baseUrl.trim().trimEnd('/')
     val cleanPath = path.trimStart('/')

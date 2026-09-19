@@ -58,6 +58,25 @@ sealed interface FileBrowseState {
     data class Error(val detail: String?) : FileBrowseState
 }
 
+/** 一条聊天记录搜索命中：会话标题 + 消息片段，供侧边栏结果行展示。 */
+@Immutable
+data class ChatSearchHit(
+    val sessionId: String,
+    val sessionTitle: String,
+    val messageId: String,
+    /** 命中词为中心的正文片段（已折叠换行空白，两端按需加省略号）。 */
+    val snippet: String,
+    val timestamp: Long
+)
+
+/** 侧边栏聊天记录搜索状态：当前关键词与命中的扁平结果（按时间倒序）。 */
+@Immutable
+data class ChatSearchState(
+    val query: String = "",
+    val loading: Boolean = false,
+    val hits: List<ChatSearchHit> = emptyList()
+)
+
 /**
  * 单次 LLM 请求完成事件（含当次消耗的 Token）。
  */
@@ -77,6 +96,13 @@ data class LlmCallEvent(
  */
 @Immutable
 data class RetryState(val attempt: Int, val maxRetries: Int, val error: RetryErrorInfo? = null)
+
+/**
+ * 多 Key 自动切换状态（仅用于 UI 实时展示「已切换到第 N/M 个 Key」提示）。
+ * 只在切换后重发前短暂存在，重新出内容或本轮结束即清除。
+ */
+@Immutable
+data class KeySwitchState(val newIndex: Int, val total: Int)
 
 @Immutable
 data class AgentUIMessage(

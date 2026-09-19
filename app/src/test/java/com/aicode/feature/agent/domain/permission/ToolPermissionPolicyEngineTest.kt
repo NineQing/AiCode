@@ -3,6 +3,7 @@ package com.aicode.feature.agent.domain.permission
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.tool.AgentTool
 import com.aicode.feature.agent.domain.tool.ToolCapability
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -24,10 +25,12 @@ import org.junit.Test
  */
 class ToolPermissionPolicyEngineTest {
 
-    private fun engine(vararg rules: PermissionRule): ToolPermissionPolicyEngine {
+    private fun engine(vararg rules: PermissionRule, safetyDisabled: Boolean = false): ToolPermissionPolicyEngine {
         val repo = mockk<PermissionRulesRepository>(relaxed = true)
         coEvery { repo.loadEffectiveForCurrentProject() } returns rules.toList()
-        return ToolPermissionPolicyEngine(repo)
+        val safety = mockk<ToolSafetySettingsRepository>(relaxed = true)
+        coEvery { safety.isSafetyInterceptionDisabled() } returns safetyDisabled
+        return ToolPermissionPolicyEngine(repo, safety)
     }
 
     private fun tool(vararg caps: ToolCapability): AgentTool {
@@ -101,13 +104,27 @@ class ToolPermissionPolicyEngineTest {
         val e = engine()
         val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.AUTO)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
-        assertEquals("安全防护：禁止执行高危删除操作（根目录删除）", r.denyReason)
+        assertTrue(r.denyReason?.startsWith("安全防护：禁止执行高危删除操作（根目录删除）") == true)
     }
 
     @Test
     fun autoMode_stillBlocksWorkspaceRm() = runTest {
         val e = engine()
         val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf ~/workspace/*"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun autoMode_disabledSafety_allowsCatastrophicRm() = runTest {
+        val e = engine(safetyDisabled = true)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
+    }
+
+    @Test
+    fun disabledSafety_buildMode_stillBlocksCatastrophicRm() = runTest {
+        val e = engine(safetyDisabled = true)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
     }
 
@@ -246,6 +263,110 @@ class ToolPermissionPolicyEngineTest {
         assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
     }
 
+    // ── 提权：非 AUTO 模式下携带 elevate 将硬拒绝降级为一次性授权 ──────
+
+    @Test
+    fun catastrophicRm_elevate_asksUser() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS),
+            "Bash",
+            mapOf("command" to JsonPrimitive("rm -rf /"), "elevate" to JsonPrimitive(true)),
+            AgentMode.BUILD
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+        assertNotNull(r.askTitle)
+    }
+
+    @Test
+    fun catastrophicRm_denyReasonHintsElevate() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf /"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+        assertTrue(r.denyReason?.contains("elevate") == true)
+    }
+
+    @Test
+    fun catastrophicRm_autoMode_elevate_asksUser() = runTest {
+        val e = engine()
+        val r = e.evaluate(
+            tool(ToolCapability.EXECUTE_COMMANDS),
+            "Bash",
+            mapOf("command" to JsonPrimitive("rm -rf /"), "elevate" to JsonPrimitive(true)),
+            AgentMode.AUTO
+        )
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+    }
+
+    // ── 路径归一化：多种等价写法均需拦截，工作区子目录放行 ─────────────
+
+    private suspend fun denied(command: String): Boolean =
+        engine().evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash(command), AgentMode.BUILD).verdict ==
+            ToolPermissionPolicyEngine.Verdict.DENY
+
+    @Test
+    fun abnormalPathSpellings_denied() = runTest {
+        assertTrue(denied("rm -rf //etc"))
+        assertTrue(denied("rm -rf /./etc"))
+        assertTrue(denied("rm -rf /etc/../etc"))
+        assertTrue(denied("rm -rf /tmp/../etc"))
+        assertTrue(denied("rm -rf /foo/../"))
+        assertTrue(denied("rm -rf \$HOME"))
+        assertTrue(denied("rm -rf \${HOME}/foo"))
+        assertTrue(denied("rm -rf /et*"))
+        assertTrue(denied("rm -rf /usr*"))
+        assertTrue(denied("rm -rf /srv"))
+        assertTrue(denied("rm -rf /mnt"))
+    }
+
+    @Test
+    fun workspaceSubdir_allowed() = runTest {
+        assertTrue(!denied("rm -rf ~/workspace/build"))
+        assertTrue(!denied("rm -rf ~/workspace/app/src"))
+        assertTrue(!denied("rm -rf /tmp/build"))
+    }
+
+    @Test
+    fun workspaceRoot_stillDenied() = runTest {
+        assertTrue(denied("rm -rf ~/workspace"))
+        assertTrue(denied("rm -rf ~/workspace/*"))
+        assertTrue(denied("rm -rf ~/workspace/.."))
+    }
+
+    // ── AUTO：无法静态判定的疑似破坏性命令保守拦截 ─────────────────
+
+    @Test
+    fun autoMode_unanalyzableDestructive_denied() = runTest {
+        val e = engine()
+        assertEquals(
+            ToolPermissionPolicyEngine.Verdict.DENY,
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("rm -rf \$(echo /etc)"), AgentMode.AUTO).verdict
+        )
+        assertEquals(
+            ToolPermissionPolicyEngine.Verdict.DENY,
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("cat > /etc/passwd"), AgentMode.AUTO).verdict
+        )
+    }
+
+    @Test
+    fun autoMode_unanalyzableBenign_allowed() = runTest {
+        val e = engine()
+        assertEquals(
+            ToolPermissionPolicyEngine.Verdict.ALLOW,
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("echo \$(date)"), AgentMode.AUTO).verdict
+        )
+    }
+
+    @Test
+    fun autoMode_safetyDisabled_unanalyzable_allowed() = runTest {
+        val e = engine(safetyDisabled = true)
+        assertEquals(
+            ToolPermissionPolicyEngine.Verdict.ALLOW,
+            e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Bash", bash("cat > /etc/passwd"), AgentMode.AUTO).verdict
+        )
+    }
+
     // ── 非 shell 工具 ───────────────────────────────────────────────
 
     @Test
@@ -281,7 +402,7 @@ class ToolPermissionPolicyEngineTest {
     fun remember_dedupesAndAddsEach() = runTest {
         val repo = mockk<PermissionRulesRepository>(relaxed = true)
         coEvery { repo.add(any(), any()) } just runs
-        val e = ToolPermissionPolicyEngine(repo)
+        val e = ToolPermissionPolicyEngine(repo, mockk(relaxed = true))
 
         e.remember("Bash", listOf("git pull", "git pull", "ls"), PermissionScope.PROJECT)
 

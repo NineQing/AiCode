@@ -1,19 +1,26 @@
 package com.aicode.feature.agent.domain.skill
 
 import com.aicode.core.util.FileLogger
-import java.io.File
+import com.aicode.feature.workspace.domain.FileAccessProvider
+import com.aicode.feature.workspace.domain.LocalFileAccess
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Skill 仓库，聚合各 [SkillSource]（全局目录 + 项目目录）提供的技能，
  * 并按 [SkillConfigRepository] 的禁用名单过滤注入清单。
+ *
+ * 全局技能固定在 App 私有目录（始终本地），项目级技能随工作区（本地宿主目录或远程 SSH 工作区），
+ * 读写都经 [FileAccessProvider] 以容器路径完成。
  */
 @Singleton
 class SkillRepository @Inject constructor(
     private val localDirectorySkillSource: LocalDirectorySkillSource,
     private val projectDirectorySkillSource: ProjectDirectorySkillSource,
-    private val skillConfigRepository: SkillConfigRepository
+    private val skillConfigRepository: SkillConfigRepository,
+    private val localFileAccess: LocalFileAccess,
+    private val fileAccess: FileAccessProvider
 ) {
     /** 全部技能（含来源作用域），未过滤禁用；同名技能项目级优先（与 MCP 两级配置一致）。 */
     fun listAllSkills(): List<SkillEntry> =
@@ -59,7 +66,7 @@ class SkillRepository @Inject constructor(
         val existingDir = originalName?.let { old ->
             entries.firstOrNull {
                 it.scope == scope && it.skill.name.equals(old, ignoreCase = true)
-            }?.skill?.dir
+            }?.skill?.dirPath
         }
 
         val text = SkillParser.serialize(
@@ -69,11 +76,12 @@ class SkillRepository @Inject constructor(
             instructions = form.instructions
         )
 
+        val provider = providerFor(scope)
         return try {
-            val dir = existingDir?.takeIf { it.isDirectory } ?: File(skillsRoot(scope), name)
-            dir.mkdirs()
-            val target = instructionFile(dir) ?: File(dir, INSTRUCTION_FILE)
-            target.writeText(text)
+            val dir = existingDir?.takeIf { provider.isDirectory(it) } ?: "${skillsRoot(scope)}/$name"
+            provider.mkdirs(dir)
+            val target = instructionFile(provider, dir) ?: "${dir.trimEnd('/')}/$INSTRUCTION_FILE"
+            provider.writeFile(target, text, overwrite = true)
             null
         } catch (e: Exception) {
             FileLogger.e(TAG, "保存技能失败: $name", e)
@@ -81,22 +89,41 @@ class SkillRepository @Inject constructor(
         }
     }
 
-    /** 指定作用域的技能根目录。 */
-    fun skillsRoot(scope: SkillScope): File =
+    /** 指定作用域的技能根目录（容器路径）。 */
+    fun skillsRoot(scope: SkillScope): String =
         if (scope == SkillScope.GLOBAL) {
             localDirectorySkillSource.skillsRoot
         } else {
             projectDirectorySkillSource.skillsRoot
         }
 
+    /**
+     * 从 Markdown 文本导入技能到指定作用域；[fallbackName] 为 frontmatter 缺 name 时的兜底名。
+     * 名称非法 / 同名冲突 / 正文为空时整体失败，不落盘。
+     */
+    fun importMarkdown(text: String, fallbackName: String, scope: SkillScope): SkillImportReport =
+        SkillImporter.importMarkdown(providerFor(scope), skillsRoot(scope), existingNamesIn(scope), text, fallbackName)
+
+    /** 从 zip 输入流导入技能（可含多个技能目录）到指定作用域。 */
+    fun importZip(input: InputStream, fallbackName: String, scope: SkillScope): SkillImportReport =
+        SkillImporter.importArchive(providerFor(scope), skillsRoot(scope), existingNamesIn(scope), input, fallbackName)
+
+    /** 指定作用域下已有技能名（小写），供导入查重。 */
+    private fun existingNamesIn(scope: SkillScope): Set<String> =
+        listAllSkills().filter { it.scope == scope }.map { it.skill.name.lowercase() }.toSet()
+
     /** 删除指定作用域的技能（删除其目录，不可恢复）。返回是否成功。 */
     fun deleteSkill(name: String, scope: SkillScope): Boolean {
         val entry = listAllSkills().firstOrNull {
             it.skill.name.equals(name, ignoreCase = true) && it.scope == scope
         } ?: return false
-        val dir = entry.skill.dir ?: return false
-        return safeDeleteSkillDir(dir)
+        val dirPath = entry.skill.dirPath ?: return false
+        return safeDeleteSkillDir(providerFor(scope), dirPath)
     }
+
+    /** 全局技能固定在本地私有目录，项目级技能跟随工作区（可能是远程）。 */
+    private fun providerFor(scope: SkillScope): FileAccessProvider =
+        if (scope == SkillScope.GLOBAL) localFileAccess else fileAccess
 
     companion object {
         private const val TAG = "SkillRepository"
@@ -114,11 +141,13 @@ class SkillRepository @Inject constructor(
         private const val MAX_NAME_LENGTH = 64
         private val ILLEGAL_NAME_CHARS = charArrayOf('/', '\\', ':', '*', '?', '"', '<', '>', '|')
 
-        /** 目录里已有的指令文件：SKILL.md 优先，其次 CLAUDE.md（与 [SkillParser.parse] 同一套回退）。 */
-        internal fun instructionFile(dir: File): File? {
-            val files = dir.listFiles()?.filter { it.isFile } ?: return null
-            return files.firstOrNull { it.name.equals("SKILL.md", ignoreCase = true) }
-                ?: files.firstOrNull { it.name.equals("CLAUDE.md", ignoreCase = true) }
+        /** 目录里已有的指令文件完整路径：SKILL.md 优先，其次 CLAUDE.md（与 [SkillParser.parse] 同一套回退）。 */
+        internal fun instructionFile(provider: FileAccessProvider, dirPath: String): String? {
+            val files = runCatching { provider.listFiles(dirPath) }.getOrNull() ?: return null
+            val name = files.firstOrNull { !it.isDirectory && it.name.equals("SKILL.md", ignoreCase = true) }?.name
+                ?: files.firstOrNull { !it.isDirectory && it.name.equals("CLAUDE.md", ignoreCase = true) }?.name
+                ?: return null
+            return "${dirPath.trimEnd('/')}/$name"
         }
 
         /** 合并两级来源：同名项目级覆盖全局，按名称排序。 */
@@ -134,13 +163,13 @@ class SkillRepository @Inject constructor(
             entries.filterNot { it.skill.name.lowercase() in disabled }
 
         /** 仅当目录存在且含 SKILL.md/CLAUDE.md 指令文件时才删除，避免误删非技能目录。 */
-        internal fun safeDeleteSkillDir(dir: File): Boolean {
-            if (!dir.isDirectory) return false
-            val hasInstruction = dir.listFiles()?.any {
-                it.isFile && (it.name.equals("SKILL.md", ignoreCase = true) || it.name.equals("CLAUDE.md", ignoreCase = true))
+        internal fun safeDeleteSkillDir(provider: FileAccessProvider, dirPath: String): Boolean {
+            if (!provider.isDirectory(dirPath)) return false
+            val hasInstruction = runCatching { provider.listFiles(dirPath) }.getOrNull()?.any {
+                !it.isDirectory && (it.name.equals("SKILL.md", ignoreCase = true) || it.name.equals("CLAUDE.md", ignoreCase = true))
             } ?: false
             if (!hasInstruction) return false
-            return dir.deleteRecursively()
+            return runCatching { provider.deleteRecursively(dirPath); true }.getOrDefault(false)
         }
     }
 }

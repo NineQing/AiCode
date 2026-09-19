@@ -198,13 +198,15 @@ internal fun SettingsDivider() {
     )
 }
 
-/** iOS 风格搜索框：浅灰胶囊背景、无边框，与设置页分组风格一致。 */
+/** iOS 风格搜索框：浅灰胶囊背景、无边框，与设置页分组风格一致。
+ *  [trailing] 为可选尾部控件（如清除按钮）。 */
 @Composable
 internal fun ModelSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     placeholder: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     val isLight = settingsLightMode()
     Surface(
@@ -243,6 +245,7 @@ internal fun ModelSearchField(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            trailing?.invoke()
         }
     }
 }

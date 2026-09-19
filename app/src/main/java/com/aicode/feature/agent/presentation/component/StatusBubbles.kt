@@ -62,6 +62,7 @@ import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Clock
+import compose.icons.feathericons.Key
 import kotlinx.coroutines.delay
 
 /** 涟漪高光一个来回的周期（ms）。 */
@@ -252,6 +253,36 @@ internal fun RetryingBubble(attempt: Int, maxRetries: Int, error: RetryErrorInfo
             )
             TypingDots(color = MaterialTheme.colorScheme.primary)
         }
+    }
+}
+
+/**
+ * 多 Key 自动切换期间的临时状态行，不落库。展示当前 Key 不可用、已改用第 N/M 个 Key 重发。
+ *
+ * 与 [RetryingBubble]、[CompactionProgressBubble] 同为尾巴里的瞬时状态行，沿用扁平文档流：
+ * 不套描边卡片，只有图标 + 文案 + 三点跳动。
+ */
+@Composable
+internal fun KeySwitchedBubble(newIndex: Int, total: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        Icon(
+            FeatherIcons.Key,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = stringResource(R.string.chat_key_switched, newIndex, total),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        TypingDots(color = MaterialTheme.colorScheme.primary)
     }
 }
 

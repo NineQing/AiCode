@@ -1,6 +1,8 @@
 package com.aicode.feature.agent.domain.container
 
+import com.aicode.core.util.BoundedLineReader
 import com.aicode.core.util.FileLogger
+import com.aicode.core.util.LINE_TRUNCATED_NOTE
 import com.aicode.feature.agent.domain.container.CommandEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +24,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -32,8 +33,8 @@ private const val TAG = "RemoteSshEngine"
 /**
  * [CommandEngine] 的远程 SSH 实现：用 sshj exec channel 在远程服务器上执行命令。
  *
- * 共享一个 [RemoteSshConnection]（持有 sshj [SSHClient]），与 [RemoteSftpFileAccess]
- * 复用同一 SSH 连接——命令执行用 exec channel，文件读写用 SFTP channel。
+ * 共享一个 [RemoteSshConnection]（持有 sshj [SSHClient]）执行命令；文件读写由 [RemoteSftpFileAccess]
+ * 走另一条独立的 SFTP transport（见 [RemoteSshConnection.sftp]），两者隔离互不影响。
  *
  * 与 [LinuxContainerEngine] 的语义对应：
  * - [ensureInstalled]：建立/维持 SSH 连接（对应本地解压 rootfs）；
@@ -83,11 +84,11 @@ class RemoteSshEngine @Inject constructor(
                 runCatching { session.close() }
             }
         }
-        val reader = BufferedReader(InputStreamReader(session.inputStream))
+        val reader = BoundedLineReader(InputStreamReader(session.inputStream))
         try {
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                emit(CommandEvent.Line(line!!))
+            while (true) {
+                val line = reader.readLine() ?: break
+                emit(CommandEvent.Line(if (line.truncated) "${line.text}\n$LINE_TRUNCATED_NOTE" else line.text))
             }
             val exitCode = session.exitStatus
             watchdog.cancel()
@@ -169,7 +170,7 @@ class RemoteSshEngine @Inject constructor(
         val effectiveTimeout = timeoutMs.coerceIn(1L, CommandEngine.MAX_TIMEOUT_MS)
         FileLogger.d(TAG, "执行命令(远程同步) cwd=$projectPath timeout=${effectiveTimeout}ms: ${sanitizeCommandForLog(command)}")
         val session = connection.startExecSession(buildCdCommand(command, projectPath))
-        val output = if (unbounded) BoundedOutput(Int.MAX_VALUE, Int.MAX_VALUE) else BoundedOutput()
+        val output = if (unbounded) BoundedOutput.hardCapped(MAX_UNBOUNDED_CHARS) else BoundedOutput()
         var exitCode: Int? = null
         try {
             coroutineScope {
@@ -180,11 +181,11 @@ class RemoteSshEngine @Inject constructor(
                         runCatching { session.close() }
                     }
                 }
-                val reader = BufferedReader(InputStreamReader(session.inputStream))
+                val reader = BoundedLineReader(InputStreamReader(session.inputStream))
                 try {
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        output.append(line!!)
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        output.append(if (line.truncated) "${line.text}\n$LINE_TRUNCATED_NOTE" else line.text)
                         output.append("\n")
                     }
                 } finally {
@@ -194,11 +195,11 @@ class RemoteSshEngine @Inject constructor(
                 // 并发读 stderr 合并进 output：本地引擎 redirectErrorStream(true) 是合并语义，
                 // 远程若不合并，命令报错（如 rg 未安装时的 command not found）只写 stderr 会被静默丢弃。
                 val stderrJob = launch {
-                    val errReader = BufferedReader(InputStreamReader(session.errorStream))
+                    val errReader = BoundedLineReader(InputStreamReader(session.errorStream))
                     try {
-                        var errLine: String?
-                        while (errReader.readLine().also { errLine = it } != null) {
-                            output.append(errLine!!)
+                        while (true) {
+                            val errLine = errReader.readLine() ?: break
+                            output.append(if (errLine.truncated) "${errLine.text}\n$LINE_TRUNCATED_NOTE" else errLine.text)
                             output.append("\n")
                         }
                     } finally {
@@ -206,7 +207,7 @@ class RemoteSshEngine @Inject constructor(
                     }
                 }
                 stderrJob.join()
-                // sshj 的 exitStatus 在流 EOF 后未必就绪，close 后才保证有值（同 RemoteSftpFileAccess.execSync）
+                // sshj 的 exitStatus 在流 EOF 后未必就绪，close 后才保证有值
                 runCatching { session.close() }
                 exitCode = session.exitStatus
             }
@@ -214,7 +215,7 @@ class RemoteSshEngine @Inject constructor(
             runCatching { session.close() }
         }
         FileLogger.v(TAG, "命令完成(远程, 退出码 $exitCode，输出 ${output.totalChars} 字符): ${sanitizeCommandForLog(command)}")
-        CommandResult(output.build(), exitCode)
+        CommandResult(output.build(), exitCode, output.truncated)
     }
 
     override fun isContainerInstalled(): Boolean = connection.isConnected()

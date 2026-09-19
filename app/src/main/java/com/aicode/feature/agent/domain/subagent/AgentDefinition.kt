@@ -1,6 +1,6 @@
 package com.aicode.feature.agent.domain.subagent
 
-import java.io.File
+import com.aicode.feature.agent.domain.model.AgentMode
 
 /** 子代理定义的来源作用域：全局（跨项目共享）或项目级（仅当前工作区生效，可 git 追踪）。 */
 enum class AgentDefinitionScope { GLOBAL, PROJECT }
@@ -11,7 +11,7 @@ enum class AgentDefinitionScope { GLOBAL, PROJECT }
  * BASE 与 MAIN_RULES 互斥语义上并不强制，同时写则两者都注入（MAIN_RULES 在前）。
  */
 enum class InjectPart(val token: String) {
-    /** 子代理专用精简基线（`90-subagent-base.md`）：工具用法、路径约定、安全边界。 */
+    /** 子代理专用精简基线（`agent/subagent-base.md`）：工具用法、路径约定、安全边界。 */
     BASE("base"),
 
     /** 主代理的完整静态规则基线（`00`~`70` 全部片段），需要子代理与主代理行为完全一致时使用。 */
@@ -50,11 +50,12 @@ enum class InjectPart(val token: String) {
  * @param providerId 绑定的 provider id；null 表示继承父会话
  * @param model 绑定的模型名；null 表示继承父会话
  * @param reasoningEffort 思考强度（low/medium/high）；null 表示继承父会话
+ * @param mode 运行模式（build/plan/auto）；null 表示继承父会话
  * @param allowedTools 工具白名单；空表示继承全量工具
  * @param disallowedTools 工具黑名单，先于白名单生效
  * @param inject 要注入的提示词片段
  * @param prompt agent 自身的系统提示词（正文）
- * @param file 定义文件，供设置页展示与删除
+ * @param filePath 定义文件的容器路径，供设置页展示与删除
  */
 data class AgentDefinition(
     val name: String,
@@ -62,11 +63,12 @@ data class AgentDefinition(
     val providerId: String? = null,
     val model: String? = null,
     val reasoningEffort: String? = null,
+    val mode: AgentMode? = null,
     val allowedTools: List<String> = emptyList(),
     val disallowedTools: List<String> = emptyList(),
     val inject: Set<InjectPart> = DEFAULT_INJECT,
     val prompt: String,
-    val file: File? = null
+    val filePath: String? = null
 ) {
     /**
      * 按白名单/黑名单裁剪工具名集合。`task` 永远被剔除——子代理不能嵌套派子代理。
@@ -102,6 +104,9 @@ data class AgentDefinition(
 
         /** 子代理不可嵌套派发，其工具集永远剔除该工具。 */
         const val NESTED_TOOL = "task"
+
+        /** 仅子代理可用的工具（子→主发消息）；主会话工具集剔除它。 */
+        const val PARENT_MESSAGE_TOOL = "messageParent"
     }
 }
 
@@ -118,6 +123,7 @@ data class AgentDefinitionForm(
     val providerId: String? = null,
     val model: String? = null,
     val reasoningEffort: String? = null,
+    val mode: AgentMode? = null,
     val allowedTools: List<String> = emptyList(),
     val disallowedTools: List<String> = emptyList(),
     val inject: Set<InjectPart> = AgentDefinition.DEFAULT_INJECT,

@@ -78,6 +78,7 @@ import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.presentation.SettingsViewModel
 import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import compose.icons.FeatherIcons
@@ -95,7 +96,7 @@ import kotlinx.coroutines.launch
  * 缓存 content 子组合——流式期间 targetState 一直不变，文本增长时不会重新调用 content，
  * 导致 [StreamingBubble] 收不到后续文本、停在首句。故改用枚举 + 直接 [when] 分发。
  */
-private enum class TailKind { THINKING, STREAMING, COMPACTING, RETRYING, NONE }
+private enum class TailKind { THINKING, STREAMING, COMPACTING, RETRYING, KEY_SWITCHED, NONE }
 
 /** 悬浮层（横幅/面板/输入框）与最后一条消息的间距。 */
 private val FLOATING_LAYER_GAP_DP = 8.dp
@@ -404,11 +405,13 @@ fun AIChatPanel(
     selectedCode: String? = null,
     onboardingStep: OnboardingStep? = null,
     onSelectModelInOnboarding: (() -> Unit)? = null,
+    onDismissModelSheetInOnboarding: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val agentState by viewModel.agentState.collectAsStateWithLifecycle()
     val messagesState by viewModel.messagesState.collectAsStateWithLifecycle()
     val messages = messagesState.messages
+    val pendingScroll by viewModel.pendingScrollMessage.collectAsStateWithLifecycle()
 
     val currentSessionId by viewModel.currentSessionId.collectAsStateWithLifecycle()
     // 工具卡片入场调度：只排本次浏览期间新追加到尾部的 TOOL 消息，逐个错开淡入。
@@ -425,6 +428,7 @@ fun AIChatPanel(
     val runningTool by viewModel.runningTool.collectAsStateWithLifecycle()
     val isCompacting by viewModel.isCompacting.collectAsStateWithLifecycle()
     val retryState by viewModel.retryState.collectAsStateWithLifecycle()
+    val keySwitchState by viewModel.keySwitchState.collectAsStateWithLifecycle()
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val streamingReasoning by viewModel.streamingReasoning.collectAsStateWithLifecycle()
     val preparingTool by viewModel.preparingTool.collectAsStateWithLifecycle()
@@ -472,6 +476,7 @@ fun AIChatPanel(
         if (inputText != inputDraft) inputText = inputDraft
     }
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
+    var uploadingCount by remember { mutableStateOf(0) }
     var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
     val listState = rememberLazyListState()
@@ -532,7 +537,7 @@ fun AIChatPanel(
         if (isBusy) null else messages.lastOrNull { it.rendersActionRow() }?.id
     }
     val activeModel = activeProvider?.effectiveModel.orEmpty()
-    val activeModelMetadata = modelMetadata[activeModel]
+    val activeModelMetadata = activeProvider?.let { modelMetadata[modelMetadataKey(it.id, activeModel)] }
     val canUploadFiles = projectRoot.isNotBlank() && activeModelMetadata?.supportsTools == true
     val canUploadImages = projectRoot.isNotBlank()
     val reasoningEffort by viewModel.currentSessionReasoningEffort.collectAsStateWithLifecycle()
@@ -689,17 +694,21 @@ fun AIChatPanel(
         scope.launch {
             var successCount = 0
             val failures = mutableListOf<String>()
-            selected.forEach { uri ->
-                runCatching {
-                    copyUriToWorkspace(context, uri, projectRoot, includeImageData = images)
-                }.onSuccess { uploaded ->
-                    pendingAttachments = pendingAttachments + uploaded.toPendingAttachment()
-                    successCount += 1
-                }.onFailure { error ->
-                    failures += (error.message ?: uploadFallbackError(context))
+            uploadingCount = selected.size
+            try {
+                selected.forEach { uri ->
+                    runCatching {
+                        copyUriToWorkspace(context, uri, viewModel.fileAccess, includeImageData = images)
+                    }.onSuccess { uploaded ->
+                        pendingAttachments = pendingAttachments + uploaded.toPendingAttachment()
+                        successCount += 1
+                    }.onFailure { error ->
+                        failures += (error.message ?: uploadFallbackError(context))
+                    }
                 }
+            } finally {
+                uploadingCount = 0
             }
-
             // 结果提示：全失败展示首个错误；有文件被上限截断或上传失败时用 partial 文案；全成功用 success 文案。
             val skipped = uris.size - selected.size
             when {
@@ -920,9 +929,25 @@ fun AIChatPanel(
         }
     }
 
-    // 切换会话：定位到最新内容并恢复跟随（之后由校准循环持续跟随）。
-    LaunchedEffect(currentSessionId, messagesReady) {
+    // 切换会话 / 打开搜索命中：优先定位到目标消息，否则贴底并恢复跟随。
+    LaunchedEffect(currentSessionId, messagesReady, pendingScroll, chatItems) {
         if (!messagesReady) return@LaunchedEffect
+        val pending = pendingScroll
+        if (pending != null && pending.first == currentSessionId) {
+            val index = chatItems.indexOfFirst { it.message.id == pending.second }
+            if (index >= 0) {
+                // 等一帧让 LazyColumn 按新会话完成重组，再瞬移到目标消息。
+                withFrameNanos { }
+                followBottom = false
+                listState.scrollToItem(index)
+                positionedSession = currentSessionId
+                viewModel.consumePendingScroll()
+            } else if (!messagesState.hasMore) {
+                // 全部消息已加载仍找不到（消息可能已被删除）：放弃，避免卡在待定位态。
+                viewModel.consumePendingScroll()
+            }
+            return@LaunchedEffect
+        }
         if (positionedSession != currentSessionId) {
             // 等一帧让 LazyColumn 按新会话完成重组，再滚到锚点（maxScroll）。
             withFrameNanos { }
@@ -1158,9 +1183,11 @@ fun AIChatPanel(
                         val showStreaming = tailOwnerId == null && streaming != null && streaming.hasVisibleContent()
                         val showThinking = !showReasoning && !showStreaming && !isCompacting && isBusy && runningTool.isEmpty() && pendingPermission == null && pendingQuestion == null
                         val showRetrying = retryState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
+                        val showKeySwitched = keySwitchState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
                         val tailKind = when {
                             showStreaming -> TailKind.STREAMING
                             isCompacting -> TailKind.COMPACTING
+                            showKeySwitched -> TailKind.KEY_SWITCHED
                             showRetrying -> TailKind.RETRYING
                             showThinking -> TailKind.THINKING
                             else -> TailKind.NONE
@@ -1184,6 +1211,10 @@ fun AIChatPanel(
                                         val rs = retryState
                                         if (rs != null) RetryingBubble(rs.attempt, rs.maxRetries, rs.error) else Box(Modifier)
                                     }
+                                    TailKind.KEY_SWITCHED -> {
+                                        val ks = keySwitchState
+                                        if (ks != null) KeySwitchedBubble(ks.newIndex, ks.total) else Box(Modifier)
+                                    }
                                     TailKind.NONE -> Box(Modifier)
                                 }
                             }
@@ -1202,6 +1233,17 @@ fun AIChatPanel(
                     .onGloballyPositioned { if (it.size.height > 0) floatingLayerHeightPx = it.size.height }
             ) {
             StatusBanner(state = agentState)
+
+            // 退场动画期间 uploadingCount 已归零，直接读会淡出一个「正在上传 0 个文件」，
+            // 与 StatusBanner 同样用非空记忆值兜住退场。
+            val lastUploadingCount = rememberLastNonNull(uploadingCount.takeIf { it > 0 })
+            AnimatedVisibility(
+                visible = uploadingCount > 0,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                lastUploadingCount?.let { UploadingBanner(count = it) }
+            }
 
             // 三个面板都用「最后一次非空值」渲染：退出动画期间源状态已置空，直接在 content 里
             // 解引用会淡出一个空面板，看起来是瞬间消失而不是淡出。位移也一并补上——只淡入的话
@@ -1259,6 +1301,7 @@ fun AIChatPanel(
                 value = inputText,
                 onValueChange = { inputText = it; viewModel.updateInputDraft(it) },
                 onSend = sendMessage,
+                enterToSend = settingsViewModel?.enterToSend?.collectAsStateWithLifecycle()?.value ?: false,
                 onStop = { viewModel.stopAgent() },
                 isBusy = isBusy,
                 workspaceViewModel = workspaceViewModel,
@@ -1311,7 +1354,8 @@ fun AIChatPanel(
                 },
                 isScrolling = listState.isScrollInProgress,
                 forceOpenModelSheet = onboardingStep == OnboardingStep.SIMULATE_CHOOSE_MODEL,
-                onModelSheetDismiss = onSelectModelInOnboarding,
+                onSelectModelInOnboarding = onSelectModelInOnboarding,
+                onModelSheetDismiss = onDismissModelSheetInOnboarding,
                 modifier = Modifier
                     .fillMaxWidth()
                     .onboardingTarget(OnboardingStep.SEND_MESSAGE)

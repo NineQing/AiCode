@@ -140,6 +140,12 @@ class TerminalSessionTool @Inject constructor(
             type = ParameterType.BOOLEAN,
             description = "send 可选：是否在末尾追加回车以执行该命令，默认 true",
             required = false
+        ),
+        "elevate" to ToolParameter(
+            name = "elevate",
+            type = ParameterType.BOOLEAN,
+            description = "提权重试：仅当 start/send 的命令因内置安全防护（灾难性删除，如 rm 根目录/系统目录/工作区整体）被拒、且确有必要执行时，置为 true 重试。届时系统会弹窗请求用户一次性授权，用户同意才执行，且不可记忆。仅非 AUTO 模式有效。",
+            required = false
         )
     )
 

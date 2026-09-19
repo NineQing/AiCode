@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import com.aicode.core.util.FileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -33,7 +34,10 @@ import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.ftpServerDataStore by preferencesDataStore(name = "ftp_server_prefs")
+private val Context.ftpServerDataStore by preferencesDataStore(
+    name = "ftp_server_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 @Singleton
 class FtpServerManager @Inject constructor(

@@ -6,7 +6,7 @@ import com.aicode.feature.settings.domain.model.KeyRotationStrategy
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 一次 Key 切换的结果，供 UI 提示「已切换到第 N 个 Key」。 */
+/** 一次 Key 切换的结果，供调用方改写凭据并提示「已切换到第 N 个 Key」。 */
 data class KeySwitchResult(
     val newKey: String,
     /** 1 起的新 Key 序号。 */
@@ -15,32 +15,28 @@ data class KeySwitchResult(
 )
 
 /**
- * 多 Key 轮换器：决定某个 provider 在某条会话上该用哪个 API Key，并按失败次数做切换。
+ * 多 Key 轮换器：决定某个 provider 在某条会话上该用哪个 API Key，并在 Key 不可用时切到下一个。
  *
  * 状态全部是运行时内存态、不落库：进程重启后回到第一个 Key、冷却记录清空——多 Key 的意义是
- * 遇到限流/配额问题时能自动绕开，没有必须跨进程保持的语义。
+ * 遇到鉴权/额度/限流问题时能立刻绕开，没有必须跨进程保持的语义。
  *
  * **会话粘性**是这里的核心约束：服务端 prompt 缓存按 API Key 隔离，同一会话逐请求换 Key 会让
- * 每轮都落到没有缓存的 Key 上，缓存命中率归零、成本和首字延迟一起恶化。因此两种策略都在会话
- * 内粘住同一个 Key，只有该 Key 连续失败达阈值时才切换并重绑。
+ * 每轮都落到没有缓存的 Key 上，缓存命中率归零、成本和首字延迟一起恶化。因此只在会话首次取
+ * Key、或当前 Key 被判定不可用时才换，其余情况一直粘住同一个 Key。
  */
 @Singleton
 class ProviderKeyRotator @Inject constructor() {
 
-    /** 由最近一次 [activeKey] 记录的 provider Key 配置，供失败上报时读取阈值与冷却时长。 */
+    /** 由最近一次 [activeKey] 记录的 provider Key 配置，供失败上报时读取候选与冷却时长。 */
     private data class KeySetup(
         val keys: List<String>,
         val strategy: KeyRotationStrategy,
-        val failoverThreshold: Int,
         val cooldownMillis: Long
     )
 
     private val lock = Any()
 
     private val setups = mutableMapOf<String, KeySetup>()
-
-    /** providerId + Key → 该 Key 的连续失败次数（成功即清零）。 */
-    private val failureCounts = mutableMapOf<String, Int>()
 
     /** providerId + Key → 冷却截止时间戳（毫秒）。 */
     private val cooldownUntil = mutableMapOf<String, Long>()
@@ -61,8 +57,8 @@ class ProviderKeyRotator @Inject constructor() {
     }
 
     /**
-     * 取 [config] 在 [sessionId] 上当前该用的 Key；没有任何可用 Key 时返回 null。
-     * 同时把该 provider 的 Key 配置快照下来，供后续 [reportFailure] / [reportSuccess] 使用。
+     * 取 [config] 在 [sessionId] 上当前该用的 Key；没有任何可用 Key、或所有 Key 都在冷却时返回 null。
+     * 同时把该 provider 的 Key 配置快照下来，供后续 [reportFailure] 使用。
      */
     fun activeKey(config: AIProviderConfig, sessionId: String?): String? {
         val keys = config.effectiveApiKeys
@@ -71,16 +67,14 @@ class ProviderKeyRotator @Inject constructor() {
             setups[config.id] = KeySetup(
                 keys = keys,
                 strategy = config.keyRotationStrategy,
-                failoverThreshold = config.keyFailoverThreshold.coerceAtLeast(1),
                 cooldownMillis = config.keyCooldownMinutes.coerceAtLeast(0) * 60_000L
             )
-            if (keys.size == 1) return keys.first()
 
             val bindKey = sessionId?.let { sessionBinding(config.id, it) }
-            val bound = bindKey?.let { sessionKeys[it] }
+            val bound = bindKey?.let { sessionKeys[bindKey] }
             if (bound != null && bound in keys && !isCoolingDown(config.id, bound)) return bound
 
-            val chosen = pick(config.id, keys, config.keyRotationStrategy, avoid = null)
+            val chosen = pick(config.id, keys, config.keyRotationStrategy, exclude = emptySet()) ?: return null
             if (bindKey != null) sessionKeys[bindKey] = chosen
             lastSelected[config.id] = chosen
             return chosen
@@ -102,56 +96,45 @@ class ProviderKeyRotator @Inject constructor() {
     }
 
     /**
-     * 上报一次可归因于 [key] 的失败。连续失败达到阈值时把该 Key 打进冷却、切到下一个并重绑会话，
-     * 返回切换结果；未达阈值或无可切换目标时返回 null。
+     * 上报一次可归因于 [key] 的失败：**立即**切到下一个可用 Key、把 [key] 打入冷却并重绑会话，
+     * 返回切换结果；没有可切换的候选（候选已试完、或全部在冷却）时返回 null——此时**不冷却** [key]，
+     * 避免把最后一个可用 Key 也锁死、让用户在一段时间内完全无法发起请求。
+     *
+     * [triedKeys] 为本次请求已试过的 Key（含 [key] 自身），用于避免同一次请求内重复试同一个 Key。
      */
-    fun reportFailure(providerId: String, sessionId: String?, key: String): KeySwitchResult? {
+    fun reportFailure(
+        providerId: String,
+        sessionId: String?,
+        key: String,
+        triedKeys: Set<String> = emptySet()
+    ): KeySwitchResult? {
         synchronized(lock) {
             val setup = setups[providerId] ?: return null
-            if (setup.keys.size <= 1 || key !in setup.keys) return null
+            if (key !in setup.keys) return null
 
-            val counterKey = stateKey(providerId, key)
-            val count = (failureCounts[counterKey] ?: 0) + 1
-            if (count < setup.failoverThreshold) {
-                failureCounts[counterKey] = count
-                FileLogger.w(TAG, "Key 失败计数 provider=$providerId key=${key.masked()} $count/${setup.failoverThreshold}")
-                return null
-            }
-
-            failureCounts[counterKey] = 0
+            // 先确认有可切换的候选，没有就别冷却——把最后一个可用 Key 冷却只会让用户在一段时间内完全不可用
+            val next = pick(providerId, setup.keys, setup.strategy, exclude = triedKeys + key) ?: return null
             if (setup.cooldownMillis > 0) {
-                cooldownUntil[counterKey] = System.currentTimeMillis() + setup.cooldownMillis
+                cooldownUntil[stateKey(providerId, key)] = System.currentTimeMillis() + setup.cooldownMillis
             }
-            val next = pick(providerId, setup.keys, setup.strategy, avoid = key)
             sessionId?.let { sessionKeys[sessionBinding(providerId, it)] = next }
             lastSelected[providerId] = next
-            if (next == key) {
-                FileLogger.w(TAG, "Key 已达失败阈值但无其它可用 Key provider=$providerId key=${key.masked()}")
-                return null
-            }
             val index = setup.keys.indexOf(next) + 1
             FileLogger.i(TAG, "Key 切换 provider=$providerId ${key.masked()} → ${next.masked()} (第 $index/${setup.keys.size} 个)")
             return KeySwitchResult(newKey = next, newIndex = index, total = setup.keys.size)
         }
     }
 
-    /** 上报一次成功：清零该 Key 的连续失败计数。 */
-    fun reportSuccess(providerId: String, key: String) {
-        synchronized(lock) {
-            failureCounts.remove(stateKey(providerId, key))
-        }
-    }
-
     /**
-     * 按策略挑一个 Key：优先未冷却者；[avoid] 用于「刚失败的那个不要再选」。
-     * 全都在冷却时退回最早到期的那个——宁可再试一次，也不要因为全员冷却直接把会话打死。
+     * 按策略挑一个可选 Key：排除 [exclude]（本次已试过）与处于冷却中的 Key；没有可选时返回 null。
+     * 不做「全冷却就退回最早到期者再试一遍」的回退——那等于拿已知不可用的 Key 硬打。
      */
     private fun pick(
         providerId: String,
         keys: List<String>,
         strategy: KeyRotationStrategy,
-        avoid: String?
-    ): String {
+        exclude: Set<String>
+    ): String? {
         val ordered = when (strategy) {
             KeyRotationStrategy.SEQUENTIAL -> keys
             KeyRotationStrategy.ROUND_ROBIN -> {
@@ -160,10 +143,7 @@ class ProviderKeyRotator @Inject constructor() {
                 keys.subList(start, keys.size) + keys.subList(0, start)
             }
         }
-        val candidates = ordered.filter { it != avoid }.ifEmpty { ordered }
-        return candidates.firstOrNull { !isCoolingDown(providerId, it) }
-            ?: candidates.minByOrNull { cooldownUntil[stateKey(providerId, it)] ?: 0L }
-            ?: keys.first()
+        return ordered.firstOrNull { it !in exclude && !isCoolingDown(providerId, it) }
     }
 
     private fun isCoolingDown(providerId: String, key: String): Boolean {

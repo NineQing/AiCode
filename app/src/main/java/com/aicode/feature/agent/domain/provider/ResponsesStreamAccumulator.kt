@@ -142,6 +142,7 @@ internal class ResponsesStreamAccumulator {
 
     private val text = StringBuilder()
     private val reasoning = StringBuilder()
+    private val budget = StreamBudget()
     private var thinkingBlocksSnapshotJson: String? = null
     private val calls = LinkedHashMap<String, CallAcc>()
     /** 终止事件里兜底解析出的工具调用（流中 delta 事件缺失时的补齐来源）。 */
@@ -160,6 +161,7 @@ internal class ResponsesStreamAccumulator {
             ResponsesEvent.OUTPUT_TEXT_DELTA, ResponsesEvent.REFUSAL_DELTA -> {
                 val delta = event.str("delta").orEmpty()
                 if (delta.isEmpty()) return null
+                budget.add(delta)
                 text.append(delta)
                 return ResponsesDelta.Text(delta)
             }
@@ -167,6 +169,7 @@ internal class ResponsesStreamAccumulator {
             ResponsesEvent.REASONING_TEXT_DELTA, ResponsesEvent.REASONING_SUMMARY_TEXT_DELTA -> {
                 val delta = event.str("delta").orEmpty()
                 if (delta.isEmpty()) return null
+                budget.add(delta)
                 reasoning.append(delta)
                 return ResponsesDelta.Reasoning(delta)
             }
@@ -177,7 +180,7 @@ internal class ResponsesStreamAccumulator {
                     ResponsesItem.FUNCTION_CALL -> {
                         val acc = calls.getOrPut(event.callKey()) { CallAcc() }
                         item.str("call_id")?.takeIf { it.isNotEmpty() }?.let { acc.callId = it }
-                        item.str("arguments")?.takeIf { it.isNotEmpty() }?.let { acc.args = StringBuilder(it) }
+                        item.str("arguments")?.takeIf { it.isNotEmpty() }?.let { budget.add(it); acc.args = StringBuilder(it) }
                         item.str("name")?.takeIf { it.isNotEmpty() }?.let { name ->
                             val first = acc.name.isEmpty()
                             acc.name = name
@@ -202,12 +205,14 @@ internal class ResponsesStreamAccumulator {
             ResponsesEvent.FUNCTION_CALL_ARGS_DELTA -> {
                 val delta = event.str("delta").orEmpty()
                 if (delta.isEmpty()) return null
+                budget.add(delta)
                 calls.getOrPut(event.callKey()) { CallAcc() }.args.append(delta)
             }
 
             ResponsesEvent.FUNCTION_CALL_ARGS_DONE -> {
                 val full = event.str("arguments").orEmpty()
                 if (full.isEmpty()) return null
+                budget.add(full)
                 calls.getOrPut(event.callKey()) { CallAcc() }.args = StringBuilder(full)
             }
 
@@ -264,8 +269,8 @@ internal class ResponsesStreamAccumulator {
         usage = parseResponsesUsage(response.obj("usage"))
 
         val parsed = parseResponsesOutput(response.arr("output"))
-        if (text.isEmpty()) text.append(parsed.text)
-        if (reasoning.isEmpty()) reasoning.append(parsed.reasoning)
+        if (text.isEmpty()) { budget.add(parsed.text); text.append(parsed.text) }
+        if (reasoning.isEmpty()) { budget.add(parsed.reasoning); reasoning.append(parsed.reasoning) }
         if (thinkingBlocksSnapshotJson == null) thinkingBlocksSnapshotJson = parsed.thinkingBlocksJson
         finalCalls.clear()
         finalCalls.addAll(parsed.toolCalls)

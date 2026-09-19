@@ -2,6 +2,16 @@
 
 Want to try AI coding on a budget? The platforms below offer free quotas or promotional tokens — register and connect them in AiCode. Free quotas are usually time-limited; once exhausted or expired you may need to top up, per each platform's rules.
 
+## MiMo Open Platform (Xiaomi)
+
+- **Platform**: Xiaomi MiMo open platform
+- **Sign-up**: [platform.xiaomimimo.com](https://platform.xiaomimimo.com?ref=66QSUD) (invite code `66QSUD`)
+- **Notes**: Xiaomi's in-house MiMo series (MiMo V2.5 and others). Register to apply for an API Key.
+
+::: tip New user bonus
+Sign up through the referral link above to get ¥10 in trial credit and 10% off the first order; the credit is valid for 40 days.
+:::
+
 ## SenseNova (Riyi Xin)
 
 - **Platform**: SenseNova open platform (SenseTime)
@@ -19,7 +29,7 @@ Currently in public beta, the token plan is free.
 - **Notes**: Unified multi-model API platform with the OpenSquilla smart router. Register to apply for an API Key.
 
 ::: tip New user bonus
-Registration grants ¥10; after installing the official client and making one call, ¥58 is credited (¥68 in total).
+Complete real-name verification first; once verified you receive ¥18 in trial credit.
 :::
 
 ## SiliconFlow

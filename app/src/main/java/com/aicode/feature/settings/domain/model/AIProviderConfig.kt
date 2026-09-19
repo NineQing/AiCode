@@ -11,10 +11,12 @@ data class AIProviderConfig(
     val apiKeys: List<String> = emptyList(),
     /** 多 Key 取用策略：顺序（失败才切）或轮询（新会话轮流起步）。 */
     val keyRotationStrategy: KeyRotationStrategy = KeyRotationStrategy.SEQUENTIAL,
-    /** 同一个 Key 连续失败多少次后切到下一个。 */
+    /** 已废弃：早期「连续失败达阈值才切」的阈值。现在命中 [keySwitchStatusCodes] 即立即切换，保留仅为兼容旧数据库列。 */
     val keyFailoverThreshold: Int = 2,
     /** 被切走的 Key 冷却多少分钟后重新纳入候选；0 表示不冷却。 */
     val keyCooldownMinutes: Int = 5,
+    /** 命中即触发多 Key 自动切换的 HTTP 状态码；留空时回退 [DEFAULT_KEY_SWITCH_STATUS_CODES]。 */
+    val keySwitchStatusCodes: List<Int> = emptyList(),
     val baseUrl: String,
     val defaultModel: String,
     /** 该提供商已添加的可用模型列表（拉取或手动添加）。 */
@@ -72,6 +74,11 @@ data class AIProviderConfig(
     /** 是否已配置至少一个可用 Key。 */
     val hasUsableApiKey: Boolean get() = effectiveApiKeys.isNotEmpty()
 
+    /** 实际生效的切换状态码：留空回退默认集合。 */
+    val effectiveKeySwitchStatusCodes: Set<Int>
+        get() = keySwitchStatusCodes.filter { it in 100..599 }.toSet()
+            .ifEmpty { DEFAULT_KEY_SWITCH_STATUS_CODES }
+
     /** 拉取模型列表 / 连通性测试等无会话上下文的请求用第一个可用 Key。 */
     val firstUsableApiKey: String get() = effectiveApiKeys.firstOrNull() ?: ""
 }
@@ -92,6 +99,7 @@ fun AIProviderConfig.sanitized(): AIProviderConfig = copy(
     name = name.stripLineBreaks(),
     apiKey = apiKey.stripAllWhitespace(),
     apiKeys = apiKeys.map { it.stripAllWhitespace() }.filter { it.isNotEmpty() }.distinct(),
+    keySwitchStatusCodes = keySwitchStatusCodes.filter { it in 100..599 }.distinct(),
     baseUrl = baseUrl.stripAllWhitespace(),
     defaultModel = defaultModel.stripLineBreaks(),
     models = models.map { it.stripLineBreaks() }.filter { it.isNotEmpty() }.distinct(),
@@ -113,6 +121,9 @@ fun AIProviderConfig.sanitized(): AIProviderConfig = copy(
 enum class ProviderType {
     OPENAI, ANTHROPIC, GEMINI
 }
+
+/** 默认触发多 Key 自动切换的 HTTP 状态码：鉴权（401）、计费/额度（402）、权限（403）、限流（429）。 */
+val DEFAULT_KEY_SWITCH_STATUS_CODES: Set<Int> = setOf(401, 402, 403, 429)
 
 enum class KeyRotationStrategy {
     /** 顺序：始终用第一个未冷却的 Key，只有连续失败达阈值才前移。 */

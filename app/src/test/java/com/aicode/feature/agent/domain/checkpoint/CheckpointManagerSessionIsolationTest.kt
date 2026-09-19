@@ -13,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.InputStream
 import java.nio.charset.Charset
 
 /**
@@ -188,6 +189,8 @@ class CheckpointManagerSessionIsolationTest {
             File(path).parentFile?.mkdirs()
             File(path).writeBytes(bytes)
         }
+        override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long = throw UnsupportedOperationException()
+        override fun listFilesRecursive(path: String, maxDepth: Int): List<String> = emptyList()
         override fun copyToLocal(path: String): File = throw UnsupportedOperationException()
         override fun deleteRecursively(path: String) = throw UnsupportedOperationException()
         override fun rename(path: String, newPath: String) = throw UnsupportedOperationException()

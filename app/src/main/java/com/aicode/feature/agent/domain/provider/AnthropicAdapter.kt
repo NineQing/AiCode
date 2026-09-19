@@ -37,12 +37,16 @@ class AnthropicAdapter @Inject constructor(
 ) : AIProvider {
 
     override var apiKey = ""
+    override var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? = null
     override var baseUrl = "https://api.anthropic.com/"
     override var useFullUrl = false
     override var useResponseApi = false
     override var model = "claude-3-5-sonnet-20241022"
     override var providerId = ""
     override var logSessionId: String? = null
+    override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
+    override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /** 是否启用显式缓存断点（cache_control）。默认开启；第三方兼容网关严格校验未知字段时由设置项关闭。 */
     var cacheBreakpointsEnabled: Boolean = true
@@ -91,8 +95,12 @@ class AnthropicAdapter @Inject constructor(
         )
         val seq = AILogger.logRequest(logSessionId, "Anthropic", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createMessage(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -170,10 +178,20 @@ class AnthropicAdapter @Inject constructor(
         val rawSse = StringBuilder()
 
         // 流式请求整体可重试；重试前上层会收到 Retrying 事件并清空已展示文本。
+        val triedKeys = mutableSetOf(apiKey)
         try {
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
+            val budget = StreamBudget()
             // content block index -> 累积中的 tool_use（仅 tool_use 块建条目，保序）。
             val toolBlocks = LinkedHashMap<Int, ToolBlockAcc>()
             var stopReason: String? = null
@@ -190,9 +208,10 @@ class AnthropicAdapter @Inject constructor(
             val body = api.streamMessage(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
 
             body.use { rb ->
-                // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                // 首字节超时 watchdog：超时内未收到首个内容块则关闭流，触发可重试的 IOException。
                 val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-                val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                val watchdog = launchFirstByteWatchdog(firstByteTimeoutMs, { rb.close() }) { firstByteReceived.get() }
+                val idleWatchdog = launchStreamIdleWatchdog(streamIdleTimeoutMs) { rb.close() }
                 val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
                     runCatching { rb.close() }
                 }
@@ -206,10 +225,11 @@ class AnthropicAdapter @Inject constructor(
                         coroutineContext.ensureActive()
                         val line = reader.readLine()
                             ?: throw IOException("SSE 流被中断：未收到 message_stop 结束标记（疑似网络断开）")
+                        idleWatchdog.touch()
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
                         if (data.isEmpty()) continue
-                        rawSse.append(line).append('\n')
+                        AILogger.appendRawSse(rawSse, line)
                         val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                         // 单行 SSE 解析：不同上游/模型的字段类型偶有出入，Gson 的 getAsJsonObject/getAsJsonArray
                         // 在类型不符时会直接抛 ClassCastException，asString/asInt 对非原始值抛 UnsupportedOperationException。
@@ -245,7 +265,9 @@ class AnthropicAdapter @Inject constructor(
                                             if (name.isNotEmpty()) emit(AIStreamChunk.ToolCallDeclared(name))
                                         }
                                         "thinking" -> thinkingBlocks[index] = ThinkingBlockAcc(type = "thinking").also { acc ->
-                                            acc.thinking.append(block.get("thinking")?.takeIf { !it.isJsonNull }?.asString ?: "")
+                                            val initial = block.get("thinking")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                                            budget.add(initial)
+                                            acc.thinking.append(initial)
                                             acc.signature = block.get("signature")?.takeIf { !it.isJsonNull }?.asString
                                         }
                                         // redacted_thinking 的 data 在 start 事件一次性给全，没有对应 delta。
@@ -260,6 +282,7 @@ class AnthropicAdapter @Inject constructor(
                                         "text_delta" -> {
                                             val t = delta.get("text")?.asString ?: ""
                                             if (t.isNotEmpty()) {
+                                                budget.add(t)
                                                 textBuilder.append(t)
                                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                                 onContent()
@@ -269,6 +292,7 @@ class AnthropicAdapter @Inject constructor(
                                         "thinking_delta" -> {
                                             val t = delta.get("thinking")?.asString ?: ""
                                             if (t.isNotEmpty()) {
+                                                budget.add(t)
                                                 obj.get("index")?.asInt?.let { idx ->
                                                     thinkingBlocks.getOrPut(idx) { ThinkingBlockAcc(type = "thinking") }
                                                         .thinking.append(t)
@@ -292,6 +316,7 @@ class AnthropicAdapter @Inject constructor(
                                         "input_json_delta" -> {
                                             val index = obj.get("index")?.asInt
                                             val partial = delta.get("partial_json")?.asString ?: ""
+                                            budget.add(partial)
                                             if (index != null) toolBlocks[index]?.args?.append(partial)
                                         }
                                     }
@@ -327,6 +352,7 @@ class AnthropicAdapter @Inject constructor(
                     }
                 } finally {
                     watchdog.cancel()
+                    idleWatchdog.cancel()
                     closeHandle?.dispose()
                 }
             }

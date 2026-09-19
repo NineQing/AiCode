@@ -105,15 +105,15 @@ class MessagePersistenceUseCase @Inject constructor(
                 role = role.name,
                 content = sanitizeContent(content),
                 timestamp = nextTimestamp(),
-                toolCallsJson = if (toolCalls.isNotEmpty()) capLargeField(json.encodeToString(toolCalls)) else null,
+                toolCallsJson = if (toolCalls.isNotEmpty()) capBytes(json.encodeToString(toolCalls), MAX_SNAPSHOT_BYTES) else null,
                 toolCallId = toolCallId,
                 toolName = toolName,
-                toolArgs = toolArgs,
+                toolArgs = toolArgs?.let { capBytes(it, MAX_TOOL_ARGS_BYTES) },
                 isError = isError,
                 reasoning = reasoning?.let { sanitizeContent(it) },
-                signature = signature,
-                thinkingBlocksJson = thinkingBlocksJson?.let { capLargeField(it) },
-                attachmentsJson = if (attachments.isNotEmpty()) capLargeField(json.encodeToString(attachments)) else null,
+                signature = signature?.let { capBytes(it, MAX_SNAPSHOT_BYTES) },
+                thinkingBlocksJson = thinkingBlocksJson?.let { capBytes(it, MAX_SNAPSHOT_BYTES) },
+                attachmentsJson = if (attachments.isNotEmpty()) capBytes(json.encodeToString(attachments), MAX_ATTACHMENTS_BYTES) else null,
                 inputTokens = inputTokens,
                 outputTokens = outputTokens,
                 cachedInputTokens = cachedInputTokens,
@@ -128,11 +128,18 @@ class MessagePersistenceUseCase @Inject constructor(
 
     companion object {
         /**
-         * 单条消息字段持久化上限（字符数）。远小于 SQLite CursorWindow 单行约 2MB 的硬限制，
-         * 防止生图/多模态模型返回的超大 base64 图片撑爆数据行，导致读取消息时抛
-         * [android.database.sqlite.SQLiteBlobTooBigException] 使应用启动即崩。
+         * 单条消息各文本字段的持久化上限（UTF-8 字节数）。远小于 SQLite CursorWindow 单窗口约 2MB
+         * 的硬限制，防止超大内容撑爆数据行导致读取消息时崩溃。
+         *
+         * 按字节而非字符设限：中文等文本单字符最多占 3 字节，字符数上限约束不住真实占用。
+         * 也不能只限制单个字段——同一条消息可同时带正文、思考、工具入参等多份大快照，
+         * 各字段上限之和（约 570KB）必须整体留在窗口大小之下，否则该行可能因窗口预填充
+         * 而无处安放，读取时抛 IllegalStateException「Couldn't read row N, col 0 from CursorWindow」。
          */
-        const val MAX_CONTENT_CHARS = 200_000
+        const val MAX_CONTENT_BYTES = 150_000
+        const val MAX_SNAPSHOT_BYTES = 100_000
+        const val MAX_ATTACHMENTS_BYTES = 20_000
+        const val MAX_TOOL_ARGS_BYTES = 2_000
         const val IMAGE_OMITTED_MARKER = "[图片已省略：内嵌图片数据过大]"
         const val CONTENT_TRUNCATED_MARKER = "…[内容过长，已截断]"
         /** 图片 base64 缓存条目上限。 */
@@ -143,29 +150,49 @@ class MessagePersistenceUseCase @Inject constructor(
         /** 内嵌 base64 图片 data URL（`data:image/...;base64,...`）。 */
         private val INLINE_BASE64_IMAGE = Regex("""data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+""")
 
+        /** UTF-8 单字符最多占 3 字节，故 [String.length] 的三倍不超上限时无需实际编码即可放行。 */
+        private fun definitelyFits(raw: String, maxBytes: Int): Boolean =
+            raw.length.toLong() * 3 <= maxBytes
+
         /**
          * 落库前的内容净化，为所有 provider/模型提供统一兜底防线：
          * 1. 剥离内嵌的 base64 图片 data URL（替换为占位说明），此类内容本不该进数据库文本；
-         * 2. 剥离后仍超长的内容截断到 [MAX_CONTENT_CHARS]，避免任何超大行触发 CursorWindow 崩溃。
+         * 2. 剥离后仍超长的内容按 UTF-8 字节截断到 [MAX_CONTENT_BYTES]，避免任何超大行触发 CursorWindow 崩溃。
          */
         internal fun sanitizeContent(raw: String): String {
-            if (raw.length <= MAX_CONTENT_CHARS && !raw.contains("data:image/", ignoreCase = true)) {
+            if (definitelyFits(raw, MAX_CONTENT_BYTES) && !raw.contains("data:image/", ignoreCase = true)) {
                 return raw
             }
-            var text = INLINE_BASE64_IMAGE.replace(raw, IMAGE_OMITTED_MARKER)
-            if (text.length > MAX_CONTENT_CHARS) {
-                text = text.take(MAX_CONTENT_CHARS) + CONTENT_TRUNCATED_MARKER
-            }
-            return text
+            val stripped = INLINE_BASE64_IMAGE.replace(raw, IMAGE_OMITTED_MARKER)
+            val capped = capBytes(stripped, MAX_CONTENT_BYTES)
+            return if (capped.length < stripped.length) capped + CONTENT_TRUNCATED_MARKER else capped
         }
 
         /**
-         * 落库前对 JSON 快照字段（toolCallsJson / thinkingBlocksJson / attachmentsJson）做长度上限截断。
-         * 这些字段不是用户可见文本，截断后 JSON 不再可解析，读取方经 runCatching 降级为「无工具调用 / 无思考快照 / 无附件」，
-         * 而非崩溃；不带截断标记，避免给解析方徒增无意义内容。
+         * 落库前对 JSON 快照字段（toolCallsJson / thinkingBlocksJson / attachmentsJson）与
+         * 思考签名等非展示文本按 UTF-8 字节截断。截断后 JSON 不再可解析，读取方经 runCatching
+         * 降级为「无工具调用 / 无思考快照 / 无附件」，而非崩溃；不带截断标记，避免给解析方徒增无意义内容。
+         * 截断按码点边界进行，不切出半个代理对。
          */
-        internal fun capLargeField(raw: String): String =
-            if (raw.length <= MAX_CONTENT_CHARS) raw else raw.take(MAX_CONTENT_CHARS)
+        internal fun capBytes(raw: String, maxBytes: Int): String {
+            if (definitelyFits(raw, maxBytes)) return raw
+            var used = 0
+            var i = 0
+            while (i < raw.length) {
+                val c = raw[i]
+                val isPair = c.isHighSurrogate() && i + 1 < raw.length && raw[i + 1].isLowSurrogate()
+                val charBytes = when {
+                    isPair -> 4
+                    c.code < 0x80 -> 1
+                    c.code < 0x800 -> 2
+                    else -> 3
+                }
+                if (used + charBytes > maxBytes) break
+                used += charBytes
+                i += if (isPair) 2 else 1
+            }
+            return if (i >= raw.length) raw else raw.substring(0, i)
+        }
     }
 
     /**

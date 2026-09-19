@@ -1,6 +1,11 @@
 package com.aicode.feature.agent.presentation.component
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -8,12 +13,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -21,15 +30,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aicode.core.theme.semanticColors
 import com.mikepenz.markdown.compose.LazyMarkdownSuccess
+import com.mikepenz.markdown.compose.LocalMarkdownColors
+import com.mikepenz.markdown.compose.LocalMarkdownDimens
+import com.mikepenz.markdown.compose.LocalMarkdownPadding
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.compose.MarkdownSuccess
 import com.mikepenz.markdown.compose.components.MarkdownComponents
 import com.mikepenz.markdown.compose.components.markdownComponents
-import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCodeBlock
-import com.mikepenz.markdown.compose.elements.MarkdownHighlightedCodeFence
+import com.mikepenz.markdown.compose.elements.MarkdownCodeBackground
+import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
+import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
 import com.mikepenz.markdown.compose.elements.MarkdownTableRow
+import com.mikepenz.markdown.compose.elements.material.MarkdownBasicText
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownAnimations
@@ -38,7 +52,12 @@ import com.mikepenz.markdown.model.markdownPadding
 import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.State as MarkdownParseState
 import dev.snipme.highlights.Highlights
+import dev.snipme.highlights.model.BoldHighlight
+import dev.snipme.highlights.model.ColorHighlight
+import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxThemes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal class MarkdownRenderCache(
     private val maxEntries: Int = 80
@@ -194,20 +213,20 @@ internal fun MarkdownContent(
                 // 外层 SelectionContainer（MessageBubbles）统一负责选区；超长助手消息已由
                 // AIChatPanel 拆成多条有界 item，不存在超长单 item 的选区树/交互失效问题。
                 codeFence = {
-                    MarkdownHighlightedCodeFence(
+                    MarkdownCodeFence(
                         content = it.content,
                         node = it.node,
-                        highlightsBuilder = highlightsBuilder,
-                        showHeader = true,
-                    )
+                    ) { code, language, style ->
+                        SafeMarkdownHighlightedCode(code, language, style, highlightsBuilder, showHeader = true)
+                    }
                 },
                 codeBlock = {
-                    MarkdownHighlightedCodeBlock(
+                    MarkdownCodeBlock(
                         content = it.content,
                         node = it.node,
-                        highlightsBuilder = highlightsBuilder,
-                        showHeader = true,
-                    )
+                    ) { code, language, style ->
+                        SafeMarkdownHighlightedCode(code, language, style, highlightsBuilder, showHeader = true)
+                    }
                 },
                 // 库默认 maxLines=1 + Ellipsis，单元格长文会被截断；这里放开为完整多行显示。
                 table = {
@@ -260,6 +279,80 @@ internal fun MarkdownContent(
                 color = color,
                 modifier = modifier
             )
+        }
+    }
+}
+
+/**
+ * 代码块高亮渲染：等价于库的 `MarkdownHighlightedCode`，但在把高亮区间写进 AnnotatedString
+ * 之前先校验范围。highlights 引擎对部分内容会给出 start > end 的区间，库原实现直接调用
+ * addStyle，AnnotatedString.Range 构造随即抛 "Reversed range is not supported"；该计算跑在
+ * 库自己的后台协程里（produceState + Dispatchers.Default），异常直达线程默认处理器，
+ * 调用方 try/catch 拦不住，表现为聊天页闪退。越界（end > code.length）同样会导致崩溃，
+ * 一并丢弃。
+ */
+@Composable
+private fun SafeMarkdownHighlightedCode(
+    code: String,
+    language: String?,
+    style: TextStyle,
+    highlightsBuilder: Highlights.Builder,
+    showHeader: Boolean,
+) {
+    val highlighted: AnnotatedString by produceState(
+        initialValue = AnnotatedString(code),
+        code,
+        language,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            buildHighlightedText(code, language, highlightsBuilder)
+        }
+    }
+
+    MarkdownCodeBackground(
+        color = LocalMarkdownColors.current.codeBackground,
+        shape = RoundedCornerShape(LocalMarkdownDimens.current.codeBackgroundCornerSize),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        showHeader = showHeader,
+        language = language,
+        code = code,
+    ) {
+        MarkdownBasicText(
+            text = highlighted,
+            style = style,
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(LocalMarkdownPadding.current.codeBlock),
+        )
+    }
+}
+
+private fun buildHighlightedText(
+    code: String,
+    language: String?,
+    highlightsBuilder: Highlights.Builder,
+): AnnotatedString {
+    // 高亮引擎本身也可能抛错（语言解析等），失败时退回纯文本，不让它影响消息渲染。
+    val highlights = runCatching {
+        val syntaxLanguage = language?.let { SyntaxLanguage.getByName(it) }
+        highlightsBuilder.code(code)
+            .let { if (syntaxLanguage != null) it.language(syntaxLanguage) else it }
+            .build()
+            .getHighlights()
+    }.getOrDefault(emptyList())
+
+    return buildAnnotatedString {
+        append(code)
+        for (highlight in highlights) {
+            val start = highlight.location.start
+            val end = highlight.location.end
+            if (start < 0 || start >= end || end > code.length) continue
+            val spanStyle = when (highlight) {
+                is ColorHighlight -> SpanStyle(color = Color(highlight.rgb).copy(alpha = 1f))
+                is BoldHighlight -> SpanStyle(fontWeight = FontWeight.Bold)
+                else -> null
+            }
+            if (spanStyle != null) addStyle(spanStyle, start, end)
         }
     }
 }

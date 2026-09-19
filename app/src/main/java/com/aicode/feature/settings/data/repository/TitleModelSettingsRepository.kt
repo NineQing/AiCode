@@ -2,11 +2,15 @@ package com.aicode.feature.settings.data.repository
 
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
+import com.aicode.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.titleModelDataStore by preferencesDataStore(name = "title_model_prefs")
+private val Context.titleModelDataStore by preferencesDataStore(
+    name = "title_model_prefs",
+    corruptionHandler = preferencesCorruptionHandler
+)
 
 /**
  * 持久化「标题总结专用模型」选择（providerId + model 两字符串）。

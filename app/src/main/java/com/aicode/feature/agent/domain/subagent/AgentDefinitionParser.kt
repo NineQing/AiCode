@@ -1,9 +1,10 @@
 package com.aicode.feature.agent.domain.subagent
 
 import com.aicode.core.util.FileLogger
+import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.model.ReasoningEffort
+import com.aicode.feature.workspace.domain.FileAccessProvider
 import org.yaml.snakeyaml.Yaml
-import java.io.File
 
 /**
  * 解析单个子代理定义文件（`agents/<name>.md`）：YAML frontmatter 为配置，正文为 agent 提示词。
@@ -13,13 +14,10 @@ object AgentDefinitionParser {
     private const val TAG = "AgentDefinitionParser"
     private const val MAX_DESC_CHARS = 500
 
-    /** 正文为空视为非法定义（agent 必须有提示词），返回 null。 */
-    fun parse(file: File): AgentDefinition? {
-        val text = try {
-            if (!file.isFile || !file.canRead()) return null
-            file.readText()
-        } catch (e: Exception) {
-            FileLogger.w(TAG, "读取子代理定义失败: ${file.absolutePath}", e)
+    /** 正文为空视为非法定义（agent 必须有提示词），返回 null。定义文件经 [provider] 以容器路径读取。 */
+    fun parse(provider: FileAccessProvider, filePath: String): AgentDefinition? {
+        val text = runCatching { provider.readFile(filePath) }.getOrElse {
+            FileLogger.w(TAG, "读取子代理定义失败: $filePath", it)
             return null
         }
 
@@ -27,8 +25,9 @@ object AgentDefinitionParser {
         val prompt = body.trim()
         if (prompt.isEmpty()) return null
 
+        val fileName = filePath.substringAfterLast('/')
         val name = frontmatter["name"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            ?: file.nameWithoutExtension
+            ?: fileName.substringBeforeLast('.')
         val description = (frontmatter["description"]?.toString() ?: "").take(MAX_DESC_CHARS)
 
         return AgentDefinition(
@@ -38,11 +37,12 @@ object AgentDefinitionParser {
             model = frontmatter["model"]?.toString()?.trim()?.takeIf { it.isNotBlank() },
             reasoningEffort = frontmatter["reasoningEffort"]?.toString()?.trim()?.lowercase()
                 ?.takeIf { it in VALID_EFFORTS },
+            mode = parseMode(frontmatter["mode"]),
             allowedTools = stringList(frontmatter["tools"]),
             disallowedTools = stringList(frontmatter["disallowedTools"]),
             inject = parseInject(frontmatter["inject"]),
             prompt = prompt,
-            file = file
+            filePath = filePath
         )
     }
 
@@ -52,6 +52,14 @@ object AgentDefinitionParser {
         is List<*> -> raw.mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() }
         is String -> raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         else -> emptyList()
+    }
+
+    /** 模式取值：忽略大小写与连字符/下划线差异，非法值回退 null（继承父会话）。 */
+    internal fun parseMode(raw: Any?): AgentMode? {
+        val token = raw?.toString()?.trim()?.uppercase()
+            ?.replace("-", "")?.replace("_", "")
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        return AgentMode.entries.firstOrNull { it.name == token }
     }
 
     /** 缺省或全部取值非法时回退默认注入项，避免定义写错就丢掉全部上下文。 */
@@ -96,6 +104,7 @@ object AgentDefinitionParser {
         providerId: String?,
         model: String?,
         reasoningEffort: String?,
+        mode: AgentMode? = null,
         allowedTools: List<String>,
         disallowedTools: List<String>,
         inject: Set<InjectPart>,
@@ -107,6 +116,7 @@ object AgentDefinitionParser {
         providerId?.takeIf { it.isNotBlank() }?.let { appendLine("provider: ${quote(it)}") }
         model?.takeIf { it.isNotBlank() }?.let { appendLine("model: ${quote(it)}") }
         reasoningEffort?.takeIf { it in VALID_EFFORTS }?.let { appendLine("reasoningEffort: $it") }
+        mode?.let { appendLine("mode: ${it.name.lowercase()}") }
         if (allowedTools.isNotEmpty()) appendLine("tools: [${allowedTools.joinToString(", ")}]")
         if (disallowedTools.isNotEmpty()) appendLine("disallowedTools: [${disallowedTools.joinToString(", ")}]")
         // 空集必须显式写 [none]：省略会被解成默认注入项，恰好与用户「什么都不注入」的选择相反。

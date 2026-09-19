@@ -41,6 +41,7 @@ import com.aicode.feature.agent.domain.tool.skill.LoadSkillTool
 import com.aicode.feature.agent.domain.tool.question.AskUserQuestionTool
 import com.aicode.feature.agent.domain.tool.todo.TodoTool
 import com.aicode.feature.agent.domain.tool.subagent.TaskTool
+import com.aicode.feature.agent.domain.tool.subagent.MessageParentTool
 import com.aicode.feature.agent.domain.subagent.SubAgentEventBus
 import com.aicode.feature.agent.domain.prompt.SystemPromptProvider
 import com.aicode.feature.agent.domain.workflow.AgentWorkflow
@@ -83,6 +84,7 @@ import com.aicode.feature.agent.domain.workflow.ContextCompactor
 import com.aicode.feature.agent.domain.workflow.StatefulAgentWorkflow
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.data.repository.ProviderKeyRotator
 import com.aicode.feature.settings.data.repository.TitleModelSettingsRepository
 import com.aicode.feature.workspace.data.local.dao.RemoteConnectionDao
@@ -155,11 +157,11 @@ object AgentModule {
             val name = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
             "aicode/$name (Android)"
         }.getOrDefault("aicode (Android)")
-        // 流式 SSE 下读超时是「相邻数据块之间」的等待上限；120s 给慢启动/长思考留足空间，
-        // 真正卡死由上层阶梯重试（RetryPolicy）兜底。
+        // 流式 SSE 下读超时是「相邻数据块之间」的等待上限，设为 0（无限制），
+        // 慢生成不会因块间隔超时被掐断；首字节前的卡死由上层 watchdog（RetryPolicy）兜底。
         return OkHttpClient.Builder()
             .connectTimeout(120, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val request = chain.request()
@@ -280,7 +282,8 @@ object AgentModule {
         switchModeTool: SwitchModeTool,
         todoTool: TodoTool,
         memoryTool: MemoryTool,
-        taskTool: TaskTool
+        taskTool: TaskTool,
+        messageParentTool: MessageParentTool
     ): ToolRegistry {
         return ToolRegistry().apply {
             register("readFile", readFileTool)
@@ -302,6 +305,7 @@ object AgentModule {
             register("todo", todoTool)
             register("memory", memoryTool)
             register("task", taskTool)
+            register("messageParent", messageParentTool)
         }
     }
 
@@ -323,6 +327,7 @@ object AgentModule {
         compactionModelSettingsRepository: CompactionModelSettingsRepository,
         titleModelSettingsRepository: TitleModelSettingsRepository,
         defaultModelSettingsRepository: DefaultModelSettingsRepository,
+        generalSettingsRepository: GeneralSettingsRepository,
         sessionUseCase: SessionUseCase,
         messagePersistenceUseCase: MessagePersistenceUseCase,
         checkpointManager: CheckpointManager,
@@ -347,6 +352,7 @@ object AgentModule {
             compactionModelSettingsRepository,
             titleModelSettingsRepository,
             defaultModelSettingsRepository,
+            generalSettingsRepository,
             sessionUseCase,
             messagePersistenceUseCase,
             checkpointManager,

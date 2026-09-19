@@ -28,12 +28,16 @@ class GeminiAdapter @Inject constructor(
 ) : AIProvider {
 
     override var apiKey = ""
+    override var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? = null
     override var baseUrl = "https://generativelanguage.googleapis.com/"
     override var useFullUrl = false
     override var useResponseApi = false
     override var model = "gemini-1.5-flash"
     override var providerId = ""
     override var logSessionId: String? = null
+    override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
+    override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /** 自定义请求头：占位符替换后写出，完全覆盖同名默认头。 */
     override var customHeaders: Map<String, String> = emptyMap()
@@ -82,8 +86,12 @@ class GeminiAdapter @Inject constructor(
         }
         val seq = AILogger.logRequest(logSessionId, "Gemini", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.generateContent(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -194,9 +202,19 @@ class GeminiAdapter @Inject constructor(
         val rawSse = StringBuilder()
 
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
                 val textBuilder = StringBuilder()
+                val budget = StreamBudget()
                 val toolCalls = mutableListOf<ToolCall>()
                 val images = mutableListOf<AgentImage>()
                 // model 轮的 parts 原样快照：文本分片按段合并，functionCall 与 thoughtSignature 原样保留。
@@ -209,9 +227,10 @@ class GeminiAdapter @Inject constructor(
                 val body = api.streamGenerateContent(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
 
                 body.use { rb ->
-                    // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                    // 首字节超时 watchdog：超时内未收到首个内容块则关闭流，触发可重试的 IOException。
                     val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-                    val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                    val watchdog = launchFirstByteWatchdog(firstByteTimeoutMs, { rb.close() }) { firstByteReceived.get() }
+                    val idleWatchdog = launchStreamIdleWatchdog(streamIdleTimeoutMs) { rb.close() }
                     val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
                         runCatching { rb.close() }
                     }
@@ -221,10 +240,11 @@ class GeminiAdapter @Inject constructor(
                             coroutineContext.ensureActive()
                             val line = reader.readLine()
                                 ?: throw IOException("SSE 流被中断（疑似网络断开）")
+                            idleWatchdog.touch()
                             if (!line.startsWith("data:")) continue
                             val data = line.removePrefix("data:").trim()
                             if (data.isEmpty()) continue
-                            rawSse.append(line).append('\n')
+                            AILogger.appendRawSse(rawSse, line)
                             val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                             
                             try {
@@ -247,10 +267,12 @@ class GeminiAdapter @Inject constructor(
                                     content?.getAsJsonArray("parts")?.forEach { partEl ->
                                         val part = partEl.asJsonObject
                                         val isThought = part.get("thought")?.asBoolean == true
+                                        if (part.has("functionCall")) budget.add(part.toString())
                                         accumulateSnapshotPart(snapshotParts, part, isThought)
                                         if (part.has("text")) {
                                             val text = part.get("text")?.asString ?: ""
                                             if (text.isNotEmpty()) {
+                                                budget.add(text)
                                                 if (isThought) {
                                                     // 思考增量：仅 UI 实时展示，不计入正文、不计入正文（不落库，重试时可安全重新流出）
                                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
@@ -291,6 +313,7 @@ class GeminiAdapter @Inject constructor(
                         }
                     } finally {
                         watchdog.cancel()
+                        idleWatchdog.cancel()
                         closeHandle?.dispose()
                     }
                 }
@@ -372,8 +395,12 @@ class GeminiAdapter @Inject constructor(
         val request = buildInteractionsRequest(systemPrompt, messages, tools, reasoningEffort, stream = false)
         val seq = AILogger.logRequest(logSessionId, "Gemini", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createInteraction(url = url, apiKey = apiKey, extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -424,7 +451,16 @@ class GeminiAdapter @Inject constructor(
         // 累积原始 SSE，整轮结束（或失败）后整体落盘，避免高频写盘。
         val rawSse = StringBuilder()
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
                     val acc = GeminiInteractionsStreamAccumulator()
 
@@ -436,9 +472,10 @@ class GeminiAdapter @Inject constructor(
                     )
 
                     body.use { rb ->
-                        // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                        // 首字节超时 watchdog：超时内未收到首个内容块则关闭流，触发可重试的 IOException。
                         val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-                        val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                        val watchdog = launchFirstByteWatchdog(firstByteTimeoutMs, { rb.close() }) { firstByteReceived.get() }
+                        val idleWatchdog = launchStreamIdleWatchdog(streamIdleTimeoutMs) { rb.close() }
                         val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
                             runCatching { rb.close() }
                         }
@@ -448,10 +485,11 @@ class GeminiAdapter @Inject constructor(
                                 coroutineContext.ensureActive()
                                 val line = reader.readLine()
                                     ?: throw IOException("SSE 流被中断：interaction 未到终态（疑似网络断开）")
+                                idleWatchdog.touch()
                                 if (!line.startsWith("data:")) continue
                                 val data = line.removePrefix("data:").trim()
                                 if (data.isEmpty()) continue
-                                rawSse.append(line).append('\n')
+                                AILogger.appendRawSse(rawSse, line)
                                 if (data == "[DONE]") break
                                 val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                                 // 单个事件的字段类型异常不应废掉整条流，只跳过该事件；
@@ -489,6 +527,7 @@ class GeminiAdapter @Inject constructor(
                             }
                         } finally {
                             watchdog.cancel()
+                            idleWatchdog.cancel()
                             closeHandle?.dispose()
                         }
                     }

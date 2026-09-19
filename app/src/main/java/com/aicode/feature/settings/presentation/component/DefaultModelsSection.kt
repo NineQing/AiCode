@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,8 +46,10 @@ import com.aicode.R
 import com.aicode.core.theme.Spacing
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
+import com.aicode.feature.settings.data.local.ModelSheetCollapseStore
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowDown
 import compose.icons.feathericons.ArrowUp
@@ -290,7 +293,10 @@ internal fun ModelSelectionSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    val collapseStore = remember { ModelSheetCollapseStore(context.applicationContext) }
     var searchQuery by remember { mutableStateOf("") }
+    var collapsedProviderIds by remember { mutableStateOf(collapseStore.collapsedProviderIds()) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -362,24 +368,37 @@ internal fun ModelSelectionSheet(
                             searchQuery.isBlank() || it.contains(searchQuery, ignoreCase = true)
                         }
                         if (filteredModels.isNotEmpty()) {
+                            // 搜索时强制展开，否则用折叠状态：用户搜到名字却看不到结果会很困惑。
+                            val expanded = searchQuery.isNotBlank() || provider.id !in collapsedProviderIds
                             item(key = "header_${provider.id}") {
-                                SettingsGroupHeader("${provider.name} (${filteredModels.size})")
-                            }
-                            item(key = "card_${provider.id}") {
-                                SettingsGroup {
-                                    val isFirstProvider = provider == activeProviders.firstOrNull()
-                                    filteredModels.forEachIndexed { index, model ->
-                                        if (index > 0) {
-                                            SettingsDivider()
+                                CollapsibleGroupHeader(
+                                    text = "${provider.name} (${filteredModels.size})",
+                                    expanded = expanded,
+                                    onToggle = {
+                                        val updated = if (provider.id in collapsedProviderIds) {
+                                            collapsedProviderIds - provider.id
+                                        } else {
+                                            collapsedProviderIds + provider.id
                                         }
-                                        val isFirstModel = isFirstProvider && index == 0
-                                        ModelSelectionRow(
-                                            model = model,
-                                            selected = provider.id == currentProviderId && model == currentModel,
-                                            metadata = modelMetadata[model],
-                                            onClick = { onSelect(provider.id, model) },
-                                            modifier = if (isFirstModel) Modifier.onboardingTarget(OnboardingStep.SIMULATE_CHOOSE_MODEL) else Modifier
-                                        )
+                                        collapsedProviderIds = updated
+                                        collapseStore.save(updated)
+                                    }
+                                )
+                            }
+                            if (expanded) {
+                                item(key = "card_${provider.id}") {
+                                    SettingsGroup {
+                                        filteredModels.forEachIndexed { index, model ->
+                                            if (index > 0) {
+                                                SettingsDivider()
+                                            }
+                                            ModelSelectionRow(
+                                                model = model,
+                                                selected = provider.id == currentProviderId && model == currentModel,
+                                                metadata = modelMetadata[modelMetadataKey(provider.id, model)],
+                                                onClick = { onSelect(provider.id, model) }
+                                            )
+                                        }
                                     }
                                 }
                             }

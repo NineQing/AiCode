@@ -2,6 +2,7 @@ package com.aicode.feature.agent.domain.permission
 
 import com.aicode.feature.agent.domain.tool.AgentTool
 import com.aicode.feature.agent.domain.tool.ToolCapability
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
@@ -22,7 +23,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ToolPermissionPolicyEngine @Inject constructor(
-    private val rulesRepo: PermissionRulesRepository
+    private val rulesRepo: PermissionRulesRepository,
+    private val toolSafetySettings: ToolSafetySettingsRepository
 ) {
     private companion object {
         /** 以 `command` 参数承载 shell 命令、按命令前缀做指令级匹配的工具。 */
@@ -40,11 +42,52 @@ class ToolPermissionPolicyEngine @Inject constructor(
         )
 
         /**
-         * 合并后的子代理工具：只读操作（read/list）自动放行，无需弹窗；
+         * 合并后的子代理工具：只读与发消息操作（read/list/send）自动放行，无需弹窗；
          * 写操作（create/stop）走正常规则评估。
          */
         const val TASK_TOOL = "task"
-        private val TASK_READ_ACTIONS = setOf("read", "list")
+        private val TASK_AUTO_ACTIONS = setOf("read", "list", "send")
+
+        /**
+         * 提权参数：非 AUTO 模式下，命令因内置安全防护（灾难性 rm）被拒时，
+         * 可在调用时置为 true 重试，把硬拒绝降级为一次性用户授权。
+         */
+        const val ELEVATE_ARG = "elevate"
+
+        /** 容器内 `~` 展开目标（PRoot 以 root 运行）。 */
+        const val HOME_DIR = "/root"
+        const val HOME_TOKEN = "\$HOME"
+        const val HOME_BRACED = "\${HOME}"
+
+        const val REASON_RM_ROOT = "安全防护：禁止执行高危删除操作（根目录删除）"
+        const val REASON_RM_RELATIVE = "安全防护：禁止执行高危删除操作（全局或相对路径通配删除）"
+        const val REASON_RM_HOME = "安全防护：禁止执行高危删除操作（用户目录删除）"
+        const val REASON_RM_WORKSPACE = "安全防护：禁止执行高危删除操作（工作区根目录删除）"
+        const val REASON_RM_TMP = "安全防护：禁止执行高危删除操作（系统临时目录整体删除）"
+        const val REASON_RM_SYSTEM_DIR = "安全防护：禁止执行高危删除操作（系统关键目录删除）"
+
+        /** 相对/通配类删除目标（归一化后判定）：整体删除当前目录或任意内容。 */
+        val RELATIVE_WILDCARD_TARGETS = setOf("*", ".*", ".", "..", "../*", "../.*")
+
+        /** 根级通配（`/et*`、`/usr*` 等）可能展开为受保护的系统目录，直接拦截。 */
+        val ROOT_LEVEL_GLOB = Regex("^/[^/*?]*[*?]")
+
+        /** 工作区根目录的删除目标（归一化后判定）；工作区的子目录不在此列。 */
+        val WORKSPACE_ROOT_TARGETS = setOf("workspace", "workspace/*", "$HOME_DIR/workspace", "$HOME_DIR/workspace/*")
+
+        /** 受保护的系统关键目录：命中其本身或其任意子路径即拦截（`/tmp`、工作区子树单独处理）。 */
+        val PROTECTED_SYSTEM_DIRS = setOf(
+            "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64", "/lost+found",
+            "/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys", "/usr", "/var"
+        )
+
+        const val REASON_UNANALYZABLE_DESTRUCTIVE =
+            "安全防护：命令含命令替换、子 shell 或绝对路径重定向等无法静态判定的构造，且疑似破坏性操作，无法确认安全"
+
+        /** 疑似破坏性程序（仅在命令不可静态判定时用于保守拦截）。 */
+        val DESTRUCTIVE_PROGRAM = Regex(
+            "(^|[\\s;&|()`<>])(rm|dd|shred|truncate|mkfs(?:\\.[a-z0-9]+)?|wipefs|fdisk|sfdisk|parted|mkswap|blkdiscard)([\\s;&|()`<>]|$)"
+        )
     }
 
     enum class Verdict { ALLOW, DENY, ASK }
@@ -58,7 +101,9 @@ class ToolPermissionPolicyEngine @Inject constructor(
         val verdict: Verdict,
         val rememberablePatterns: List<String>,
         val denyReason: String? = null,
-        val rememberDisabledReason: String? = null
+        val rememberDisabledReason: String? = null,
+        /** ASK 时的弹窗标题覆盖；null 表示用工具默认标题。 */
+        val askTitle: String? = null
     )
 
     suspend fun evaluate(tool: AgentTool?, toolName: String, args: Map<String, JsonElement>, mode: com.aicode.feature.agent.domain.model.AgentMode): EvalResult {
@@ -68,14 +113,17 @@ class ToolPermissionPolicyEngine @Inject constructor(
         }
 
         if (mode == com.aicode.feature.agent.domain.model.AgentMode.AUTO) {
-            // AUTO 模式放行所有权限，但仍保留灾难性 rm 防护（根目录/系统目录删除）
-            if (isShellTool(toolName, args)) {
+            // AUTO 模式放行所有权限；灾难性 rm 防护（根目录/系统目录删除）默认保留，
+            // 可在「工具授权」设置中关闭（禁用安全拦截）。遭遇拦截时仍可凭 elevate 参数提权重试。
+            if (!toolSafetySettings.isSafetyInterceptionDisabled() && isShellTool(toolName, args)) {
                 val command = ((args["command"] ?: args["input"]) as? JsonPrimitive)?.content
                 if (command != null) {
                     val analysis = ShellCommandParser.analyze(command)
-                    val catastrophicReason = checkCatastrophicRm(analysis.segments)
-                    if (catastrophicReason != null) {
-                        return EvalResult(Verdict.DENY, emptyList(), denyReason = catastrophicReason)
+                    checkCatastrophicRm(analysis.segments)?.let { return elevationOrDeny(it, args) }
+                    // 命令替换/子 shell/绝对路径重定向等无法静态判定的构造，删除目标不可知；
+                    // 若同时疑似破坏性，宁可拦下（可提权），避免绕过安全防护。
+                    if (!analysis.analyzable && looksDestructive(command)) {
+                        return elevationOrDeny(REASON_UNANALYZABLE_DESTRUCTIVE, args)
                     }
                 }
             }
@@ -89,7 +137,7 @@ class ToolPermissionPolicyEngine @Inject constructor(
         // task 只读动作（read/list）：不放行 DENY 规则，其余直接自动放行（不弹窗）。
         if (toolName == TASK_TOOL) {
             val action = (args["action"] as? JsonPrimitive)?.content?.trim()?.lowercase() ?: "create"
-            if (action in TASK_READ_ACTIONS) {
+            if (action in TASK_AUTO_ACTIONS) {
                 val rules = rulesRepo.loadEffectiveForCurrentProject().filter { it.toolName == toolName }
                 val whole = rules.filter { it.pattern == PermissionRule.WHOLE_TOOL }
                 if (whole.any { it.decision == PermissionDecision.DENY }) {
@@ -141,6 +189,37 @@ class ToolPermissionPolicyEngine @Inject constructor(
         return false
     }
 
+    /** 调用是否携带提权参数（`elevate: true`）。 */
+    private fun isElevationRequested(args: Map<String, JsonElement>): Boolean =
+        (args[ELEVATE_ARG] as? JsonPrimitive)?.content?.trim()?.lowercase() == "true"
+
+    /**
+     * 该命令是否疑似破坏性（仅在命令不可静态判定时使用）：含输出重定向、`-delete`
+     * 或常见破坏性程序名。宁可多问，不误放。
+     */
+    private fun looksDestructive(command: String): Boolean =
+        command.contains('>') || command.contains("-delete") || DESTRUCTIVE_PROGRAM.containsMatchIn(command)
+
+    /**
+     * 灾难性删除的裁决：携带提权参数时降级为一次性用户授权（ASK），否则硬拒绝（DENY）
+     * 并在原因里提示可提权重试。AUTO 与非 AUTO 模式共用。提权仅对本次调用生效，不可记忆。
+     */
+    private fun elevationOrDeny(catastrophicReason: String, args: Map<String, JsonElement>): EvalResult =
+        if (isElevationRequested(args)) {
+            EvalResult(
+                verdict = Verdict.ASK,
+                rememberablePatterns = emptyList(),
+                askTitle = "高危操作提权确认",
+                rememberDisabledReason = "命令命中内置安全防护，提权仅支持单次放行，不可记忆"
+            )
+        } else {
+            EvalResult(
+                Verdict.DENY,
+                emptyList(),
+                denyReason = "$catastrophicReason。如确需执行，可在调用时加 `$ELEVATE_ARG: true` 重试，系统将向用户请求授权。"
+            )
+        }
+
     /** 把「始终允许」的选择落库为 ALLOW 规则（去重交给仓库）。 */
     suspend fun remember(toolName: String, patterns: List<String>, scope: PermissionScope) {
         patterns.distinct().forEach { pattern ->
@@ -163,24 +242,63 @@ class ToolPermissionPolicyEngine @Inject constructor(
     }
 
     private fun checkCatastrophicRm(segments: List<List<String>>): String? {
-        val sysDirs = setOf("/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64", "/opt", "/proc", "/root", "/run", "/sbin", "/sys", "/usr", "/var")
         for (seg in segments) {
             val rmInfo = ShellCommandParser.parseRmInfo(seg)
             if (!rmInfo.isRm) continue
             for (rawPath in rmInfo.targetPaths) {
-                val p = rawPath.trim()
-                val normalized = if (p.length > 1) p.trimEnd('/') else p
-                if (normalized == "/" || normalized == "/*" || normalized == "//*") return "安全防护：禁止执行高危删除操作（根目录删除）"
-                if (normalized == "*" || normalized == ".*" || normalized == "." || normalized == "./*" || normalized == ".." || normalized == "../.*") return "安全防护：禁止执行高危删除操作（全局或相对路径通配删除）"
-                if (normalized == "~" || normalized == "~/*") return "安全防护：禁止执行高危删除操作（用户目录删除）"
-                if (normalized == "~/workspace" || normalized == "~/workspace/*" || normalized == "~/workspace/.*" || normalized == "~/workspace/." || normalized == "~/workspace/.." || normalized.startsWith("~/workspace/../") || normalized == "/root/workspace" || normalized == "/root/workspace/*" || normalized == "/root/workspace/.*" || normalized == "/root/workspace/." || normalized == "/root/workspace/.." || normalized.startsWith("/root/workspace/../") || normalized == "workspace" || normalized == "workspace/*") return "安全防护：禁止执行高危删除操作（工作区根目录删除）"
-                if (normalized == "/tmp" || normalized == "/tmp/*") return "安全防护：禁止执行高危删除操作（系统临时目录整体删除）"
-                if (sysDirs.any { normalized == it || normalized.startsWith("$it/") || normalized.startsWith("$it/*") }) {
-                    return "安全防护：禁止执行高危删除操作（系统关键目录删除）"
-                }
+                catastrophicReasonFor(rawPath)?.let { return it }
             }
         }
         return null
+    }
+
+    /** 单个删除目标的裁决：命中受保护范围返回对应原因，否则 null。 */
+    private fun catastrophicReasonFor(rawPath: String): String? {
+        val raw = rawPath.trim()
+        if (raw.isEmpty()) return null
+        val path = normalizePath(raw)
+        return when {
+            path == "/" || path == "/*" -> REASON_RM_ROOT
+            path in RELATIVE_WILDCARD_TARGETS -> REASON_RM_RELATIVE
+            ROOT_LEVEL_GLOB.matches(path) -> REASON_RM_SYSTEM_DIR
+            path == HOME_DIR || path == "$HOME_DIR/*" -> REASON_RM_HOME
+            path in WORKSPACE_ROOT_TARGETS -> REASON_RM_WORKSPACE
+            // 工作区子目录（构建产物等）属正常操作，置于系统目录判定之前放行
+            path.startsWith("$HOME_DIR/workspace/") || path.startsWith("workspace/") -> null
+            path == "/tmp" || path == "/tmp/*" -> REASON_RM_TMP
+            PROTECTED_SYSTEM_DIRS.any { path == it || path.startsWith("$it/") } -> REASON_RM_SYSTEM_DIR
+            else -> null
+        }
+    }
+
+    /**
+     * 词法路径归一化：把开头的 `~` / `$HOME` / `${HOME}` 展开为容器家目录，折叠重复 `/`，
+     * 解析 `.` 与 `..`。纯字符串处理、不访问文件系统，故无法覆盖 `$(...)` 等运行时才可知的路径。
+     */
+    private fun normalizePath(raw: String): String {
+        val expanded = when {
+            raw == "~" -> HOME_DIR
+            raw.startsWith("~/") -> HOME_DIR + raw.drop(1)
+            raw == HOME_TOKEN || raw == HOME_BRACED -> HOME_DIR
+            raw.startsWith("$HOME_TOKEN/") -> HOME_DIR + raw.drop(HOME_TOKEN.length)
+            raw.startsWith("$HOME_BRACED/") -> HOME_DIR + raw.drop(HOME_BRACED.length)
+            else -> raw
+        }
+        val absolute = expanded.startsWith("/")
+        val parts = ArrayDeque<String>()
+        for (part in expanded.split('/')) {
+            when (part) {
+                "", "." -> Unit
+                ".." -> if (parts.isNotEmpty() && parts.last() != "..") parts.removeLast() else if (!absolute) parts.addLast("..")
+                else -> parts.addLast(part)
+            }
+        }
+        val joined = parts.joinToString("/")
+        return when {
+            absolute -> "/$joined"
+            joined.isEmpty() -> "."
+            else -> joined
+        }
     }
 
     private fun evaluateShell(rules: List<PermissionRule>, args: Map<String, JsonElement>): EvalResult {
@@ -191,10 +309,11 @@ class ToolPermissionPolicyEngine @Inject constructor(
         val allow = rules.filter { it.decision == PermissionDecision.ALLOW }
         val deny = rules.filter { it.decision == PermissionDecision.DENY }
 
-        // 0) rm 高危操作防护：禁止直接删除系统根目录、工作区根目录或系统关键目录
+        // 0) rm 高危操作防护：禁止直接删除系统根目录、工作区根目录或系统关键目录。
+        //    携带提权参数时降级为一次性用户授权。
         val catastrophicReason = checkCatastrophicRm(analysis.segments)
         if (catastrophicReason != null) {
-            return EvalResult(Verdict.DENY, emptyList(), denyReason = catastrophicReason)
+            return elevationOrDeny(catastrophicReason, args)
         }
 
         // 1) DENY 优先（含对内置安全白名单的覆盖）：任一段命中 DENY 即拒。

@@ -2,6 +2,7 @@ package com.aicode.feature.settings.presentation
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aicode.core.net.AppProxy
@@ -25,10 +26,13 @@ import com.aicode.feature.agent.domain.mcp.McpServerConfig
 import com.aicode.feature.agent.domain.mcp.McpServerEntry
 import com.aicode.feature.agent.domain.mcp.McpServerStatus
 import com.aicode.feature.agent.domain.mcp.McpToolDescriptor
+import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.permission.PermissionRule
 import com.aicode.feature.agent.domain.permission.PermissionRulesRepository
 import com.aicode.feature.agent.domain.skill.SkillConfigRepository
 import com.aicode.feature.agent.domain.skill.SkillForm
+import com.aicode.feature.agent.domain.skill.SkillImportError
+import com.aicode.feature.agent.domain.skill.SkillImportReport
 import com.aicode.feature.agent.domain.skill.SkillRepository
 import com.aicode.feature.agent.domain.skill.SkillSaveError
 import com.aicode.feature.agent.domain.skill.SkillScope
@@ -50,12 +54,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aicode.feature.settings.data.repository.AppThemeMode
 import com.aicode.feature.settings.data.repository.ContainerSettingsRepository
 import com.aicode.feature.settings.data.repository.DownloadedImageRecord
+import com.aicode.feature.settings.data.repository.DEFAULT_REMOTE_WORKSPACE_ROOT
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
 import com.aicode.feature.settings.data.repository.TitleModelSettingsRepository
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
 import com.aicode.feature.settings.data.repository.ExecutionModeRepository
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.data.repository.AgentSoundSettingsRepository
 import com.aicode.feature.settings.data.repository.KeepaliveSettingsRepository
 import com.aicode.feature.settings.data.repository.LanguageSettingsRepository
@@ -63,7 +69,9 @@ import com.aicode.feature.settings.data.repository.LogSettingsRepository
 import com.aicode.feature.settings.data.repository.ProxyConfig
 import com.aicode.feature.settings.data.repository.ProxySettingsRepository
 import com.aicode.feature.settings.data.repository.ScreenOnSettingsRepository
+import com.aicode.feature.settings.data.repository.StartupSessionMode
 import com.aicode.feature.settings.data.repository.ThemeSettingsRepository
+import com.aicode.feature.settings.data.repository.ToolSafetySettingsRepository
 import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
 import com.aicode.feature.settings.data.repository.ImageGenModelSettingsRepository
 import com.aicode.feature.settings.data.repository.VisionModelSettingsRepository
@@ -72,6 +80,7 @@ import com.aicode.feature.workspace.domain.repository.RemoteRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.ProviderBalanceResult
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
 import com.aicode.feature.settings.domain.service.ProviderBalanceRunner
@@ -185,7 +194,7 @@ data class TokenStatsUiState(
     val modelsPage: Int = 0,
     /** 模型总数。 */
     val modelsTotal: Int = 0,
-    /** 当前周期总费用（USD，按 models.dev 单价估算）。 */
+    /** 当前周期总费用（USD，渠道自定义单价优先，否则回退 models.dev 单价估算）。 */
     val totalCostUsd: Double = 0.0,
     /** 调用明细分页内每条记录的费用（key=记录 id，null=模型无单价）。 */
     val recentCallCosts: Map<Long, Double?> = emptyMap()
@@ -194,8 +203,7 @@ data class TokenStatsUiState(
 private data class ModelStatsPaging(
     val paged: List<com.aicode.feature.agent.data.local.dao.ModelCallStats>,
     val page: Int,
-    val total: Int,
-    val allModels: List<com.aicode.feature.agent.data.local.dao.ModelCallStats>
+    val total: Int
 )
 
 /** 技能列表页的 UI 状态：技能 + 来源作用域 + 启停状态。 */
@@ -218,6 +226,7 @@ data class SubAgentUiEntry(
     val providerId: String?,
     val model: String?,
     val reasoningEffort: String?,
+    val mode: AgentMode?,
     val allowedTools: List<String>,
     val disallowedTools: List<String>,
     val inject: Set<InjectPart>,
@@ -230,6 +239,13 @@ sealed interface SkillSaveState {
     data object Idle : SkillSaveState
     data object Saved : SkillSaveState
     data class Failed(val error: SkillSaveError) : SkillSaveState
+}
+
+/** 技能导入的 UI 状态：空闲 / 导入中 / 完成（含结果报告）。 */
+sealed interface SkillImportState {
+    data object Idle : SkillImportState
+    data object Running : SkillImportState
+    data class Done(val report: SkillImportReport) : SkillImportState
 }
 
 /** 子代理编辑页的保存结果：UI 据此决定是退回列表还是就地报错。 */
@@ -278,10 +294,12 @@ class SettingsViewModel @Inject constructor(
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
     private val screenOnSettingsRepository: ScreenOnSettingsRepository,
     private val agentSoundSettingsRepository: AgentSoundSettingsRepository,
+    private val generalSettingsRepository: GeneralSettingsRepository,
     private val languageSettingsRepository: LanguageSettingsRepository,
     private val mcpConfigRepository: McpConfigRepository,
     private val mcpManager: McpManager,
     private val permissionRulesRepository: PermissionRulesRepository,
+    private val toolSafetySettingsRepository: ToolSafetySettingsRepository,
     private val skillRepository: SkillRepository,
     private val agentDefinitionRepository: AgentDefinitionRepository,
     private val toolRegistry: ToolRegistry,
@@ -317,6 +335,12 @@ class SettingsViewModel @Inject constructor(
         const val CACHE_WRITE_MARKUP = 1.25
         /** 背景透明度停止拖动后的落盘延迟。 */
         const val BACKGROUND_ALPHA_WRITE_DEBOUNCE_MS = 80L
+
+        /** 技能文件导入接受的扩展名（小写，不含点）。 */
+        val MARKDOWN_EXTENSIONS = setOf("md", "markdown", "txt")
+
+        /** 技能压缩包导入接受的扩展名（小写，不含点）。 */
+        val ZIP_EXTENSIONS = setOf("zip")
     }
 
     /** 终端个性化配置。 */
@@ -440,6 +464,27 @@ class SettingsViewModel @Inject constructor(
     private val _agentSoundEnabled = MutableStateFlow(false)
     val agentSoundEnabled: StateFlow<Boolean> = _agentSoundEnabled.asStateFlow()
 
+    private val _autoRemoveStaleModels = MutableStateFlow(true)
+    val autoRemoveStaleModels: StateFlow<Boolean> = _autoRemoveStaleModels.asStateFlow()
+
+    private val _startupSessionMode = MutableStateFlow(StartupSessionMode.NEW_SESSION)
+    val startupSessionMode: StateFlow<StartupSessionMode> = _startupSessionMode.asStateFlow()
+
+    private val _firstByteTimeoutSec = MutableStateFlow(300)
+    val firstByteTimeoutSec: StateFlow<Int> = _firstByteTimeoutSec.asStateFlow()
+
+    private val _streamIdleTimeoutSec = MutableStateFlow(0)
+    val streamIdleTimeoutSec: StateFlow<Int> = _streamIdleTimeoutSec.asStateFlow()
+
+    private val _maxNetworkRetries = MutableStateFlow(6)
+    val maxNetworkRetries: StateFlow<Int> = _maxNetworkRetries.asStateFlow()
+
+    private val _enterToSend = MutableStateFlow(false)
+    val enterToSend: StateFlow<Boolean> = _enterToSend.asStateFlow()
+
+    private val _compactionThresholdPercent = MutableStateFlow(90)
+    val compactionThresholdPercent: StateFlow<Int> = _compactionThresholdPercent.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -473,6 +518,9 @@ class SettingsViewModel @Inject constructor(
     private val _skillSaveState = MutableStateFlow<SkillSaveState>(SkillSaveState.Idle)
     val skillSaveState: StateFlow<SkillSaveState> = _skillSaveState.asStateFlow()
 
+    private val _skillImportState = MutableStateFlow<SkillImportState>(SkillImportState.Idle)
+    val skillImportState: StateFlow<SkillImportState> = _skillImportState.asStateFlow()
+
     private val _subAgents = MutableStateFlow<List<SubAgentUiEntry>>(emptyList())
     val subAgents: StateFlow<List<SubAgentUiEntry>> = _subAgents.asStateFlow()
 
@@ -490,6 +538,7 @@ class SettingsViewModel @Inject constructor(
     private val _testResults = MutableStateFlow<Map<String, ModelTestResult>>(emptyMap())
     val testResults: StateFlow<Map<String, ModelTestResult>> = _testResults.asStateFlow()
 
+    /** 模型元数据缓存，键为 [modelMetadataKey]（渠道 + 模型）——单价与能力都可能因渠道而异。 */
     private val _modelMetadata = MutableStateFlow<Map<String, ModelMetadata>>(emptyMap())
     val modelMetadata: StateFlow<Map<String, ModelMetadata>> = _modelMetadata.asStateFlow()
 
@@ -510,6 +559,9 @@ class SettingsViewModel @Inject constructor(
 
     val currentProjectName: StateFlow<String?> = permissionRulesRepository.currentProjectNameFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _disableSafetyInterception = MutableStateFlow(false)
+    val disableSafetyInterception: StateFlow<Boolean> = _disableSafetyInterception.asStateFlow()
 
     private val _activeProfileId = MutableStateFlow(ContainerProfile.BUILTIN_ID)
     val activeProfileId: StateFlow<String> = _activeProfileId.asStateFlow()
@@ -697,6 +749,48 @@ class SettingsViewModel @Inject constructor(
             }
 
             launch {
+                generalSettingsRepository.autoRemoveStaleModelsFlow.collectLatest {
+                    _autoRemoveStaleModels.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.startupSessionModeFlow.collectLatest {
+                    _startupSessionMode.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.firstByteTimeoutSecFlow.collectLatest {
+                    _firstByteTimeoutSec.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.streamIdleTimeoutSecFlow.collectLatest {
+                    _streamIdleTimeoutSec.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.maxNetworkRetriesFlow.collectLatest {
+                    _maxNetworkRetries.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.enterToSendFlow.collectLatest {
+                    _enterToSend.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.compactionThresholdPercentFlow.collectLatest {
+                    _compactionThresholdPercent.value = it
+                }
+            }
+
+            launch {
                 themeSettingsRepository.themeModeFlow.collectLatest {
                     _themeMode.value = it
                 }
@@ -785,6 +879,12 @@ class SettingsViewModel @Inject constructor(
             }
 
             launch {
+                toolSafetySettingsRepository.disableSafetyInterceptionFlow.collectLatest {
+                    _disableSafetyInterception.value = it
+                }
+            }
+
+            launch {
                 _tokenStatsPeriod.flatMapLatest { period ->
                     val start = period.startMillis(System.currentTimeMillis())
                     val tz = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong()
@@ -802,27 +902,31 @@ class SettingsViewModel @Inject constructor(
                             val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
                             Triple(paged, safePage, total)
                         },
-                        combine(llmCallRecordDao.getModelStats(start), _modelStatsPage) { list, page ->
-                            val total = list.size
-                            val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
-                            val safePage = page.coerceIn(0, lastPage)
-                            val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
-                            ModelStatsPaging(paged, safePage, total, list)
-                        },
+                        combine(
+                            combine(llmCallRecordDao.getModelStats(start), _modelStatsPage) { list, page ->
+                                val total = list.size
+                                val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
+                                val safePage = page.coerceIn(0, lastPage)
+                                val paged = list.drop(safePage * STATS_PAGE_SIZE).take(STATS_PAGE_SIZE)
+                                ModelStatsPaging(paged, safePage, total)
+                            },
+                            // 总费用必须带渠道聚合：自定义单价按渠道存储，丢渠道就会取错价。
+                            llmCallRecordDao.getModelProviderCostStats(start)
+                        ) { modelPaging, costStats -> modelPaging to costStats },
                         // 明细分页：页号或总数变化时重查当前页，其余聚合不重复计算
                         combine(_tokenStatsPage, llmCallRecordDao.getCallsCount(start)) { page, total -> page to total }
                             .flatMapLatest { (page, total) ->
                                 llmCallRecordDao.getRecentCalls(start, CALLS_PAGE_SIZE, page * CALLS_PAGE_SIZE)
                                     .map { calls -> Triple(calls, total, page) }
                             }
-                    ) { rawTrend, summary, (pProviders, pPage, pTotal), modelPaging, (calls, total, page) ->
+                    ) { rawTrend, summary, (pProviders, pPage, pTotal), (modelPaging, costStats), (calls, total, page) ->
                         val trend = padTrend(period, rawTrend, tz)
                         val costs = withContext(Dispatchers.IO) {
                             val perCall = calls.associate {
                                 it.record.id to callCostUsd(it.record.providerId, it.record.model, it.record.inputTokens.toLong(), it.record.cachedInputTokens.toLong(), it.record.outputTokens.toLong(), it.record.cacheCreationTokens.toLong())
                             }
-                            val periodTotal = modelPaging.allModels.sumOf { m ->
-                                callCostUsd(null, m.model, m.inputTokens, m.cachedInputTokens, m.outputTokens, m.cacheCreationTokens) ?: 0.0
+                            val periodTotal = costStats.sumOf { s ->
+                                callCostUsd(s.providerId, s.model, s.inputTokens, s.cachedInputTokens, s.outputTokens, s.cacheCreationTokens) ?: 0.0
                             }
                             perCall to periodTotal
                         }
@@ -986,6 +1090,71 @@ class SettingsViewModel @Inject constructor(
         _skillSaveState.value = SkillSaveState.Idle
     }
 
+    /**
+     * 从所选 Markdown 文件导入技能：读取文本并写入指定作用域。
+     * 扩展名不在白名单内直接报「类型不支持」，不落盘。
+     */
+    fun importSkillFromMarkdown(uri: Uri, scope: SkillScope) {
+        if (_skillImportState.value is SkillImportState.Running) return
+        _skillImportState.value = SkillImportState.Running
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                val name = queryDisplayName(uri)
+                if (!name.hasExtension(MARKDOWN_EXTENSIONS)) {
+                    SkillImportReport(emptyList(), fatal = SkillImportError.UNSUPPORTED_FILE)
+                } else {
+                    runCatching {
+                        val text = context.contentResolver.openInputStream(uri)
+                            ?.bufferedReader()?.use { it.readText() }
+                            ?: throw java.io.IOException("openInputStream returned null")
+                        skillRepository.importMarkdown(text, name.substringBeforeLast('.'), scope)
+                    }.getOrElse { SkillImportReport(emptyList(), fatal = SkillImportError.IO_FAILED) }
+                }
+            }
+            finishSkillImport(report)
+        }
+    }
+
+    /** 从所选 zip 压缩包导入技能（可含多个技能），写入指定作用域。 */
+    fun importSkillsFromZip(uri: Uri, scope: SkillScope) {
+        if (_skillImportState.value is SkillImportState.Running) return
+        _skillImportState.value = SkillImportState.Running
+        viewModelScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                val name = queryDisplayName(uri)
+                if (!name.hasExtension(ZIP_EXTENSIONS)) {
+                    SkillImportReport(emptyList(), fatal = SkillImportError.UNSUPPORTED_FILE)
+                } else {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            skillRepository.importZip(input, name.substringBeforeLast('.'), scope)
+                        } ?: throw java.io.IOException("openInputStream returned null")
+                    }.getOrElse { SkillImportReport(emptyList(), fatal = SkillImportError.INVALID_ARCHIVE) }
+                }
+            }
+            finishSkillImport(report)
+        }
+    }
+
+    private suspend fun finishSkillImport(report: SkillImportReport) {
+        _skillImportState.value = SkillImportState.Done(report)
+        if (report.imported.isNotEmpty()) refreshSkills()
+    }
+
+    fun clearSkillImportState() {
+        _skillImportState.value = SkillImportState.Idle
+    }
+
+    /** 查询所选文件的显示名（含扩展名）；取不到时回退到 URI 末段。 */
+    private fun queryDisplayName(uri: Uri): String {
+        val queried = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        return queried ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+    }
+
     /** 重新扫描子代理定义（进入设置页 / 删除后调用，反映盘上增删改）。 */
     fun refreshSubAgents() {
         viewModelScope.launch {
@@ -999,11 +1168,12 @@ class SettingsViewModel @Inject constructor(
                         providerId = entry.definition.providerId,
                         model = entry.definition.model,
                         reasoningEffort = entry.definition.reasoningEffort,
+                        mode = entry.definition.mode,
                         allowedTools = entry.definition.allowedTools,
                         disallowedTools = entry.definition.disallowedTools,
                         inject = entry.definition.inject,
                         prompt = entry.definition.prompt,
-                        filePath = entry.definition.file?.absolutePath
+                        filePath = entry.definition.filePath
                     )
                 }
             }
@@ -1222,6 +1392,55 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** 拉取模型成功后是否自动移除远端已不存在的本地模型。 */
+    fun setAutoRemoveStaleModels(enabled: Boolean) {
+        viewModelScope.launch {
+            generalSettingsRepository.setAutoRemoveStaleModels(enabled)
+        }
+    }
+
+    /** 启动（含切换工作区）时进入新会话还是最近会话。 */
+    fun setStartupSessionMode(mode: StartupSessionMode) {
+        viewModelScope.launch {
+            generalSettingsRepository.setStartupSessionMode(mode)
+        }
+    }
+
+    /** 流式请求首字超时（秒）；0 表示不限制。 */
+    fun setFirstByteTimeoutSec(sec: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setFirstByteTimeoutSec(sec)
+        }
+    }
+
+    /** 流式响应相邻数据块间隔超时（秒）；0 表示不限制。 */
+    fun setStreamIdleTimeoutSec(sec: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setStreamIdleTimeoutSec(sec)
+        }
+    }
+
+    /** 网络请求最大重试次数；0 表示不重试。 */
+    fun setMaxNetworkRetries(count: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setMaxNetworkRetries(count)
+        }
+    }
+
+    /** 回车键是否直接发送消息。 */
+    fun setEnterToSend(enabled: Boolean) {
+        viewModelScope.launch {
+            generalSettingsRepository.setEnterToSend(enabled)
+        }
+    }
+
+    /** 自动压缩触发阈值（上下文窗口百分比，1..100）。 */
+    fun setCompactionThresholdPercent(percent: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setCompactionThresholdPercent(percent)
+        }
+    }
+
     fun setThemeMode(mode: AppThemeMode) {
         viewModelScope.launch {
             themeSettingsRepository.setThemeMode(mode)
@@ -1317,7 +1536,7 @@ class SettingsViewModel @Inject constructor(
                     port = conn.port,
                     username = conn.username,
                     password = conn.password,
-                    remoteWorkspacePath = ssh.remoteWorkspacePath.ifBlank { "/home/${conn.username}/workspace" }
+                    remoteWorkspacePath = ssh.remoteWorkspacePath.ifBlank { DEFAULT_REMOTE_WORKSPACE_ROOT }
                 )
                 executionModeRepository.setRemoteConnection(settings)
                 executionModeRepository.setExecutionMode(ExecutionMode.REMOTE_SSH)
@@ -1729,7 +1948,9 @@ class SettingsViewModel @Inject constructor(
         if (normalizedIds.isEmpty()) return
         viewModelScope.launch {
             val metadata = modelMetadataService.resolveAll(providerId, type, normalizedIds)
-            _modelMetadata.update { current -> current + metadata }
+            _modelMetadata.update { current ->
+                current + metadata.mapKeys { (model, _) -> modelMetadataKey(providerId, model) }
+            }
         }
     }
 
@@ -1752,7 +1973,8 @@ class SettingsViewModel @Inject constructor(
             for (provider in enabled) {
                 val ids = provider.models.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
                 if (ids.isEmpty()) continue
-                resolved += modelMetadataService.resolveAll(provider.id, provider.type, ids)
+                modelMetadataService.resolveAll(provider.id, provider.type, ids)
+                    .forEach { (model, meta) -> resolved[modelMetadataKey(provider.id, model)] = meta }
             }
             if (resolved.isNotEmpty()) {
                 _modelMetadata.update { it + resolved }
@@ -1852,6 +2074,10 @@ class SettingsViewModel @Inject constructor(
         val name = currentProjectName.value ?: return
         viewModelScope.launch { permissionRulesRepository.promoteToGlobal(name, rule) }
     }
+
+    fun setDisableSafetyInterception(disabled: Boolean) {
+        viewModelScope.launch { toolSafetySettingsRepository.setDisableSafetyInterception(disabled) }
+    }
 }
 
 /** 读取公告 md（zh 用中文版，其余英文版）；跟随系统语言时按系统语言判断。读取失败返回空串（空内容不弹窗）。 */
@@ -1869,3 +2095,10 @@ private fun sha256(text: String): String =
     java.security.MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray())
         .joinToString("") { "%02x".format(it) }
+
+/** 文件名的扩展名（小写，不含点）是否在 [exts] 白名单内。 */
+private fun String.hasExtension(exts: Set<String>): Boolean {
+    val dot = lastIndexOf('.')
+    if (dot < 0 || dot == length - 1) return false
+    return substring(dot + 1).lowercase() in exts
+}

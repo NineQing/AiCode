@@ -104,6 +104,7 @@ export default defineConfig({
           items: [
             { text: '快速上手', link: '/guide/quick-start' },
             { text: '功能总览', link: '/guide/overview' },
+            { text: '视频教程', link: '/guide/video-tutorials' },
             { text: '免费提供商', link: '/guide/free-providers' },
           ]
         },
@@ -152,6 +153,7 @@ export default defineConfig({
             { text: '工具授权', link: '/guide/permissions' },
             { text: '软件权限', link: '/guide/app-permissions' },
             { text: '外观与语言', link: '/guide/appearance' },
+            { text: '通用设置', link: '/guide/general' },
             { text: '常见错误提示', link: '/guide/error-codes' },
             { text: '日志与故障排查', link: '/guide/logs' },
             { text: '存储空间', link: '/guide/storage' },
@@ -165,6 +167,7 @@ export default defineConfig({
           text: '环境搭建',
           items: [
             { text: '在容器中编译 Android 应用', link: '/advanced/build-android-app' },
+            { text: '在容器中编译 Flutter 应用', link: '/advanced/build-flutter-app' },
             { text: '安装 Playwright 浏览器自动化', link: '/advanced/playwright-mcp' }
           ]
         },

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -124,6 +125,7 @@ import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.data.repository.ProxyConfig
 import com.aicode.feature.settings.domain.model.ProxyType
 import com.aicode.feature.settings.domain.model.mergeModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.sanitized
 import com.aicode.feature.settings.presentation.FetchState
 import com.aicode.feature.settings.presentation.SettingsViewModel
@@ -174,7 +176,9 @@ fun ProviderEditorScreen(
      */
     presetPrefill: ProviderPreset? = null,
     initialTab: Int = 0,
-    onboardingStep: OnboardingStep? = null
+    onboardingStep: OnboardingStep? = null,
+    onOnboardingModelAdded: (() -> Unit)? = null,
+    onOnboardingDismissFetchDialog: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -187,8 +191,10 @@ fun ProviderEditorScreen(
     var multiKeyEnabled by remember { mutableStateOf(initialProvider?.multiKeyEnabled ?: false) }
     val apiKeys = remember { mutableStateListOf<String>().apply { addAll(initialProvider?.apiKeys ?: emptyList()) } }
     var keyRotationStrategy by remember { mutableStateOf(initialProvider?.keyRotationStrategy ?: KeyRotationStrategy.SEQUENTIAL) }
-    var keyFailoverThreshold by remember { mutableIntStateOf(initialProvider?.keyFailoverThreshold ?: 2) }
     var keyCooldownMinutes by remember { mutableIntStateOf(initialProvider?.keyCooldownMinutes ?: 5) }
+    var keySwitchStatusCodes by remember {
+        mutableStateOf(initialProvider?.keySwitchStatusCodes?.joinToString(",") ?: "")
+    }
     var baseUrl by remember { mutableStateOf(initialProvider?.baseUrl ?: presetPrefill?.baseUrl ?: "") }
     var useFullUrl by remember { mutableStateOf(initialProvider?.useFullUrl ?: false) }
     var useResponseApi by remember { mutableStateOf(initialProvider?.useResponseApi ?: false) }
@@ -252,6 +258,7 @@ fun ProviderEditorScreen(
     }
 
     val fetchState by viewModel.fetchState.collectAsStateWithLifecycle()
+    val autoRemoveStaleModels by viewModel.autoRemoveStaleModels.collectAsStateWithLifecycle()
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val proxyTestState by viewModel.proxyTestState.collectAsStateWithLifecycle()
@@ -295,8 +302,8 @@ fun ProviderEditorScreen(
         multiKeyEnabled = multiKeyEnabled,
         apiKeys = apiKeys.toList(),
         keyRotationStrategy = keyRotationStrategy,
-        keyFailoverThreshold = keyFailoverThreshold,
         keyCooldownMinutes = keyCooldownMinutes,
+        keySwitchStatusCodes = keySwitchStatusCodes.split(",").mapNotNull { it.trim().toIntOrNull() },
         baseUrl = baseUrl.ifBlank { defaultProviderBaseUrl(type) },
         useFullUrl = useFullUrl,
         isEnabled = isEnabled,
@@ -335,6 +342,25 @@ fun ProviderEditorScreen(
     fun saveCurrent() {
         if (!hasSubstantiveInput()) return
         onSave(currentConfig())
+    }
+
+    // 拉取成功后自动对齐：远端已不存在的本地模型直接移除（可在「通用设置」关掉）。拉取失败或返回空列表时不动列表。
+    LaunchedEffect(fetchState, showFetchDialog, autoRemoveStaleModels) {
+        if (!autoRemoveStaleModels) return@LaunchedEffect
+        val state = fetchState
+        if (!showFetchDialog || state !is FetchState.Success) return@LaunchedEffect
+        val remote = state.models.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (remote.isEmpty()) return@LaunchedEffect
+        val stale = models.filterNot { it in remote }
+        if (stale.isNotEmpty()) {
+            models.removeAll(stale)
+            saveCurrent()
+            Toast.makeText(
+                context,
+                context.getString(R.string.provider_models_aligned_removed, stale.size),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     val modelsReorderableState = rememberReorderableLazyListState(modelsListState) { from, to ->
@@ -794,7 +820,7 @@ fun ProviderEditorScreen(
                                     ) {
                                         ProviderModelRow(
                                             model = model,
-                                            metadata = mergeModelMetadata(model, modelMetadata[model], customMetadata["$providerId:$model"]),
+                                            metadata = mergeModelMetadata(model, modelMetadata[modelMetadataKey(providerId, model)], customMetadata[modelMetadataKey(providerId, model)]),
                                             testing = model in testing,
                                             result = testResults[model],
                                             onTest = { viewModel.testModel(currentConfig(), model) },
@@ -892,12 +918,12 @@ fun ProviderEditorScreen(
         ProviderKeysPage(
             keys = apiKeys,
             strategy = keyRotationStrategy,
-            failoverThreshold = keyFailoverThreshold,
             cooldownMinutes = keyCooldownMinutes,
+            switchStatusCodes = keySwitchStatusCodes,
             onBack = { showKeysPage = false },
             onSetStrategy = { keyRotationStrategy = it },
-            onSetFailoverThreshold = { keyFailoverThreshold = it },
-            onSetCooldownMinutes = { keyCooldownMinutes = it }
+            onSetCooldownMinutes = { keyCooldownMinutes = it },
+            onSetSwitchStatusCodes = { keySwitchStatusCodes = it }
         )
     }
 
@@ -951,7 +977,7 @@ fun ProviderEditorScreen(
                 } else {
                     stringResource(R.string.common_add)
                 },
-                initial = editingModel?.let { mergeModelMetadata(it, modelMetadata[it], customMetadata["$providerId:$it"]) },
+                initial = editingModel?.let { mergeModelMetadata(it, modelMetadata[modelMetadataKey(providerId, it)], customMetadata[modelMetadataKey(providerId, it)]) },
                 onSave = { model, meta ->
                     val editing = editingModel
                     if (editing != null && model != editing) {
@@ -984,6 +1010,7 @@ fun ProviderEditorScreen(
         key(fetchDialogKey) {
             FetchModelsDialog(
                 fetchState = fetchState,
+                providerId = providerId,
                 modelMetadata = modelMetadata,
                 existingModels = models,
                 isOnboarding = onboardingStep == OnboardingStep.SIMULATE_FETCH_DIALOG,
@@ -997,7 +1024,9 @@ fun ProviderEditorScreen(
                 onDismiss = {
                     showFetchDialog = false
                     viewModel.resetFetchState()
-                }
+                },
+                onOnboardingModelAdded = onOnboardingModelAdded,
+                onOnboardingDismissFetchDialog = onOnboardingDismissFetchDialog
             )
         }
     }
@@ -1260,12 +1289,15 @@ private fun CapabilitySwitchRow(
 @Composable
 private fun FetchModelsDialog(
     fetchState: FetchState,
+    providerId: String,
     modelMetadata: Map<String, ModelMetadata>,
     existingModels: List<String>,
     onFetchModels: () -> Unit,
     onAddModel: (String) -> Unit,
     onDismiss: () -> Unit,
-    isOnboarding: Boolean = false
+    isOnboarding: Boolean = false,
+    onOnboardingModelAdded: (() -> Unit)? = null,
+    onOnboardingDismissFetchDialog: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState()
@@ -1285,7 +1317,12 @@ private fun FetchModelsDialog(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            onDismiss()
+            if (isOnboarding) {
+                onOnboardingDismissFetchDialog?.invoke()
+            }
+        },
         sheetState = sheetState,
         containerColor = settingsPageBackground()
     ) {
@@ -1316,14 +1353,14 @@ private fun FetchModelsDialog(
                 }
                 is FetchState.Error -> {
                     if (isOnboarding) {
-                        // 引导模式下未配置有效 Key 时，友好呈现推荐模型行供新手继续真实体验
-                        val fallbackModels = listOf("claude-3-5-sonnet", "gpt-4o", "gemini-1.5-pro").filter { it !in existingModels }
+                        // 引导模式下未配置有效 Key 时，呈现 DeepSeek 推荐模型演示供新手继续体验
+                        val fallbackModels = listOf("deepseek-v4-flash").filter { it !in existingModels }
                         val grouped = fallbackModels.groupBy { m -> modelBrandKey(m) }
                             .toSortedMap(compareBy<String> { it == "other" }.thenBy { brandDisplayName(context, it) })
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 320.dp, max = 420.dp),
+                                .heightIn(min = 180.dp, max = 420.dp),
                             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                         ) {
                             grouped.forEach { (brandKey, models) ->
@@ -1343,6 +1380,9 @@ private fun FetchModelsDialog(
                                                 onAdd = {
                                                     onAddModel(m)
                                                     onDismiss()
+                                                    if (isOnboarding) {
+                                                        onOnboardingModelAdded?.invoke()
+                                                    }
                                                 },
                                                 modifier = if (isFirstTarget) Modifier.onboardingTarget(OnboardingStep.SIMULATE_FETCH_DIALOG) else Modifier
                                             )
@@ -1405,7 +1445,7 @@ private fun FetchModelsDialog(
                 is FetchState.Success -> {
                     val rawModels = fetchState.models.filter { it !in existingModels && it.contains(searchQuery, ignoreCase = true) }
                     val newModels = if (rawModels.isEmpty() && isOnboarding) {
-                        listOf("claude-3-5-sonnet", "gpt-4o").filter { it !in existingModels }
+                        listOf("deepseek-v4-flash").filter { it !in existingModels }
                     } else rawModels
                     if (newModels.isEmpty()) {
                         SettingsGroup {
@@ -1442,10 +1482,13 @@ private fun FetchModelsDialog(
                                             val isFirstTarget = isOnboarding && brandKey == grouped.firstKey() && index == 0
                                             FetchModelRow(
                                                 model = m,
-                                                metadata = modelMetadata[m],
+                                                metadata = modelMetadata[modelMetadataKey(providerId, m)],
                                                 onAdd = {
                                                     onAddModel(m)
-                                                    if (isOnboarding) onDismiss()
+                                                    if (isOnboarding) {
+                                                        onDismiss()
+                                                        onOnboardingModelAdded?.invoke()
+                                                    }
                                                 },
                                                 modifier = if (isFirstTarget) Modifier.onboardingTarget(OnboardingStep.SIMULATE_FETCH_DIALOG) else Modifier
                                             )
@@ -1738,7 +1781,7 @@ private fun keyRotationStrategyLabel(strategy: KeyRotationStrategy): String = st
 )
 
 /**
- * 多 Key 管理子页：Key 列表增删 + 取用策略 + 失败切换阈值 + 冷却时长。
+ * 多 Key 管理子页：Key 列表增删 + 取用策略 + 切换状态码 + 冷却时长。
  * 与代理页同一模式——就地渲染的内嵌页，改动写回编辑器状态，随提供商一起保存。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1746,12 +1789,12 @@ private fun keyRotationStrategyLabel(strategy: KeyRotationStrategy): String = st
 private fun ProviderKeysPage(
     keys: MutableList<String>,
     strategy: KeyRotationStrategy,
-    failoverThreshold: Int,
     cooldownMinutes: Int,
+    switchStatusCodes: String,
     onBack: () -> Unit,
     onSetStrategy: (KeyRotationStrategy) -> Unit,
-    onSetFailoverThreshold: (Int) -> Unit,
-    onSetCooldownMinutes: (Int) -> Unit
+    onSetCooldownMinutes: (Int) -> Unit,
+    onSetSwitchStatusCodes: (String) -> Unit
 ) {
     var keysVisible by remember { mutableStateOf(false) }
     Scaffold(
@@ -1788,6 +1831,7 @@ private fun ProviderKeysPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl),
@@ -1858,12 +1902,11 @@ private fun ProviderKeysPage(
 
             SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_failover))
             SettingsGroup {
-                StepperRow(
-                    title = stringResource(R.string.provider_multi_key_threshold),
-                    subtitle = stringResource(R.string.provider_multi_key_threshold_desc),
-                    valueText = stringResource(R.string.provider_multi_key_threshold_value, failoverThreshold),
-                    onDecrease = { onSetFailoverThreshold((failoverThreshold - 1).coerceAtLeast(1)) },
-                    onIncrease = { onSetFailoverThreshold((failoverThreshold + 1).coerceAtMost(10)) }
+                ProviderTextFieldRow(
+                    label = stringResource(R.string.provider_multi_key_status_codes),
+                    value = switchStatusCodes,
+                    onValueChange = { input -> onSetSwitchStatusCodes(input.filter { it.isDigit() || it == ',' }) },
+                    placeholder = stringResource(R.string.provider_multi_key_status_codes_hint)
                 )
                 SettingsDivider()
                 StepperRow(

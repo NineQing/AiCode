@@ -170,6 +170,7 @@ internal class GeminiInteractionsStreamAccumulator {
     }
 
     private val steps = LinkedHashMap<Int, StepAcc>()
+    private val budget = StreamBudget()
     private var status: String? = null
     private var statusDetail: String? = null
     private var usage = InteractionsUsage()
@@ -203,14 +204,16 @@ internal class GeminiInteractionsStreamAccumulator {
                     acc.name = name
                 }
                 step.str("signature")?.let { acc.signature = it }
-                step.obj("arguments")?.let { acc.argsComplete = it.toString() }
+                step.obj("arguments")?.let { budget.add(it.toString()); acc.argsComplete = it.toString() }
                 // 兜底：部分实现直接在 step.start 的 content 里带完整正文（随后没有 delta），
                 // 此时文本增量拿不到正文。仅在尚未累积到时提取，避免与 delta 双写。
                 if (acc.text.isEmpty()) {
                     step.arr("content")?.forEach { block ->
                         val content = block.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
                         if (content.str("type") == InteractionContent.TEXT) {
-                            acc.text.append(content.str("text").orEmpty())
+                            val text = content.str("text").orEmpty()
+                            budget.add(text)
+                            acc.text.append(text)
                         }
                     }
                 }
@@ -224,6 +227,7 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.TEXT -> {
                         val text = delta.str("text").orEmpty()
                         if (text.isEmpty()) return null
+                        budget.add(text)
                         acc.text.append(text)
                         return InteractionsDelta.Text(text)
                     }
@@ -232,6 +236,7 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.THOUGHT_SUMMARY, InteractionDelta.THOUGHT -> {
                         val text = delta.obj("content")?.str("text") ?: delta.str("text").orEmpty()
                         if (text.isEmpty()) return null
+                        budget.add(text)
                         acc.summary.append(text)
                         return InteractionsDelta.Reasoning(text)
                     }
@@ -239,8 +244,11 @@ internal class GeminiInteractionsStreamAccumulator {
                     InteractionDelta.THOUGHT_SIGNATURE ->
                         delta.str("signature")?.let { acc.signature = it }
 
-                    InteractionDelta.ARGUMENTS, InteractionDelta.ARGUMENTS_LEGACY ->
-                        acc.argsDelta.append(delta.str("arguments") ?: delta.str("partial_arguments").orEmpty())
+                    InteractionDelta.ARGUMENTS, InteractionDelta.ARGUMENTS_LEGACY -> {
+                        val args = delta.str("arguments") ?: delta.str("partial_arguments").orEmpty()
+                        budget.add(args)
+                        acc.argsDelta.append(args)
+                    }
                 }
             }
 

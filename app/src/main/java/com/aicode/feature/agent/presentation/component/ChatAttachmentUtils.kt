@@ -6,6 +6,8 @@ import android.provider.OpenableColumns
 import com.aicode.R
 import com.aicode.feature.agent.domain.model.AgentImage
 import com.aicode.feature.agent.presentation.AgentAttachment
+import com.aicode.feature.workspace.domain.FileAccessProvider
+import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import java.io.File
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
@@ -133,15 +135,6 @@ internal fun hasAttachmentSlots(currentCount: Int): Boolean =
 private fun imageLimitError(context: Context): String =
     context.getString(R.string.chat_image_too_large, formatBytes(MAX_IMAGE_UPLOAD_BYTES))
 
-private fun attachmentsRoot(workspace: File): File =
-    File(File(workspace, ".aicode"), "attachments").apply { mkdirs() }
-
-private fun workspaceContainerPath(relativePath: String): String =
-    "~/workspace/$relativePath"
-
-private fun attachmentRelativePath(workspace: File, target: File): String =
-    target.relativeTo(workspace).invariantSeparatorsPath
-
 private fun pickedFileToastPath(context: Context, path: String): String =
     context.getString(R.string.chat_uploaded_to, path)
 
@@ -150,9 +143,6 @@ internal fun emptyWorkspaceMessage(context: Context): String =
 
 internal fun unreadableFileMessage(context: Context): String =
     context.getString(R.string.chat_read_file_failed)
-
-private fun unavailableWorkspaceMessage(context: Context): String =
-    context.getString(R.string.chat_workspace_unavailable)
 
 internal fun uploadFallbackError(context: Context): String =
     context.getString(R.string.chat_upload_failed)
@@ -180,51 +170,55 @@ private fun fileMimeType(context: Context, uri: Uri, fileName: String): String =
 internal suspend fun copyUriToWorkspace(
     context: Context,
     uri: Uri,
-    workspacePath: String,
+    fileAccess: FileAccessProvider,
     includeImageData: Boolean = false
 ): UploadedWorkspaceFile = withContext(Dispatchers.IO) {
-    val workspace = File(workspacePath)
-    require(workspace.isDirectory) { unavailableWorkspaceMessage(context) }
+    val attachmentsDir = "${WorkspacePathMapper.CONTAINER_ROOT}/.aicode/attachments"
+    val fileName = uniqueUploadName(fileAccess, attachmentsDir, safeUploadFileName(context, uri))
+    val containerPath = "$attachmentsDir/$fileName"
 
-    val uploadsDir = attachmentsRoot(workspace)
-    val target = uniqueUploadFile(uploadsDir, safeUploadFileName(context, uri))
-
-    val input = context.contentResolver.openInputStream(uri) ?: error(unreadableFileMessage(context))
-    input.use { source ->
-        target.outputStream().use { output ->
-            source.copyTo(output)
-        }
-    }
-
-    val relativePath = attachmentRelativePath(workspace, target)
     val mimeType = if (includeImageData) {
-        runCatching { imageMimeType(context, uri, target.name) }
-            .getOrElse { error ->
-                runCatching { target.delete() }
-                throw error
-            }
+        imageMimeType(context, uri, fileName)
     } else {
-        fileMimeType(context, uri, target.name)
+        fileMimeType(context, uri, fileName)
     }
-    val image = if (includeImageData) {
-        if (target.length() > MAX_IMAGE_UPLOAD_BYTES) {
-            runCatching { target.delete() }
-            error(imageLimitError(context))
-        }
-        AgentImage(
+
+    // 图片要整份读进来做 base64，先按 provider 报的大小拦一道；SIZE 拿不到时下面还有兜底判断。
+    if (includeImageData) {
+        val declared = context.contentSize(uri)
+        if (declared != null && declared > MAX_IMAGE_UPLOAD_BYTES) error(imageLimitError(context))
+    }
+
+    val sizeBytes: Long
+    val image: AgentImage?
+    if (includeImageData) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error(unreadableFileMessage(context))
+        if (bytes.size > MAX_IMAGE_UPLOAD_BYTES) error(imageLimitError(context))
+        fileAccess.writeBytes(containerPath, bytes, overwrite = true)
+        sizeBytes = bytes.size.toLong()
+        image = AgentImage(
             mimeType = mimeType,
-            base64Data = Base64.getEncoder().encodeToString(target.readBytes()),
-            path = workspaceContainerPath(relativePath)
+            base64Data = Base64.getEncoder().encodeToString(bytes),
+            path = containerPath
         )
     } else {
-        null
+        // 普通附件流式落盘：不再整份读进内存，于是文件多大都不会顶爆堆
+        sizeBytes = context.contentResolver.openInputStream(uri)?.use { input ->
+            fileAccess.writeStream(containerPath, input, overwrite = true)
+        } ?: error(unreadableFileMessage(context))
+        image = null
     }
+
+    // 缩略图与图片数据需要本地文件：本地模式直接给宿主文件，远程模式下载到临时文件
+    val localFile = fileAccess.copyToLocal(containerPath)
+
     UploadedWorkspaceFile(
-        fileName = target.name,
-        containerPath = workspaceContainerPath(relativePath),
-        localPath = target.absolutePath,
+        fileName = fileName,
+        containerPath = containerPath,
+        localPath = localFile.absolutePath,
         mimeType = mimeType,
-        sizeBytes = target.length(),
+        sizeBytes = sizeBytes,
         image = image
     )
 }
@@ -236,6 +230,13 @@ private fun Context.displayName(uri: Uri): String {
     }.orEmpty()
 }
 
+private fun Context.contentSize(uri: Uri): Long? {
+    return contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+        if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) cursor.getLong(index) else null
+    }
+}
+
 private fun sanitizeUploadFileName(name: String): String {
     val cleaned = name
         .map { ch -> if (ch.code < 32 || ch in "\\/:*?\"<>|") '_' else ch }
@@ -245,19 +246,17 @@ private fun sanitizeUploadFileName(name: String): String {
     return cleaned.ifBlank { "upload" }.take(160)
 }
 
-private fun uniqueUploadFile(dir: File, fileName: String): File {
-    var candidate = File(dir, fileName)
-    if (!candidate.exists()) return candidate
+private fun uniqueUploadName(fileAccess: FileAccessProvider, dir: String, fileName: String): String {
+    if (!fileAccess.exists("$dir/$fileName")) return fileName
 
     val dotIndex = fileName.lastIndexOf('.')
     val stem = if (dotIndex > 0) fileName.substring(0, dotIndex) else fileName
     val extension = if (dotIndex > 0) fileName.substring(dotIndex) else ""
     var index = 1
-    while (candidate.exists()) {
-        candidate = File(dir, "$stem-$index$extension")
+    while (fileAccess.exists("$dir/$stem-$index$extension")) {
         index += 1
     }
-    return candidate
+    return "$stem-$index$extension"
 }
 
 private fun resolveImageMimeType(context: Context, uri: Uri, fileName: String): String {

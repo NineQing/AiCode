@@ -10,7 +10,7 @@ import com.aicode.feature.agent.data.remote.openai.OpenAIApi
 import com.aicode.feature.agent.domain.model.AgentContext
 import com.aicode.feature.agent.domain.model.AgentImage
 import com.aicode.feature.agent.domain.provider.enrichWithHttpErrorBody
-import com.aicode.feature.agent.domain.provider.isApiKeyFailure
+import com.aicode.feature.agent.domain.provider.isKeySwitchFailure
 import com.aicode.feature.agent.domain.provider.joinUrl
 import com.aicode.feature.agent.domain.provider.parseInteractionSteps
 import com.aicode.feature.agent.domain.provider.resolveCustomHeaders
@@ -225,14 +225,13 @@ class GenerateImageTool @Inject constructor(
                 extraHeaders = resolveCustomHeaders(provider.customHeaders, context.sessionId, activeApiKey),
                 request = request
             )
-            keyRotator.reportSuccess(provider.id, activeApiKey)
             AILogger.logResponse(context.sessionId, provider.id, response, seq)
             buildSuccess(response, n, outputPath, model)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val enriched = e.enrichWithHttpErrorBody()
-            if (activeApiKey.isNotEmpty() && enriched.isApiKeyFailure()) {
+            if (activeApiKey.isNotEmpty() && enriched.isKeySwitchFailure()) {
                 keyRotator.reportFailure(lastProviderId, context.sessionId, activeApiKey)
             }
             FileLogger.e(TAG, "generateImage 失败", enriched)
@@ -358,7 +357,6 @@ class GenerateImageTool @Inject constructor(
                     extraHeaders = resolveCustomHeaders(provider.customHeaders, sessionId, apiKey),
                     request = request
                 )
-                keyRotator.reportSuccess(provider.id, apiKey)
                 AILogger.logResponse(sessionId, provider.id, response, lastSeq)
                 val status = response.get("status")?.takeIf { it.isJsonPrimitive }?.asString
                 if (status == "failed" || status == "cancelled" || status == "budget_exceeded") {
@@ -390,7 +388,7 @@ class GenerateImageTool @Inject constructor(
             throw e
         } catch (e: Exception) {
             val enriched = e.enrichWithHttpErrorBody()
-            if (enriched.isApiKeyFailure()) keyRotator.reportFailure(provider.id, sessionId, apiKey)
+            if (enriched.isKeySwitchFailure()) keyRotator.reportFailure(provider.id, sessionId, apiKey)
             FileLogger.e(TAG, "generateImage(Gemini) 失败", enriched)
             AILogger.logError(sessionId, provider.id, enriched, lastSeq)
             if (agentImages.isNotEmpty()) {
@@ -440,7 +438,6 @@ class GenerateImageTool @Inject constructor(
                     extraHeaders = resolveCustomHeaders(provider.customHeaders, sessionId, apiKey),
                     request = request
                 )
-                keyRotator.reportSuccess(provider.id, apiKey)
                 AILogger.logResponse(sessionId, provider.id, response, lastSeq)
                 val beforeCount = agentImages.size
                 extractGenerateContentImageData(response).forEach { base64 ->
@@ -458,7 +455,7 @@ class GenerateImageTool @Inject constructor(
             throw e
         } catch (e: Exception) {
             val enriched = e.enrichWithHttpErrorBody()
-            if (enriched.isApiKeyFailure()) keyRotator.reportFailure(provider.id, sessionId, apiKey)
+            if (enriched.isKeySwitchFailure()) keyRotator.reportFailure(provider.id, sessionId, apiKey)
             FileLogger.e(TAG, "generateImage(Gemini) 失败", enriched)
             AILogger.logError(sessionId, provider.id, enriched, lastSeq)
             if (agentImages.isNotEmpty()) {

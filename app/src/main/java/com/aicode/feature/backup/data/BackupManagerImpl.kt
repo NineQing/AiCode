@@ -33,6 +33,7 @@ import com.aicode.feature.settings.data.local.dao.AIProviderDao
 import com.aicode.feature.settings.data.local.entity.AIProviderEntity
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.aicode.feature.settings.data.repository.AgentSoundSettingsRepository
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.settings.data.repository.KeepaliveSettingsRepository
 import com.aicode.feature.settings.data.repository.ScreenOnSettingsRepository
 import com.aicode.feature.settings.data.repository.LogSettingsRepository
@@ -82,6 +83,7 @@ class BackupManagerImpl @Inject constructor(
     private val keepaliveSettingsRepository: KeepaliveSettingsRepository,
     private val screenOnSettingsRepository: ScreenOnSettingsRepository,
     private val agentSoundSettingsRepository: AgentSoundSettingsRepository,
+    private val generalSettingsRepository: GeneralSettingsRepository,
     private val logSettingsRepository: LogSettingsRepository,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
     private val compactionModelSettingsRepository: CompactionModelSettingsRepository,
@@ -332,6 +334,13 @@ class BackupManagerImpl @Inject constructor(
         keepaliveEnabled = if (options.appSettings) keepaliveSettingsRepository.snapshot() else false,
         screenOnEnabled = if (options.appSettings) screenOnSettingsRepository.snapshot() else false,
         agentSoundEnabled = if (options.appSettings) agentSoundSettingsRepository.snapshot() else false,
+        autoRemoveStaleModels = if (options.appSettings) generalSettingsRepository.autoRemoveStaleModelsSnapshot() else true,
+        startupSessionMode = if (options.appSettings) generalSettingsRepository.startupSessionModeSnapshot() else null,
+        firstByteTimeoutSec = if (options.appSettings) generalSettingsRepository.firstByteTimeoutSecSnapshot() else 300,
+        streamIdleTimeoutSec = if (options.appSettings) generalSettingsRepository.streamIdleTimeoutSecSnapshot() else 0,
+        maxNetworkRetries = if (options.appSettings) generalSettingsRepository.maxNetworkRetriesSnapshot() else 6,
+        enterToSend = if (options.appSettings) generalSettingsRepository.enterToSendSnapshot() else false,
+        compactionThresholdPercent = if (options.appSettings) generalSettingsRepository.compactionThresholdPercentSnapshot() else 90,
         logLevel = if (options.appSettings) logSettingsRepository.snapshot() else null,
         visionProviderId = if (options.appSettings) visionModelSettingsRepository.getVisionProviderId() else "",
         visionModel = if (options.appSettings) visionModelSettingsRepository.getVisionModel() else "",
@@ -606,6 +615,13 @@ class BackupManagerImpl @Inject constructor(
         keepaliveSettingsRepository.restore(meta.keepaliveEnabled)
         screenOnSettingsRepository.restore(meta.screenOnEnabled)
         agentSoundSettingsRepository.restore(meta.agentSoundEnabled)
+        generalSettingsRepository.restoreAutoRemoveStaleModels(meta.autoRemoveStaleModels)
+        generalSettingsRepository.restoreStartupSessionMode(meta.startupSessionMode)
+        generalSettingsRepository.restoreFirstByteTimeoutSec(meta.firstByteTimeoutSec)
+        generalSettingsRepository.restoreStreamIdleTimeoutSec(meta.streamIdleTimeoutSec)
+        generalSettingsRepository.restoreMaxNetworkRetries(meta.maxNetworkRetries)
+        generalSettingsRepository.restoreEnterToSend(meta.enterToSend)
+        generalSettingsRepository.restoreCompactionThresholdPercent(meta.compactionThresholdPercent)
         logSettingsRepository.restore(meta.logLevel)
         if (meta.visionProviderId.isNotBlank() || meta.visionModel.isNotBlank()) {
             visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel)
@@ -727,7 +743,8 @@ class BackupManagerImpl @Inject constructor(
         keyRotationStrategy = keyRotationStrategy,
         keyFailoverThreshold = keyFailoverThreshold,
         keyCooldownMinutes = keyCooldownMinutes,
-        scriptParams = scriptParams
+        scriptParams = scriptParams,
+        keySwitchStatusCodes = keySwitchStatusCodes
     )
 
     private fun ProviderDto.toEntity() = AIProviderEntity(
@@ -752,7 +769,8 @@ class BackupManagerImpl @Inject constructor(
         keyRotationStrategy = keyRotationStrategy ?: "SEQUENTIAL",
         keyFailoverThreshold = keyFailoverThreshold ?: 2,
         keyCooldownMinutes = keyCooldownMinutes ?: 5,
-        scriptParams = scriptParams ?: ""
+        scriptParams = scriptParams ?: "",
+        keySwitchStatusCodes = keySwitchStatusCodes ?: ""
     )
 
     private fun RemoteConnectionEntity.toDto() = RemoteConnectionDto(

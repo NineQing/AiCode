@@ -13,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.InputStream
 import java.nio.charset.Charset
 
 /**
@@ -49,6 +50,8 @@ class ListFilesToolTest {
         override fun permissions(path: String): String = throw UnsupportedOperationException()
         override fun readBytes(path: String): ByteArray = throw UnsupportedOperationException()
         override fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean) = throw UnsupportedOperationException()
+        override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long = throw UnsupportedOperationException()
+        override fun listFilesRecursive(path: String, maxDepth: Int): List<String> = emptyList()
         override fun copyToLocal(path: String): File = throw UnsupportedOperationException()
         override fun delete(path: String) = throw UnsupportedOperationException()
         override fun mkdirs(path: String) = throw UnsupportedOperationException()

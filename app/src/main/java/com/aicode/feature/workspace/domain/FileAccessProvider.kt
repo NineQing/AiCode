@@ -1,6 +1,7 @@
 package com.aicode.feature.workspace.domain
 
 import java.io.File
+import java.io.InputStream
 import java.nio.charset.Charset
 
 /** 目录条目信息，供 [FileAccessProvider.listFiles] 返回。 */
@@ -33,13 +34,16 @@ data class FileEntry(
  */
 interface FileAccessProvider {
 
-    /** 读取文件全文文本。文件不存在时抛 [NoSuchFileException]。 */
+    /**
+     * 读取文件全文文本。文件不存在时抛 [NoSuchFileException]。
+     * 远程模式对超过实现上限的文件抛 [RemoteOutputTooLargeException]，避免整篇读进内存。
+     */
     fun readFile(path: String): String
 
     /**
-     * 逐行读取文件，供 [ReadFileTool] 按行窗口读取。
-     * 返回行序列；文件不存在时抛 [NoSuchFileException]。
-     * 本地实现用 useLines 流式读；远程实现先 SFTP 下载到临时文件再逐行读（或直接 SFTP 读流按行切）。
+     * 惰性逐行读取文件，供 [ReadFileTool] 按行窗口读取：读到哪算哪，整文件不进内存；
+     * 单行超过上限（默认 64K 字符）会被截断。
+     * 序列可重复迭代（每次迭代重新打开底层读取）；调用方需在 IO 线程上迭代；文件不存在时抛 [NoSuchFileException]。
      */
     fun readLines(path: String): Sequence<String>
 
@@ -75,17 +79,31 @@ interface FileAccessProvider {
     fun listFiles(path: String): List<FileEntry>
 
     /**
+     * 递归列出 [path] 下所有普通文件，深度不超过 [maxDepth]（[path] 的直接子项算第 1 层）。
+     * 返回相对 [path] 的路径（`/` 分隔）；目录不存在时返回空列表。
+     * 供技能/子代理目录扫描使用。
+     */
+    fun listFilesRecursive(path: String, maxDepth: Int): List<String>
+
+    /**
      * 读取文件原始字节。供 [ViewImageTool] 等需要二进制数据的工具使用。
-     * 远程模式下若调用方需要本地文件路径，改用 [copyToLocal]。
+     * 远程模式下若调用方需要本地文件路径，改用 [copyToLocal]；文件过大时抛 [RemoteOutputTooLargeException]。
      */
     fun readBytes(path: String): ByteArray
 
     /**
      * 写入文件原始字节。父目录不存在则自动创建。[overwrite] 为 false 且文件已存在时抛 [FileAlreadyExistsException]。
-     * 供 [GenerateImageTool] 等需要落盘二进制数据（图片等）的工具使用；
+     * 供 [GenerateImageTool] 等需要落盘二进制数据（图片等）的工具使用，也用于上传附件等二进制写入；
      * 文本内容仍用 [writeFile]。
      */
     fun writeBytes(path: String, bytes: ByteArray, overwrite: Boolean = true)
+
+    /**
+     * 从 [input] 流式写入文件，返回写入的字节数；内容不整体驻留内存。
+     * 父目录不存在则自动创建。[overwrite] 为 false 且文件已存在时抛 [FileAlreadyExistsException]。
+     * 供上传大附件等场景使用。
+     */
+    fun writeStream(path: String, input: InputStream, overwrite: Boolean = true): Long
 
     /**
      * 把文件复制到本地临时文件并返回其 [File]。

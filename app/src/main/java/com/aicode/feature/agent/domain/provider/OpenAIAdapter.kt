@@ -36,12 +36,16 @@ class OpenAIAdapter @Inject constructor(
 ) : AIProvider {
 
     override var apiKey = ""
+    override var keySwitcher: (suspend (Throwable, String, Set<String>) -> KeySwitchOutcome?)? = null
     override var baseUrl = "https://api.openai.com/"
     override var useFullUrl = false
     override var useResponseApi = false
     override var model = "gpt-4-turbo"
     override var providerId = ""
     override var logSessionId: String? = null
+    override var firstByteTimeoutMs: Long = FIRST_BYTE_TIMEOUT_MS
+    override var streamIdleTimeoutMs: Long = 0L
+    override var maxNetworkRetries: Int = MAX_NETWORK_RETRIES
 
     /**
      * 是否在 Chat Completion 路径发送 `prompt_cache_key`（缓存 shard 路由）。
@@ -111,8 +115,12 @@ class OpenAIAdapter @Inject constructor(
         )
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createChatCompletion(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -220,8 +228,12 @@ class OpenAIAdapter @Inject constructor(
         val request = buildResponsesRequest(systemPrompt, messages, tools, reasoningEffort, stream = false)
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", url, request)
 
+        val triedKeys = mutableSetOf(apiKey)
         val response = try {
-            retryStaircase {
+            retryStaircase(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, _ -> switchKeyOnFailure(e, triedKeys) != null }
+            ) {
                 api.createResponses(url = url, authorization = "Bearer $apiKey", extraHeaders = extraHeaders(), request = request)
             }
         } catch (e: CancellationException) {
@@ -296,9 +308,19 @@ class OpenAIAdapter @Inject constructor(
 
         // 流式请求整体可重试；重试前上层会收到 Retrying 事件并清空已展示文本。
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
+            val budget = StreamBudget()
             // tool_call index -> 累积中的工具调用（保序）。
             val toolAccs = LinkedHashMap<Int, OpenAIToolAcc>()
             var finishReason: String? = null
@@ -314,9 +336,10 @@ class OpenAIAdapter @Inject constructor(
             )
 
             body.use { rb ->
-                // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                // 首字节超时 watchdog：超时内未收到首个内容块则关闭流，触发可重试的 IOException。
                 val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-                val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                val watchdog = launchFirstByteWatchdog(firstByteTimeoutMs, { rb.close() }) { firstByteReceived.get() }
+                val idleWatchdog = launchStreamIdleWatchdog(streamIdleTimeoutMs) { rb.close() }
                 val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
                     runCatching { rb.close() }
                 }
@@ -330,10 +353,11 @@ class OpenAIAdapter @Inject constructor(
                         coroutineContext.ensureActive()
                         val line = reader.readLine()
                             ?: throw IOException("SSE 流被中断：未收到 [DONE] 结束标记（疑似网络断开）")
+                        idleWatchdog.touch()
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
                         if (data.isEmpty()) continue
-                        rawSse.append(line).append('\n')
+                        AILogger.appendRawSse(rawSse, line)
                         if (data == "[DONE]") break
                         val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
                         obj.get("error")?.takeIf { it.isJsonObject }?.asJsonObject?.let { errObj ->
@@ -362,6 +386,7 @@ class OpenAIAdapter @Inject constructor(
                             // 文字增量
                             delta.get("content")?.takeIf { !it.isJsonNull }?.asString?.let { c ->
                                 if (c.isNotEmpty()) {
+                                    budget.add(c)
                                     textBuilder.append(c)
                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                     onContent()
@@ -379,6 +404,7 @@ class OpenAIAdapter @Inject constructor(
                                         el.asJsonObject.get("text")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
                                     }
                             if (!reasoningText.isNullOrEmpty()) {
+                                budget.add(reasoningText)
                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                 onContent()
                                 emit(AIStreamChunk.ReasoningDelta(reasoningText))
@@ -400,7 +426,7 @@ class OpenAIAdapter @Inject constructor(
                                         if (acc.name.isEmpty()) emit(AIStreamChunk.ToolCallDeclared(name))
                                         acc.name = name
                                     }
-                                    fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { acc.args.append(it) }
+                                    fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { budget.add(it); acc.args.append(it) }
                                 }
                             }
                         } catch (e: CancellationException) {
@@ -412,6 +438,7 @@ class OpenAIAdapter @Inject constructor(
                     }
                 } finally {
                     watchdog.cancel()
+                    idleWatchdog.cancel()
                     closeHandle?.dispose()
                 }
             }
@@ -454,7 +481,16 @@ class OpenAIAdapter @Inject constructor(
         // 累积原始 SSE，整轮结束（或失败）后整体落盘，避免高频写盘。
         val rawSse = StringBuilder()
         try {
+            val triedKeys = mutableSetOf(apiKey)
             streamWithStaircaseRetry(
+                maxRetries = maxNetworkRetries,
+                onKeyFailure = { e, canRetry ->
+                    val outcome = switchKeyOnFailure(e, triedKeys)
+                    if (outcome != null && canRetry) {
+                        emit(AIStreamChunk.KeySwitched(outcome.newIndex, outcome.total))
+                        true
+                    } else false
+                },
                 attemptOnce = { onContent ->
                     val acc = ResponsesStreamAccumulator()
 
@@ -466,9 +502,10 @@ class OpenAIAdapter @Inject constructor(
                     )
 
                     body.use { rb ->
-                        // 首字节超时 watchdog：60s 内未收到首个内容块则关闭流，触发可重试的 IOException。
+                        // 首字节超时 watchdog：超时内未收到首个内容块则关闭流，触发可重试的 IOException。
                         val firstByteReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-                        val watchdog = launchFirstByteWatchdog({ rb.close() }) { firstByteReceived.get() }
+                        val watchdog = launchFirstByteWatchdog(firstByteTimeoutMs, { rb.close() }) { firstByteReceived.get() }
+                        val idleWatchdog = launchStreamIdleWatchdog(streamIdleTimeoutMs) { rb.close() }
                         val closeHandle = coroutineContext[Job]?.invokeOnCompletion {
                             runCatching { rb.close() }
                         }
@@ -478,10 +515,11 @@ class OpenAIAdapter @Inject constructor(
                                 coroutineContext.ensureActive()
                                 val line = reader.readLine()
                                     ?: throw IOException("SSE 流被中断：未收到 response.completed 结束事件（疑似网络断开）")
+                                idleWatchdog.touch()
                                 if (!line.startsWith("data:")) continue
                                 val data = line.removePrefix("data:").trim()
                                 if (data.isEmpty()) continue
-                                rawSse.append(line).append('\n')
+                                AILogger.appendRawSse(rawSse, line)
                                 // 官方 Responses 不发 [DONE]，但部分兼容服务会补发，收到即视为流结束。
                                 if (data == "[DONE]") break
                                 val obj = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull() ?: continue
@@ -525,6 +563,7 @@ class OpenAIAdapter @Inject constructor(
                             }
                         } finally {
                             watchdog.cancel()
+                            idleWatchdog.cancel()
                             closeHandle?.dispose()
                         }
                     }

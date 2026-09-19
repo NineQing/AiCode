@@ -64,6 +64,12 @@ class ExecuteCommandTool @Inject constructor(
             type = ParameterType.INTEGER,
             description = "命令最长执行时间（秒），超时将被强制终止。默认 $DEFAULT_TIMEOUT_SECONDS 秒，上限 $MAX_TIMEOUT_SECONDS 秒。耗时命令（如安装依赖）可适当调大。",
             required = false
+        ),
+        "elevate" to ToolParameter(
+            name = "elevate",
+            type = ParameterType.BOOLEAN,
+            description = "提权重试：仅当命令因内置安全防护（灾难性删除，如 rm 根目录/系统目录/工作区整体）被拒、且确有必要执行时，置为 true 重试。届时系统会弹窗请求用户一次性授权，用户同意才执行，且不可记忆。仅非 AUTO 模式有效。",
+            required = false
         )
     )
 

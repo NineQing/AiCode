@@ -18,15 +18,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -38,6 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,22 +51,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.aicode.R
 import com.aicode.core.theme.Brand
 import com.aicode.core.theme.Radius
@@ -80,6 +96,7 @@ import com.aicode.feature.agent.presentation.AgentUIState
 import com.aicode.feature.agent.presentation.QueuedRequest
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.ProviderBalanceState
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import com.aicode.feature.workspace.presentation.component.WorkspaceIconButton
@@ -90,6 +107,8 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.Maximize
+import compose.icons.feathericons.Minimize
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
 import kotlinx.coroutines.launch
@@ -97,11 +116,23 @@ import kotlinx.coroutines.launch
 /** 输入框区域蒙版高度：盖住圆角容器，滚动内容滑入时被渐变遮罩；随键盘（IME）上移。 */
 private val INPUT_BAR_MASK_HEIGHT = 110.dp
 
+/** 输入框高度上下限：超过上限后文本在框内滚动，右上角露出「展开」按钮。与 TextField 的 heightIn 一致。 */
+private val INPUT_FIELD_MIN_HEIGHT = 44.dp
+private val INPUT_FIELD_MAX_HEIGHT = 140.dp
+
+/**
+ * M3 无标签 TextField 的默认 contentPadding（上下左右各 16dp）。
+ * 文本是否超过输入框高度要先用相同约束实测一遍，反推文本可视区域得靠这个值。
+ */
+private val INPUT_FIELD_CONTENT_PADDING = 16.dp
+
 @Composable
 internal fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    /** 回车键是否直接发送：开启后 IME 回车键变为「发送」，关闭则回车换行（默认）。 */
+    enterToSend: Boolean = false,
     onStop: () -> Unit,
     isBusy: Boolean,
     workspaceViewModel: WorkspaceViewModel?,
@@ -134,18 +165,39 @@ internal fun ChatInputBar(
     /** 消息列表正在滚动时内容区淡出到 40%，停止滚动恢复；用于长列表阅读时降低底部干扰（同 git 页 tab 栏）。 */
     isScrolling: Boolean = false,
     forceOpenModelSheet: Boolean = false,
+    onSelectModelInOnboarding: (() -> Unit)? = null,
     onModelSheetDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val hasContent = value.isNotBlank() || pendingAttachments.isNotEmpty()
     val canSend = hasContent
     var showAttachmentSheet by remember { mutableStateOf(false) }
+    var showFullScreenInput by remember { mutableStateOf(false) }
     val showSlashMenu = !isBusy && slashCommands.isNotEmpty() &&
         value.startsWith("/") && !value.contains("\n")
     val filteredCommands = if (showSlashMenu) {
         if (value == "/") slashCommands
         else slashCommands.filter { it.trigger.startsWith(value) }
     } else emptyList()
+
+    // 文本是否已经超出输入框高度（超出后框内滚动，展开按钮才有意义）。
+    // 按换行符数硬编码阈值在长行自动折行时会判断错，这里按 TextField 的实际宽度实测文本高度。
+    val textMeasurer = rememberTextMeasurer()
+    val inputDensity = LocalDensity.current
+    var inputFieldWidthPx by remember { mutableStateOf(0) }
+    val inputTextStyle = MaterialTheme.typography.bodyLarge
+    val inputOverflows = remember(value, inputFieldWidthPx, inputDensity, inputTextStyle) {
+        val horizontalPaddingPx = with(inputDensity) { INPUT_FIELD_CONTENT_PADDING.toPx() }
+        val contentWidthPx = inputFieldWidthPx - (horizontalPaddingPx * 2).toInt()
+        val maxTextHeightPx = with(inputDensity) {
+            (INPUT_FIELD_MAX_HEIGHT - INPUT_FIELD_CONTENT_PADDING * 2).toPx()
+        }
+        contentWidthPx > 0 && value.isNotEmpty() && textMeasurer.measure(
+            text = AnnotatedString(value),
+            style = inputTextStyle,
+            constraints = Constraints(maxWidth = contentWidthPx)
+        ).size.height > maxTextHeightPx
+    }
 
     Surface(
         color = Color.Transparent,
@@ -273,29 +325,58 @@ internal fun ChatInputBar(
                     onRemoveAttachment = onRemoveAttachment
                 )
 
-                TextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp, max = 140.dp),
-                    placeholder = {
-                        Text(
-                            stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    TextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = INPUT_FIELD_MIN_HEIGHT, max = INPUT_FIELD_MAX_HEIGHT)
+                            .onSizeChanged { inputFieldWidthPx = it.width },
+                        placeholder = {
+                            Text(
+                                stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        enabled = true,
+                        keyboardOptions = if (enterToSend) {
+                            KeyboardOptions(imeAction = ImeAction.Send)
+                        } else {
+                            KeyboardOptions(imeAction = ImeAction.Default)
+                        },
+                        keyboardActions = if (enterToSend) {
+                            KeyboardActions(onSend = { onSend() })
+                        } else {
+                            KeyboardActions.Default
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent
                         )
-                    },
-                    enabled = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent
                     )
-                )
+
+                    if (inputOverflows) {
+                        IconButton(
+                            onClick = { showFullScreenInput = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                FeatherIcons.Maximize,
+                                contentDescription = stringResource(R.string.chat_input_expand),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier
@@ -353,6 +434,7 @@ internal fun ChatInputBar(
                             modelMetadata = modelMetadata,
                             onSelectModel = onSelectModel,
                             forceOpenSheet = forceOpenModelSheet,
+                            onSelectSuccessInOnboarding = onSelectModelInOnboarding,
                             onSheetDismiss = onModelSheetDismiss,
                             modifier = Modifier.onboardingTarget(OnboardingStep.OPEN_MODEL_PICKER)
                         )
@@ -371,7 +453,7 @@ internal fun ChatInputBar(
                         // 这类模型可能强制开启推理，隐藏按钮会导致无法调档。
                         val availableEfforts = remember(activeProvider, modelMetadata) {
                             activeProvider?.let { provider ->
-                                modelMetadata[provider.effectiveModel]?.reasoningEffortOptions
+                                modelMetadata[modelMetadataKey(provider.id, provider.effectiveModel)]?.reasoningEffortOptions
                                     ?.let { ReasoningEffort.fromValues(it) }
                             }.orEmpty().ifEmpty { ReasoningEffort.entries }
                         }
@@ -413,6 +495,110 @@ internal fun ChatInputBar(
             },
             onDismiss = { showAttachmentSheet = false }
         )
+    }
+
+    if (showFullScreenInput) {
+        FullScreenInputDialog(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
+            onDismiss = { showFullScreenInput = false }
+        )
+    }
+}
+
+/**
+ * 全屏输入框：底部输入框被高度上限截断、框内滚动时，点右上角「展开」进入这里，
+ * 用整屏编辑同一份草稿（内容实时回写，收起后输入框里就是最新文本）。
+ */
+@Composable
+private fun FullScreenInputDialog(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            // 不设则 dialog window 是 WRAP_CONTENT，内容铺不满屏
+            usePlatformDefaultWidth = false,
+            // 不设则内容被系统栏 inset 挤进安全区，底色在状态栏处断开、露出后面的聊天界面
+            decorFitsSystemWindows = false
+        )
+    ) {
+        // dialog 有自己的 window：系统栏图标色要单独按当前主题设置，否则浅色主题下状态栏图标压在浅底上看不见。
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        val lightBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            dialogWindow?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = lightBackground
+                    isAppearanceLightNavigationBars = lightBackground
+                }
+            }
+        }
+
+        val imeInset = rememberImeBottomInset()
+        val focusRequester = remember { FocusRequester() }
+        // 打开即聚焦，键盘不停，可以接着往下写。
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(bottom = imeInset)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_input_fullscreen_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            FeatherIcons.Minimize,
+                            contentDescription = stringResource(R.string.common_collapse_action),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                TextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    placeholder = {
+                        Text(
+                            placeholder,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -802,11 +988,17 @@ internal fun PlanApprovalPanel(
             if (effectiveExpanded) {
                 if (state.reason.isNotBlank()) {
                     Spacer(Modifier.height(Spacing.xs))
-                    Text(
-                        text = state.reason,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Column(
+                            modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = state.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(Spacing.md))

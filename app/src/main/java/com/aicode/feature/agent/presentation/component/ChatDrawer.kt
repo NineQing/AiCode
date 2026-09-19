@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -61,6 +63,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +75,8 @@ import androidx.compose.ui.unit.dp
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.ui.SegmentedTabs
+import com.aicode.core.ui.rememberImeBottomInset
+import com.aicode.feature.settings.presentation.component.ModelSearchField
 import com.aicode.feature.settings.presentation.component.SettingsDivider
 import com.aicode.feature.settings.presentation.component.SettingsGroup
 import com.aicode.feature.settings.presentation.component.SettingsGroupHeader
@@ -76,6 +84,8 @@ import com.aicode.feature.settings.presentation.component.SettingsRow
 import com.aicode.feature.settings.presentation.component.settingsPageBackground
 import com.aicode.feature.agent.domain.model.ChatSession
 import com.aicode.feature.agent.presentation.AgentUIState
+import com.aicode.feature.agent.presentation.ChatSearchHit
+import com.aicode.feature.agent.presentation.ChatSearchState
 import com.aicode.feature.agent.presentation.BrowseClipboard
 import com.aicode.feature.agent.presentation.FileBrowseState
 import com.aicode.feature.agent.presentation.FileTreeNode
@@ -93,6 +103,7 @@ import compose.icons.feathericons.FolderPlus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.X
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.aicode.R
@@ -138,6 +149,11 @@ fun ChatDrawerContent(
     onCancelPasteOverwrite: () -> Unit,
     onClearClipboard: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    searchQuery: String,
+    searchState: ChatSearchState,
+    onSearchQueryChange: (String) -> Unit,
+    onClearSearch: () -> Unit,
+    onOpenSearchHit: (ChatSearchHit) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // tab 与展开状态进 saveable：大屏下侧栏收起后整棵子树会离开组合（见 MainActivity 的
@@ -160,13 +176,18 @@ fun ChatDrawerContent(
         }
     }
 
+    val imeInset = rememberImeBottomInset()
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(settingsPageBackground())
-            .windowInsetsPadding(WindowInsets.systemBars)
+            .windowInsetsPadding(
+                WindowInsets.systemBars.only(
+                    WindowInsetsSides.Horizontal + WindowInsetsSides.Top
+                )
+            )
             .padding(horizontal = Spacing.lg)
-            .padding(bottom = Spacing.xl),
+            .padding(bottom = imeInset + Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         // 顶部 Tab 切换
@@ -179,6 +200,15 @@ fun ChatDrawerContent(
             onSelect = { selectedTab = it }
         )
 
+        // 聊天记录搜索框放在 Tab 栏正下方，仅「会话」Tab 可见。
+        if (selectedTab == 0) {
+            ChatSearchField(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onClear = onClearSearch
+            )
+        }
+
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> SessionListTab(
@@ -188,8 +218,11 @@ fun ChatDrawerContent(
                     awaitingPermissionSessionIds = awaitingPermissionSessionIds,
                     subSessionsByParent = subSessionsByParent,
                     listState = listState,
+                    searchQuery = searchQuery,
+                    searchState = searchState,
                     onSelect = onSelect,
-                    onLongClick = { menuSession = it }
+                    onLongClick = { menuSession = it },
+                    onOpenSearchHit = onOpenSearchHit
                 )
                 1 -> FileBrowserTab(
                     state = browseState,
@@ -312,9 +345,42 @@ fun ChatDrawerContent(
     }
 }
 
-/** Tab0：根会话列表（按最后回复时间分组）。带子代理的会话行尾有展开箭头，展开后在其下方缩进列出子代理。 */
+/**
+ * Tab0：会话列表。搜索词非空时列表区切换为跨会话搜索结果。
+ */
 @Composable
 private fun SessionListTab(
+    sessions: List<ChatSession>,
+    currentSessionId: String?,
+    agentStates: Map<String, AgentUIState>,
+    awaitingPermissionSessionIds: Set<String>,
+    subSessionsByParent: Map<String, List<ChatSession>>,
+    listState: LazyListState,
+    searchQuery: String,
+    searchState: ChatSearchState,
+    onSelect: (ChatSession) -> Unit,
+    onLongClick: (ChatSession) -> Unit,
+    onOpenSearchHit: (ChatSearchHit) -> Unit
+) {
+    if (searchQuery.isBlank()) {
+        SessionListContent(
+            sessions = sessions,
+            currentSessionId = currentSessionId,
+            agentStates = agentStates,
+            awaitingPermissionSessionIds = awaitingPermissionSessionIds,
+            subSessionsByParent = subSessionsByParent,
+            listState = listState,
+            onSelect = onSelect,
+            onLongClick = onLongClick
+        )
+    } else {
+        ChatSearchResults(state = searchState, onOpenHit = onOpenSearchHit)
+    }
+}
+
+/** Tab0 的会话列表本体（按最后回复时间分组）。带子代理的会话行尾有展开箭头，展开后在其下方缩进列出子代理。 */
+@Composable
+private fun SessionListContent(
     sessions: List<ChatSession>,
     currentSessionId: String?,
     agentStates: Map<String, AgentUIState>,
@@ -424,6 +490,127 @@ private fun SessionListTab(
         }
     }
 }
+
+/** Tab0 底部搜索框：复用设置页的胶囊搜索框，非空时带清除按钮。 */
+@Composable
+private fun ChatSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    ModelSearchField(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = stringResource(R.string.chat_search_hint),
+        modifier = Modifier.fillMaxWidth(),
+        trailing = if (query.isEmpty()) null else {
+            {
+                IconButton(onClick = onClear, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = FeatherIcons.X,
+                        contentDescription = stringResource(R.string.chat_search_clear),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    )
+}
+
+/** 搜索结果区：加载中 / 无结果 / 命中列表三态。 */
+@Composable
+private fun ChatSearchResults(
+    state: ChatSearchState,
+    onOpenHit: (ChatSearchHit) -> Unit
+) {
+    when {
+        state.hits.isEmpty() && state.loading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        state.hits.isEmpty() -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.chat_search_no_result),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.md)
+                )
+            }
+        }
+        else -> {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(state.hits, key = { it.messageId }) { hit ->
+                    ChatSearchResultRow(
+                        hit = hit,
+                        query = state.query,
+                        onClick = { onOpenHit(hit) }
+                    )
+                    SettingsDivider()
+                }
+            }
+        }
+    }
+}
+
+/** 单条搜索结果行：会话标题 + 命中片段（关键词高亮），点击跳转并定位。 */
+@Composable
+private fun ChatSearchResultRow(
+    hit: ChatSearchHit,
+    query: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+    ) {
+        Text(
+            text = hit.sessionTitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = highlightSnippet(
+                snippet = hit.snippet,
+                query = query,
+                highlight = SpanStyle(
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 把片段中所有命中词标为高亮样式。 */
+private fun highlightSnippet(snippet: String, query: String, highlight: SpanStyle): AnnotatedString =
+    buildAnnotatedString {
+        append(snippet)
+        if (query.isBlank()) return@buildAnnotatedString
+        var start = 0
+        while (true) {
+            val index = snippet.indexOf(query, start, ignoreCase = true)
+            if (index < 0) break
+            addStyle(highlight, index, index + query.length)
+            start = index + query.length
+        }
+    }
 
 /** 会话行尾的子代理展开开关：显示数量与箭头，自己消费点击，不触发整行选中。 */
 @Composable

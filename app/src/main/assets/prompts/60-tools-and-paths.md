@@ -10,7 +10,7 @@
 - `viewImage`：查看本地图片并让识图模型分析。参数 `images`（图片路径数组，1~5 张，可多张对比分析）、`id`（识图会话 id）、`prompt`（可选提问，为空则默认描述图片内容）、`detail`（可选 `low`/`high`/`original`，默认 `high`：小图原样直传、大图压缩到最长边 1536；`original` 全部原样直传；`low` 全部压缩到最长边 512 省 token）。`images` 与 `id` 二选一：首次传 `images` 让识图模型一次性分析/对比，返回 `vision_id` 与文本结果；之后传 `vision_id` + `prompt` 在同一识图会话内继续追问（识图模型记得图片与之前的问答）。识图模型为「设置 -> 默认模型 -> 识图模型」指定的模型，未指定时用当前聊天模型；不校验图片输入能力，调用失败时把错误信息原样作为工具结果返回。
 - `editFile`：对已有文件做局部修改的首选。old_string/new_string 精确匹配：old_string 要与文件现状逐字一致（含缩进），并带足够上下文保证唯一；只需满足唯一即可，别贴大段多余上下文。edits 是数组，可一次提交对同一文件的多处修改并按序应用——整批编辑原子生效，任一处匹配失败整批回滚。尽量把同一文件的多处改动合并到一次调用。
 - `writeFile`：用于新建文件或整文件重写，不要用它做局部小改（那是 `editFile` 的活）。重写已有文件前应先 `readFile` 确认内容。
-- `sendFile`：把工作区已有文件以「文件卡片」形式发送到聊天区。参数 `paths`（必填，最多 10 个、单个 ≤100MB）与 `names`（可选，与 paths 一一对应）。**原子语义**：所有文件必须全部存在且合法，任一失败则整体失败，需修正后重新调用。仅展示文件，不读取内容、数据不进上下文。
+- `sendFile`：把工作区已有文件发送到聊天区，聊天区每个文件占一行（缩略图/类型图标 + 文件名 + 大小·路径）。参数 `paths`（必填，最多 10 个、单个 ≤100MB）与 `names`（可选，与 paths 一一对应）。**原子语义**：所有文件必须全部存在且合法，任一失败则整体失败，需修正后重新调用。仅展示文件，不读取内容、数据不进上下文。
 - `generateImage`：根据文本描述生成图片。`prompt` 为图片内容描述（必填）；`size` 可选（默认 1024x1024）；`n` 可选（1~4，dall-e-3 只支持 1 张）；`quality` 可选（GPT Image 系列支持 low/medium/high/auto，dall-e-3 支持 standard/hd）；`background` 可选（transparent/opaque/auto，仅 GPT Image 系列）；`moderation` 可选（low/auto，仅 GPT Image 系列）；`style` 可选（vivid/natural，仅 dall-e-3）；`output_format` 可选（png/jpeg/webp，仅 GPT Image 系列）；`output_path` 可选（默认保存到 `~/.aicode/generated-images/`）。单张图片上限 20MB，单次调用总计上限 48MB。Gemini 兼容接口忽略 OpenAI Images 专用参数，`n>1` 时调用多次。
 - 通过 Gemini 兼容接口接入支持图像输出的聊天模型后，可直接生成图片并在后续对话中继续修改。
 - 只读探索是你的眼睛：在陈述（或基于）项目里任何文件、目录、符号、调用关系之前，先 `list`/`search`/`readFile` 看一眼现状。读到的就说读了、没读到的别编；拿不准的标「未核实/未验证」，不要靠记忆补全项目结构。

@@ -291,6 +291,7 @@
     <string name="common_expand">Expand</string>
     <string name="common_workspace">Workspace</string>
     <string name="common_tool">Tool</string>
+    <string name="common_file">File</string>
     <string name="common_collapse">Collapse</string>
     <string name="common_reset">Reset</string>
     <string name="common_collapse_action">Collapse</string>
@@ -364,6 +365,8 @@
     <string name="chat_open_file_failed">File not found or inaccessible</string>
     <string name="chat_open_file_no_app">No app available to open this file</string>
     <string name="chat_open_apk_permission">Installing apps requires permission. Allow installs from this source in the settings that just opened</string>
+    <string name="chat_attachment_preview">Preview %1$s</string>
+    <string name="chat_attachment_open">Open %1$s</string>
     <string name="chat_no_model_selected">No model selected</string>
     <string name="chat_open_git">Open version control</string>
     <string name="chat_open_terminal">Open terminal</string>
@@ -576,9 +579,20 @@
     <string name="chat_task_duration">Total time %1$s</string>
     <string name="chat_cache_hit_rate">Cache hit rate %1$s</string>
     <string name="chat_status_generating">Generating</string>
+    <string name="chat_status_thinking">Thinking</string>
+    <string name="chat_status_calling_tool">Calling tool</string>
+    <string name="chat_status_running_command">Running command</string>
+    <string name="chat_status_editing_file">Editing file</string>
+    <string name="chat_status_reading_file">Reading file</string>
+    <string name="chat_status_searching_web">Searching the web</string>
+    <string name="chat_status_generating_image">Generating image</string>
+    <string name="chat_status_updating_todo">Updating to-dos</string>
+    <string name="chat_status_starting_subagent">Starting sub-agent</string>
+    <string name="chat_status_reading_memory">Reading memory</string>
     <string name="chat_tool_running">Tool running</string>
     <string name="chat_tool_succeeded">Tool succeeded</string>
     <string name="chat_tool_failed">Tool failed</string>
+    <string name="chat_tool_calls_count">%1$d tool calls</string>
     <string name="chat_context_usage">Context %1$d%% used</string>
     <string name="chat_bg_command_done">Background command completed</string>
     <string name="chat_bg_commands_done">%1$d background tasks completed</string>
@@ -601,7 +615,6 @@
     <string name="retry_error_unknown">Network error</string>
     <string name="retry_error_with_code">%1$s (%2$d)</string>
     <string name="chat_thinking_process">Thinking process</string>
-    <string name="chat_expand_remaining">Expand remaining %1$s lines</string>
 
     <!-- Container Settings -->
     <string name="container_reset">Reset</string>
@@ -1236,6 +1249,7 @@
     <string name="tool_instruction">Instruction</string>
     <string name="tool_result">Result</string>
     <string name="tool_expand_remaining">Expand remaining %1$s lines</string>
+    <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d files</string>
 
     <!-- Vision Model -->
     <string name="vision_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a vision model.</string>

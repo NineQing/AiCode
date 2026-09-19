@@ -18,7 +18,13 @@ class AgentDefinitionParserTest {
 
     private val provider = TestFileAccessProvider()
 
-    private fun parseFile(file: File): AgentDefinition? = AgentDefinitionParser.parse(provider, file.absolutePath)
+    /**
+     * 解析器契约里的路径是**容器路径**（POSIX 分隔符，见 [AgentDefinitionSource] 拼的 `"$base/${entry.name}"`），
+     * 名字回退按 `/` 取 basename。Windows 上 `absolutePath` 用反斜杠，直接传进去会取不到文件名，
+     * 这里先归一化成容器路径。
+     */
+    private fun parseFile(file: File): AgentDefinition? =
+        AgentDefinitionParser.parse(provider, file.absolutePath.replace(File.separatorChar, '/'))
 
     private fun write(name: String, content: String): File =
         File(tempFolder.root, name).apply { writeText(content) }

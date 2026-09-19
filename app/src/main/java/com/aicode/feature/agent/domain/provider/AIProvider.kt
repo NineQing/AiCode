@@ -105,6 +105,14 @@ sealed class AIStreamChunk {
     data class TextDelta(val text: String) : AIStreamChunk()
     /** 模型新吐出的一小段思考过程（增量，非累积）。仅用于 UI 实时展示，不进入上下文回放。 */
     data class ReasoningDelta(val text: String) : AIStreamChunk()
+    /**
+     * 模型刚开始产出一次工具调用、工具名已经确定（参数还在流式传输中）。
+     *
+     * 写整份文件、长命令这类工具的参数很长，这段流式可能持续好几秒；期间既没有正文也没有
+     * 思考增量，UI 只能显示笼统的「正在思考」。上游在工具名一出现就推一条本事件，UI 就能把
+     * 状态换成具体场景（「正在编辑文件」）。不参与任何执行判定，纯粹是 UI 提示。
+     */
+    data class ToolCallDeclared(val name: String) : AIStreamChunk()
     data class Final(val response: AIResponse) : AIStreamChunk()
     /** 网络请求正在重试。仅用于 UI 实时展示，不进入上下文回放。[error] 为触发重试的错误摘要，供 UI 展示具体原因。 */
     data class Retrying(val attempt: Int, val maxRetries: Int, val error: RetryErrorInfo) : AIStreamChunk()

@@ -294,6 +294,8 @@ class GeminiAdapter @Inject constructor(
                                         if (part.has("functionCall")) {
                                             val fnCall = part.getAsJsonObject("functionCall")
                                             val name = fnCall.get("name")?.asString ?: ""
+                                            // 工具名一出现就通知 UI，把「正在思考」换成具体场景
+                                            if (name.isNotEmpty()) emit(AIStreamChunk.ToolCallDeclared(name))
                                             val callId = fnCall.get("id")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotBlank() } ?: name
                                             val argsStr = fnCall.getAsJsonObject("args")?.toString() ?: "{}"
                                             val argsJson = parseArgs(argsStr)
@@ -513,6 +515,12 @@ class GeminiAdapter @Inject constructor(
                                         if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                         onContent()
                                         emit(AIStreamChunk.ReasoningDelta(delta.text))
+                                    }
+                                    // 工具名先于参数到达：通知 UI 提前把状态换成具体场景
+                                    is InteractionsDelta.ToolCallDeclared -> {
+                                        if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                        onContent()
+                                        emit(AIStreamChunk.ToolCallDeclared(delta.name))
                                     }
                                     null -> {}
                                 }

@@ -121,6 +121,35 @@ class ResponsesStreamAccumulatorTest {
     }
 
     @Test
+    fun function_call_name_is_declared_before_arguments() {
+        val acc = ResponsesStreamAccumulator()
+
+        // 工具名先到：UI 靠它把「正在思考」提前换成「正在读取文件」
+        val declared = acc.accept(itemEvent(ResponsesEvent.OUTPUT_ITEM_ADDED, 0, functionCallItem("c1", "readFile")))
+        assertEquals("readFile", (declared as ResponsesDelta.ToolCallDeclared).name)
+
+        // 参数片段不产生声明
+        assertNull(acc.accept(argsDelta(0, "{\"path\":")))
+        assertNull(acc.accept(argsDelta(0, "\"a.txt\"}")))
+        // 同一个调用不重复播报：item.done 也带名字（它还会用完整参数覆盖累积值，见下）
+        assertNull(
+            acc.accept(
+                itemEvent(
+                    ResponsesEvent.OUTPUT_ITEM_DONE,
+                    0,
+                    functionCallItem("c1", "readFile", "{\"path\":\"a.txt\"}")
+                )
+            )
+        )
+
+        // 声明归声明：参数仍要完整聚合、工具调用不能被吞掉
+        acc.accept(terminalEvent(ResponsesEvent.COMPLETED, "completed"))
+        val call = acc.toResponse().toolCalls.single()
+        assertEquals("readFile", call.name)
+        assertEquals(JsonPrimitive("a.txt"), call.arguments["path"])
+    }
+
+    @Test
     fun function_call_arguments_are_assembled_from_deltas() {
         val acc = ResponsesStreamAccumulator()
 

@@ -119,6 +119,9 @@ internal fun interactionStopReason(status: String?): String? =
 internal sealed class InteractionsDelta {
     data class Text(val text: String) : InteractionsDelta()
     data class Reasoning(val text: String) : InteractionsDelta()
+
+    /** 刚开始产出某次 function_call、工具名已知（参数还在流式传输中），供 UI 提前说清「在调什么」。 */
+    data class ToolCallDeclared(val name: String) : InteractionsDelta()
 }
 
 /**
@@ -192,7 +195,14 @@ internal class GeminiInteractionsStreamAccumulator {
                 acc.type = step.str("type")
                 acc.raw = step
                 step.str("id")?.takeIf { it.isNotBlank() }?.let { acc.id = it }
-                step.str("name")?.takeIf { it.isNotBlank() }?.let { acc.name = it }
+                // 函数调用 step 的工具名先于参数到达：让 UI 提前把「正在思考」换成具体场景。
+                // 名字只记不返回——step.start 还可能带完整 arguments / 正文兜底，
+                // 在这里提前 return 会把它们丢掉，本分支跑完再统一返回。
+                var declaredName: String? = null
+                step.str("name")?.takeIf { it.isNotBlank() }?.let { name ->
+                    if (acc.name.isBlank()) declaredName = name
+                    acc.name = name
+                }
                 step.str("signature")?.let { acc.signature = it }
                 step.obj("arguments")?.let { budget.add(it.toString()); acc.argsComplete = it.toString() }
                 // 兜底：部分实现直接在 step.start 的 content 里带完整正文（随后没有 delta），
@@ -207,6 +217,7 @@ internal class GeminiInteractionsStreamAccumulator {
                         }
                     }
                 }
+                declaredName?.let { return InteractionsDelta.ToolCallDeclared(it) }
             }
 
             eventType == InteractionEvent.STEP_DELTA -> {

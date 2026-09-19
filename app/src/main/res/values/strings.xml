@@ -291,6 +291,7 @@
     <string name="common_expand">展开</string>
     <string name="common_workspace">工作区</string>
     <string name="common_tool">工具</string>
+    <string name="common_file">文件</string>
     <string name="common_collapse">折叠</string>
     <string name="common_collapse_action">收起</string>
     <string name="common_reset">重置</string>
@@ -364,6 +365,8 @@
     <string name="chat_open_file_failed">文件不存在或无法访问</string>
     <string name="chat_open_file_no_app">没有可打开该文件的应用</string>
     <string name="chat_open_apk_permission">安装应用需要授权，请在跳转的设置中允许来自此来源的应用</string>
+    <string name="chat_attachment_preview">预览 %1$s</string>
+    <string name="chat_attachment_open">打开 %1$s</string>
     <string name="chat_no_model_selected">未选择模型</string>
     <string name="chat_open_git">打开版本控制</string>
     <string name="chat_open_terminal">打开终端</string>
@@ -576,9 +579,20 @@
     <string name="chat_task_duration">本轮总耗时 %1$s</string>
     <string name="chat_cache_hit_rate">缓存命中率 %1$s</string>
     <string name="chat_status_generating">正在生成</string>
+    <string name="chat_status_thinking">正在思考</string>
+    <string name="chat_status_calling_tool">正在调用工具</string>
+    <string name="chat_status_running_command">正在执行命令</string>
+    <string name="chat_status_editing_file">正在编辑文件</string>
+    <string name="chat_status_reading_file">正在读取文件</string>
+    <string name="chat_status_searching_web">正在联网搜索</string>
+    <string name="chat_status_generating_image">正在生成图片</string>
+    <string name="chat_status_updating_todo">正在整理待办</string>
+    <string name="chat_status_starting_subagent">正在启动子代理</string>
+    <string name="chat_status_reading_memory">正在读写记忆</string>
     <string name="chat_tool_running">工具执行中</string>
     <string name="chat_tool_succeeded">工具执行成功</string>
     <string name="chat_tool_failed">工具执行失败</string>
+    <string name="chat_tool_calls_count">%1$d 次工具调用</string>
     <string name="chat_context_usage">上下文已用 %1$d%%</string>
     <string name="chat_bg_command_done">后台命令已完成</string>
     <string name="chat_bg_commands_done">%1$d 个后台任务已完成</string>
@@ -601,7 +615,6 @@
     <string name="retry_error_unknown">网络异常</string>
     <string name="retry_error_with_code">%1$s (%2$d)</string>
     <string name="chat_thinking_process">思考过程</string>
-    <string name="chat_expand_remaining">展开剩余 %1$s 行</string>
 
     <!-- Container Settings -->
     <string name="container_reset">重置</string>
@@ -1235,6 +1248,7 @@
     <string name="tool_instruction">指令</string>
     <string name="tool_result">结果</string>
     <string name="tool_expand_remaining">展开剩余 %1$s 行</string>
+    <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d 个文件</string>
 
     <!-- Vision Model -->
     <string name="vision_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选识图模型。</string>

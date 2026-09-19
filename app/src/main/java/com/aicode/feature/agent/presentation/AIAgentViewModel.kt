@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.PowerManager
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -229,6 +230,22 @@ class AIAgentViewModel @Inject constructor(
         val id = _currentSessionId.value ?: return
         _inputDrafts.value = _inputDrafts.value - id
         draftPrefs.edit().remove(id).apply()
+    }
+
+    /**
+     * 工具调用（分组头与单条工具卡片）的手动展开态：key = 分组 key（`toolgroup:<组内首条消息 id>`）
+     * 或单条消息 id。
+     *
+     * 放在 ViewModel 而不是组合里：窄窗下打开设置 / 终端 / Git / 编辑器都是全屏路由，聊天页整棵
+     * 组合被 dispose，`remember` 的 map 与按 message.id 的 remember 会一起丢——展开过的工具
+     * 一离开视线（滚出屏幕被回收、切页返回）就缩回默认态。这里按 App 进程的内存保留，
+     * 会话间互不影响（key 取消息 id，全局唯一），不落盘。
+     */
+    val toolExpansionOverrides = mutableStateMapOf<String, Boolean>()
+
+    /** 记录一次手动展开/收起（取值由调用方按当前可见态取反后传入）。 */
+    fun setToolExpanded(key: String, expanded: Boolean) {
+        toolExpansionOverrides[key] = expanded
     }
 
     fun loadMoreMessages() {
@@ -691,6 +708,31 @@ class AIAgentViewModel @Inject constructor(
             _runningTools.value - sessionId
         } else {
             _runningTools.value + (sessionId to updated)
+        }
+    }
+
+    private val _preparingTools = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * 模型正在流式产出、还没开始执行的工具名（如 `editFile`）。
+     *
+     * 长参数工具（写整份文件、长命令）的参数流式可能持续好几秒，期间没有正文也没有思考增量，
+     * UI 只能显示笼统的「正在思考」。上游在工具名一出现就上报（[AgentEvent.ToolCallPreparing]），
+     * UI 据此把状态换成具体场景（「正在编辑文件」）。工具真正开始执行后由 [runningTool] 接管。
+     */
+    val preparingTool: StateFlow<String?> = _currentSessionId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(null)
+            else _preparingTools.map { it[id] }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private fun setPreparingTool(sessionId: String, toolName: String?) {
+        val current = _preparingTools.value
+        if (toolName == null) {
+            if (current.containsKey(sessionId)) _preparingTools.value = current - sessionId
+        } else if (current[sessionId] != toolName) {
+            _preparingTools.value = current + (sessionId to toolName)
         }
     }
 
@@ -1357,6 +1399,11 @@ class AIAgentViewModel @Inject constructor(
                         setKeySwitchState(sessionId, null)
                         setStreamingReasoning(sessionId, event.accumulated)
                     }
+                    is AgentEvent.ToolCallPreparing -> {
+                        // 工具名先于参数到达：让 UI 把「正在思考」换成具体场景（「正在编辑文件」）。
+                        // 参数流完、工具真正开始执行后由 ToolCallStarted 清掉，改由工具行表达。
+                        setPreparingTool(sessionId, event.toolName)
+                    }
                     is AgentEvent.Retrying -> {
                         setRetryState(sessionId, RetryState(event.attempt, event.maxRetries, event.error))
                         // 重试会从头重新流式输出：清掉已展示的正文/思维链气泡，
@@ -1420,10 +1467,14 @@ class AIAgentViewModel @Inject constructor(
                         }
                         setStreamingReasoning(sessionId, null)
                         setStreamingText(sessionId, null)
+                        // 流已收尾：模型本轮不会再吐工具参数了，清掉"准备调什么"的临时状态
+                        // （真要执行会在紧接着的 ToolCallStarted 里重新由工具行表达）
+                        setPreparingTool(sessionId, null)
                     }
                     is AgentEvent.ToolCallStarted -> {
                         val msgId = "tool_${event.id}"
                         setStreamingText(sessionId, null)
+                        setPreparingTool(sessionId, null)
                         toolArgsByMsgId[msgId] = event.argsPreview
                         messagePersistenceUseCase.persist(
                             sessionId,
@@ -1541,6 +1592,7 @@ class AIAgentViewModel @Inject constructor(
             _runningTools.value = _runningTools.value - sessionId
             setStreamingText(sessionId, null)
             setStreamingReasoning(sessionId, null)
+            setPreparingTool(sessionId, null)
             setCompacting(sessionId, false)
             setRetryState(sessionId, null)
             setKeySwitchState(sessionId, null)

@@ -420,7 +420,12 @@ class OpenAIAdapter @Inject constructor(
                                 // 仅在 id/name 非空时更新，避免增量 chunk 的空值覆盖首 chunk 的有效值
                                 tc.get("id")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
                                 tc.getAsJsonObject("function")?.let { fn ->
-                                    fn.get("name")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { acc.name = it }
+                                    fn.get("name")?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotEmpty() }?.let { name ->
+                                        // 首次拿到工具名（后续增量只给 arguments 片段）：通知 UI
+                                        // 「模型准备调什么」，免得长参数流式期间一直停在「正在思考」
+                                        if (acc.name.isEmpty()) emit(AIStreamChunk.ToolCallDeclared(name))
+                                        acc.name = name
+                                    }
                                     fn.get("arguments")?.takeIf { !it.isJsonNull }?.asString?.let { budget.add(it); acc.args.append(it) }
                                 }
                             }
@@ -546,6 +551,12 @@ class OpenAIAdapter @Inject constructor(
                                         if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                         onContent()
                                         emit(AIStreamChunk.ReasoningDelta(delta.text))
+                                    }
+                                    // 工具名先于参数到达：通知 UI 提前把状态换成具体场景
+                                    is ResponsesDelta.ToolCallDeclared -> {
+                                        if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
+                                        onContent()
+                                        emit(AIStreamChunk.ToolCallDeclared(delta.name))
                                     }
                                     null -> {}
                                 }

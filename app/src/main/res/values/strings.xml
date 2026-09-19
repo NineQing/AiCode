@@ -459,6 +459,9 @@
     <!-- Chat Drawer -->
     <string name="chat_history">历史记录</string>
     <string name="chat_no_sessions_hint">暂无会话</string>
+    <string name="chat_search_hint">搜索聊天记录</string>
+    <string name="chat_search_no_result">未找到匹配的聊天记录</string>
+    <string name="chat_search_clear">清除</string>
     <string name="session_group_today">今天</string>
     <string name="session_group_yesterday">昨天</string>
     <string name="session_group_last_7_days">7天内</string>

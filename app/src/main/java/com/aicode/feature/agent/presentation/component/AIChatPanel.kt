@@ -257,6 +257,7 @@ fun AIChatPanel(
     val agentState by viewModel.agentState.collectAsStateWithLifecycle()
     val messagesState by viewModel.messagesState.collectAsStateWithLifecycle()
     val messages = messagesState.messages
+    val pendingScroll by viewModel.pendingScrollMessage.collectAsStateWithLifecycle()
 
     val currentSessionId by viewModel.currentSessionId.collectAsStateWithLifecycle()
     // 工具卡片入场调度：只排本次浏览期间新追加到尾部的 TOOL 消息，逐个错开淡入。
@@ -270,6 +271,50 @@ fun AIChatPanel(
     val sessionOutputTokens = currentSession?.totalOutputTokens ?: 0
     val sessionLastInputTokens = currentSession?.lastInputTokens ?: 0
     val messagesReady = messagesState.loaded && messagesState.sessionId == currentSessionId
+    // 拆块：超长助手消息展开成多条有界 item（单条滚动轴、外观连续的气泡），
+    // 普通消息保持 1:1。chatItems 的顺序即 LazyColumn item 顺序（尾随尾巴 item）。
+    val chatItems = remember(messages) {
+        messages.map { message ->
+            val canSplit = message.role == MessageRole.ASSISTANT &&
+                !message.isCompactionMarker &&
+                !message.isContextSummary &&
+                !message.isCompactionFailure &&
+                !message.isBackgroundNotification &&
+                message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS
+            if (!canSplit) {
+                listOf(
+                    ChatRenderItem(
+                        message = message,
+                        key = message.id,
+                        contentType = message.role.name,
+                    )
+                )
+            } else {
+                val slices = splitLongContent(message.content)
+                if (slices.size <= 1) {
+                    // 只拆出一块（如无空行的超长单段）：等同普通消息，避免单块走分块描边。
+                    listOf(
+                        ChatRenderItem(
+                            message = message,
+                            key = message.id,
+                            contentType = message.role.name,
+                        )
+                    )
+                } else {
+                    slices.mapIndexed { idx, slice ->
+                        ChatRenderItem(
+                            message = message,
+                            key = "${message.id}#chunk$idx",
+                            contentType = "assistant-chunk",
+                            slice = slice,
+                            isChunkHeader = idx == 0,
+                            isChunkFooter = idx == slices.lastIndex,
+                        )
+                    }
+                }
+            }
+        }.flatten()
+    }
     val runningTool by viewModel.runningTool.collectAsStateWithLifecycle()
     val isCompacting by viewModel.isCompacting.collectAsStateWithLifecycle()
     val retryState by viewModel.retryState.collectAsStateWithLifecycle()
@@ -719,9 +764,25 @@ fun AIChatPanel(
         }
     }
 
-    // 切换会话：定位到最新内容并恢复跟随（之后由校准循环持续跟随）。
-    LaunchedEffect(currentSessionId, messagesReady) {
+    // 切换会话 / 打开搜索命中：优先定位到目标消息，否则贴底并恢复跟随。
+    LaunchedEffect(currentSessionId, messagesReady, pendingScroll, chatItems) {
         if (!messagesReady) return@LaunchedEffect
+        val pending = pendingScroll
+        if (pending != null && pending.first == currentSessionId) {
+            val index = chatItems.indexOfFirst { it.message.id == pending.second }
+            if (index >= 0) {
+                // 等一帧让 LazyColumn 按新会话完成重组，再瞬移到目标消息。
+                withFrameNanos { }
+                followBottom = false
+                listState.scrollToItem(index)
+                positionedSession = currentSessionId
+                viewModel.consumePendingScroll()
+            } else if (!messagesState.hasMore) {
+                // 全部消息已加载仍找不到（消息可能已被删除）：放弃，避免卡在待定位态。
+                viewModel.consumePendingScroll()
+            }
+            return@LaunchedEffect
+        }
         if (positionedSession != currentSessionId) {
             // 等一帧让 LazyColumn 按新会话完成重组，再滚到锚点（maxScroll）。
             withFrameNanos { }
@@ -876,50 +937,6 @@ fun AIChatPanel(
                 } else if (messages.isEmpty()) {
                     WelcomeState(modifier = Modifier.fillMaxSize())
                 } else {
-                    // 拆块：超长助手消息展开成多条有界 item（单条滚动轴、外观连续的气泡），
-                    // 普通消息保持 1:1。chatItems 的顺序即 LazyColumn item 顺序（尾随尾巴 item）。
-                    val chatItems = remember(messages) {
-                        messages.map { message ->
-                            val canSplit = message.role == MessageRole.ASSISTANT &&
-                                !message.isCompactionMarker &&
-                                !message.isContextSummary &&
-                                !message.isCompactionFailure &&
-                                !message.isBackgroundNotification &&
-                                message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS
-                            if (!canSplit) {
-                                listOf(
-                                    ChatRenderItem(
-                                        message = message,
-                                        key = message.id,
-                                        contentType = message.role.name,
-                                    )
-                                )
-                            } else {
-                                val slices = splitLongContent(message.content)
-                                if (slices.size <= 1) {
-                                    // 只拆出一块（如无空行的超长单段）：等同普通消息，避免单块走分块描边。
-                                    listOf(
-                                        ChatRenderItem(
-                                            message = message,
-                                            key = message.id,
-                                            contentType = message.role.name,
-                                        )
-                                    )
-                                } else {
-                                    slices.mapIndexed { idx, slice ->
-                                        ChatRenderItem(
-                                            message = message,
-                                            key = "${message.id}#chunk$idx",
-                                            contentType = "assistant-chunk",
-                                            slice = slice,
-                                            isChunkHeader = idx == 0,
-                                            isChunkFooter = idx == slices.lastIndex,
-                                        )
-                                    }
-                                }
-                            }
-                        }.flatten()
-                    }
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),

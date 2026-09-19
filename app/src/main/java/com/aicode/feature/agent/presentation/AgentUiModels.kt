@@ -58,6 +58,25 @@ sealed interface FileBrowseState {
     data class Error(val detail: String?) : FileBrowseState
 }
 
+/** 一条聊天记录搜索命中：会话标题 + 消息片段，供侧边栏结果行展示。 */
+@Immutable
+data class ChatSearchHit(
+    val sessionId: String,
+    val sessionTitle: String,
+    val messageId: String,
+    /** 命中词为中心的正文片段（已折叠换行空白，两端按需加省略号）。 */
+    val snippet: String,
+    val timestamp: Long
+)
+
+/** 侧边栏聊天记录搜索状态：当前关键词与命中的扁平结果（按时间倒序）。 */
+@Immutable
+data class ChatSearchState(
+    val query: String = "",
+    val loading: Boolean = false,
+    val hits: List<ChatSearchHit> = emptyList()
+)
+
 /**
  * 单次 LLM 请求完成事件（含当次消耗的 Token）。
  */

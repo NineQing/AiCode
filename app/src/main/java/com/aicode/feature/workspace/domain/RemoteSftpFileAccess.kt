@@ -254,7 +254,7 @@ class RemoteSftpFileAccess @Inject constructor(
             }
             // cat 对不存在的文件退出码非零：兑现「文件不存在抛 NoSuchFileException」的接口契约。
             if (exit != null && exit != 0) throw NoSuchFileException(File(remote))
-        }.constrainOnce()
+        }
     }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean, encoding: Charset) {

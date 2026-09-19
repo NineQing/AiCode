@@ -36,7 +36,7 @@ class LocalFileAccess @Inject constructor(
         if (!file.exists()) throw NoSuchFileException(file)
         // 惰性 Sequence：每次迭代才读下一行，大文件不整份载入；迭代结束后随 use 关闭 reader。
         // 单行封顶 64K 字符，避免单个超长行把内存顶爆。
-        return file.bufferedReader().boundedLines()
+        return boundedLines { file.bufferedReader() }
     }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean, encoding: Charset) {
@@ -126,19 +126,6 @@ class LocalFileAccess @Inject constructor(
             throw IOException("write verification failed: ${file.absolutePath} expected ${bytes.size} bytes, found $actual")
         }
         FileLogger.i(TAG, "写入: '$path' -> ${file.absolutePath} (${bytes.size} 字节)")
-    }
-
-    override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long {
-        val file = resolve(path)
-        if (file.exists() && !overwrite) throw FileAlreadyExistsException(file)
-        file.parentFile?.mkdirs()
-        return try {
-            FileOutputStream(file).use { out -> input.copyTo(out) }
-        } catch (e: Exception) {
-            // 写入中途失败（如源流读取出错、空间不足）会留下半截文件，清掉再抛出
-            file.delete()
-            throw e
-        }
     }
 
     override fun writeStream(path: String, input: InputStream, overwrite: Boolean): Long {

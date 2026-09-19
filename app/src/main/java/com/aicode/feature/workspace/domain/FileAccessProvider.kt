@@ -43,7 +43,7 @@ interface FileAccessProvider {
     /**
      * 惰性逐行读取文件，供 [ReadFileTool] 按行窗口读取：读到哪算哪，整文件不进内存；
      * 单行超过上限（默认 64K 字符）会被截断。
-     * 返回的序列仅供单次迭代，且调用方需在 IO 线程上迭代；文件不存在时抛 [NoSuchFileException]。
+     * 序列可重复迭代（每次迭代重新打开底层读取）；调用方需在 IO 线程上迭代；文件不存在时抛 [NoSuchFileException]。
      */
     fun readLines(path: String): Sequence<String>
 

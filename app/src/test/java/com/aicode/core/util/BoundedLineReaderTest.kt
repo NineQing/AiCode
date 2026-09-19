@@ -49,7 +49,7 @@ class BoundedLineReaderTest {
     @Test
     fun boundedLines_returnsAllLinesInOrder() {
         val text = (1..1000).joinToString("\n") { "line$it" }
-        val lines = text.reader().boundedLines().toList()
+        val lines = boundedLines { text.reader() }.toList()
 
         assertEquals(1000, lines.size)
         assertEquals("line1", lines.first())
@@ -60,7 +60,7 @@ class BoundedLineReaderTest {
     fun boundedLines_readsOnlyWhatIsConsumed() {
         val reader = CountingReader("line\n".repeat(50_000))
 
-        assertEquals("line", reader.boundedLines().first())
+        assertEquals("line", boundedLines { reader }.first())
         // 只取第一行就不该继续读：一次 read 只返回 1 个字符，读完 "line\n" 仅需 5 次左右
         assertTrue("reads=${reader.reads}", reader.reads <= 16)
     }

@@ -64,16 +64,14 @@ internal class BoundedLineReader(
 
 /**
  * 惰性逐行读取：每次只物化当前一行（单行封顶 [MAX_STREAM_LINE_CHARS]），读到哪算哪，整文件不进内存。
- * 迭代结束或提前中止时自动关闭底层 reader。
  *
- * 仅供单次迭代（[Sequence.constrainOnce]）——reader 的生命周期绑定在这次迭代上，
- * 迭代被彻底消费或迭代器抛错才会关闭；未迭代完就丢弃序列不会触发关闭。
+ * 每次迭代都会调用 [open] 重新打开 reader，因此序列可重复迭代；一次迭代被完整消费或抛错时自动关闭。
  */
-internal fun Reader.boundedLines(): Sequence<String> = sequence {
-    BoundedLineReader(this@boundedLines).use { reader ->
+internal fun boundedLines(open: () -> Reader): Sequence<String> = sequence {
+    BoundedLineReader(open()).use { reader ->
         while (true) {
             val line = reader.readLine() ?: break
             yield(line.text)
         }
     }
-}.constrainOnce()
+}

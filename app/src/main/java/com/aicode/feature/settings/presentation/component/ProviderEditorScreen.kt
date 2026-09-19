@@ -55,7 +55,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -1060,7 +1060,7 @@ private fun AddModelSheet(
     val duplicate = existingModels.any { it == trimmedModel && it != initial?.id }
     val canSave = trimmedModel.isNotEmpty() && !duplicate
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -1316,7 +1316,7 @@ private fun FetchModelsDialog(
         onFetchModels()
     }
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = {
             onDismiss()
             if (isOnboarding) {
@@ -1711,7 +1711,7 @@ private fun ProviderTypeSelectionSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface
@@ -1984,7 +1984,7 @@ private fun ScriptPickerBottomSheet(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = MaterialTheme.colorScheme.surface
@@ -2070,7 +2070,7 @@ private fun RawOutputBottomSheet(
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.semanticColors.cardSurface
@@ -2400,7 +2400,7 @@ private fun IntervalSelectionSheet(
     onSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = MaterialTheme.colorScheme.surface
@@ -2467,7 +2467,7 @@ private fun ProviderHeadersSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -2645,7 +2645,7 @@ private fun ProviderScriptParamsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,

@@ -39,7 +39,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Surface
 import com.aicode.core.ui.AppSwitch
 import com.aicode.core.ui.SegmentedTabs
@@ -532,11 +532,12 @@ private fun ProfileEditSheet(
     var remotePath by remember { mutableStateOf(initialSsh?.remoteWorkspacePath ?: "") }
     var connExpanded by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = { WindowInsets(0.dp) }
+        contentWindowInsets = { WindowInsets(0.dp) },
+        dialogMaxWidth = 600.dp
     ) {
         Column(
             modifier = Modifier

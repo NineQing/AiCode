@@ -18,7 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -65,7 +65,7 @@ internal fun ProviderPresetSheet(
     // 固定内容高度，避免左右 tab 内容高度不一致导致切换时 sheet 整体跳动。
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     val sheetContentHeight = minOf(640.dp, screenHeight * 0.75f)
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = MaterialTheme.colorScheme.surface

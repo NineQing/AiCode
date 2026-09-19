@@ -32,7 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Surface
 import com.aicode.core.ui.AppSwitch
 import androidx.compose.material3.Text
@@ -167,7 +167,7 @@ internal fun BranchesTab(
         var expanded by remember { mutableStateOf(false) }
         val sheetState = rememberModalBottomSheetState()
 
-        ModalBottomSheet(
+        AdaptiveModalBottomSheet(
             onDismissRequest = { showCreateDialog = false },
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surface
@@ -301,7 +301,7 @@ internal fun BranchesTab(
     if (showCreateTagDialog) {
         var tagName by remember { mutableStateOf("") }
         val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
+        AdaptiveModalBottomSheet(
             onDismissRequest = { showCreateTagDialog = false },
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surface
@@ -716,7 +716,7 @@ private fun RefActionSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface

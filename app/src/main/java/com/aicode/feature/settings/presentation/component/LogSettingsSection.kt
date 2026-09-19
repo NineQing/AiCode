@@ -31,7 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Surface
 import com.aicode.core.ui.AppSwitch
 import androidx.compose.material3.Text
@@ -520,7 +520,7 @@ private fun LogLevelSheet(
     onSelect: (LogLevel) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface
@@ -593,7 +593,7 @@ private fun LogFileSheet(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface
@@ -655,7 +655,7 @@ private fun LogLineActionsSheet(
     onCopyMessage: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface

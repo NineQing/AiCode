@@ -14,7 +14,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -112,7 +112,7 @@ internal fun ReasoningEffortSelector(
 
     if (showSheet) {
         val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
+        AdaptiveModalBottomSheet(
             onDismissRequest = { showSheet = false },
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surface

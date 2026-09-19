@@ -34,7 +34,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.aicode.core.ui.AppSwitch
@@ -249,11 +249,12 @@ fun AddRemoteConnectionDialog(
     val screenHeight = configuration.screenHeightDp.dp
     val flingFix = rememberSheetFlingFix(sheetState)
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = { WindowInsets(0.dp) }
+        contentWindowInsets = { WindowInsets(0.dp) },
+        dialogMaxWidth = 600.dp
     ) {
         Column(
             modifier = Modifier
@@ -522,11 +523,12 @@ fun AddRemoteMountDialog(
     val screenHeight = configuration.screenHeightDp.dp
     val flingFix = rememberSheetFlingFix(sheetState)
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = { WindowInsets(0.dp) }
+        contentWindowInsets = { WindowInsets(0.dp) },
+        dialogMaxWidth = 600.dp
     ) {
         Column(
             modifier = Modifier

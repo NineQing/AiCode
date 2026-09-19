@@ -18,7 +18,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -366,7 +366,7 @@ internal fun SubAgentEditorScreen(
 
     if (showEffortSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AdaptiveModalBottomSheet(
             onDismissRequest = { showEffortSheet = false },
             sheetState = sheetState,
             containerColor = settingsPageBackground()
@@ -407,7 +407,7 @@ internal fun SubAgentEditorScreen(
 
     if (showModeSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AdaptiveModalBottomSheet(
             onDismissRequest = { showModeSheet = false },
             sheetState = sheetState,
             containerColor = settingsPageBackground()
@@ -496,7 +496,7 @@ private fun ToolPickerSheet(
         if (query.isBlank()) allTools else allTools.filter { it.contains(query, ignoreCase = true) }
     }
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = settingsPageBackground()

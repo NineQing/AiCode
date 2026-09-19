@@ -26,7 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.aicode.core.ui.AdaptiveModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import com.aicode.core.ui.AppSwitch
@@ -76,7 +76,7 @@ fun SyncSettingsSheet(
     var editUseGitIgnore by remember(useGitIgnore) { mutableStateOf(useGitIgnore) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    ModalBottomSheet(
+    AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface
     ) {

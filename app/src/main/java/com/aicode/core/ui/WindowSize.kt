@@ -38,6 +38,10 @@ fun currentWindowWidthClass(): WindowWidthClass {
 @Composable
 fun isExpandedWidth(): Boolean = currentWindowWidthClass() == WindowWidthClass.EXPANDED
 
+/** 是否为紧凑宽度（手机竖屏、窄分屏等，< 600dp）。 */
+@Composable
+fun isCompactWidth(): Boolean = currentWindowWidthClass() == WindowWidthClass.COMPACT
+
 object ContentWidth {
     /** 正文列最大宽度：再宽一行文字过长，视线来回扫描成本高。 */
     val readable = 800.dp

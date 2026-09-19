@@ -236,6 +236,9 @@ android {
             excludes += "/sshj.properties"
             excludes += "/kotlin-tooling-metadata.json"
             excludes += "/DebugProbesKt.bin"
+            // bcprov-jdk18on 1.78.1 与 jspecify 都带该 multi-release OSGi 元数据文件，打包路径冲突；
+            // 仅是 OSGi MANIFEST，排除即可。
+            excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
 
@@ -329,8 +332,9 @@ dependencies {
     // 远程同步 (SFTP/FTP) 与内置 FTP 服务端
     implementation("com.hierynomus:sshj:0.38.0")
     // BouncyCastle：sshj 0.38.0 用 X25519 密钥交换，Android 自带裁剪版 BC 不含该算法，
-    // 需显式引入完整版并注册替换（见 AIEditorApp.registerBouncyCastle）。版本与 sshj 传递依赖一致。
-    implementation("org.bouncycastle:bcprov-jdk18on:1.75")
+    // 需显式引入完整版并注册替换（见 AIEditorApp.registerBouncyCastle）。
+    // 1.75 命中 CVE-2024-30172（Ed25519 验证死循环 DoS），1.78 起修复；取与 sshj 0.39.0 对齐的 1.78.1。
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("commons-net:commons-net:3.10.0")
     implementation("org.apache.ftpserver:ftpserver-core:1.2.0")
     implementation("org.slf4j:slf4j-simple:2.0.9")

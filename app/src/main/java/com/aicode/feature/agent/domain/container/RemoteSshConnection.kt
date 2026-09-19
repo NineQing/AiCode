@@ -232,6 +232,9 @@ class RemoteSshConnection @Inject constructor(
     /**
      * 更新 ~/workspace 符号链接指向当前选中工作区的远程路径，让 AI 用 ~/workspace/... 路径时
      * Bash 命令（pwd 等）能直接访问到正确的工作区目录。应在工作区选中/初始化后调用。
+     *
+     * `~/workspace` 已是真实目录时跳过（工作区根被配成了 `~/workspace` 的情况）：此时 `ln` 会把
+     * 链接建到该目录**内部**，形成自引用死循环，破坏整个工作区；跳过时命令链路会回退到真实路径。
      */
     suspend fun updateWorkspaceSymlink(workspacePath: String) {
         val client = sshClient ?: return
@@ -240,9 +243,15 @@ class RemoteSshConnection @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 val session = client.startSession()
-                val cmd = session.exec("ln -sfn '$ws' ~/workspace 2>/dev/null; echo done")
-                java.io.BufferedReader(java.io.InputStreamReader(cmd.inputStream)).readText()
+                val cmd = session.exec(
+                    "if [ -d ~/workspace ] && [ ! -L ~/workspace ]; then echo skip; " +
+                        "else ln -sfn '$ws' ~/workspace 2>/dev/null; echo done; fi"
+                )
+                val out = java.io.BufferedReader(java.io.InputStreamReader(cmd.inputStream)).readText().trim()
                 session.close()
+                if (out == "skip") {
+                    FileLogger.w(TAG, "~/workspace 已是真实目录，跳过符号链接（工作区根可能配成了 ~/workspace）")
+                }
             }.onFailure { FileLogger.w(TAG, "更新 workspace 符号链接失败: $ws", it) }
         }
     }

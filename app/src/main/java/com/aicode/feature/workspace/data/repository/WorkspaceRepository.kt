@@ -12,6 +12,7 @@ import com.aicode.feature.agent.domain.container.ConnectionState
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
+import com.aicode.feature.workspace.domain.PathHomeResolver
 import com.aicode.feature.workspace.domain.UriPathResolver
 import com.aicode.feature.workspace.domain.model.Workspace
 import com.aicode.feature.workspace.domain.model.WorkspaceType
@@ -48,7 +49,8 @@ private val Context.workspaceDataStore by preferencesDataStore(name = "workspace
 class WorkspaceRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val executionModeHolder: ExecutionModeHolder,
-    private val remoteSshConnection: RemoteSshConnection
+    private val remoteSshConnection: RemoteSshConnection,
+    private val pathHomeResolver: PathHomeResolver
 ) {
     /** 校验失败时给 UI 的提示文案（如目录不可写/无法解析），消费后置 null。 */
     private val _addError = MutableStateFlow<String?>(null)
@@ -184,7 +186,7 @@ class WorkspaceRepository @Inject constructor(
     private suspend fun ensureRemoteWorkspaceRoot(): Boolean {
         val cfg = remoteSshConnection.config ?: return false
         if (!remoteSshConnection.isConnected()) return false
-        val wsRoot = expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
+        val wsRoot = pathHomeResolver.expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
         if (wsRoot.isEmpty()) return false
         val exit = execRemoteExit("mkdir -p ${shellQuote(wsRoot)}")
         if (exit != 0) {
@@ -193,16 +195,6 @@ class WorkspaceRepository @Inject constructor(
             return false
         }
         return true
-    }
-
-    /** 展开远程路径的 ~ 前缀为远程 home（连接成功后缓存）；非 ~ 开头原样返回。 */
-    private fun expandHome(path: String): String {
-        val home = remoteSshConnection.remoteHome ?: return path
-        return when {
-            path == "~" -> home
-            path.startsWith("~/") -> home.trimEnd('/') + path.removePrefix("~")
-            else -> path
-        }
     }
 
     /** 重新扫描工作区可用性（打开面板、拔插存储后调用），失联项置灰并在必要时回退当前工作区。 */
@@ -262,7 +254,7 @@ class WorkspaceRepository @Inject constructor(
             FileLogger.w(TAG, "远程工作区列表失败：SSH 未配置")
             return emptyList()
         }
-        val wsRoot = expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
+        val wsRoot = pathHomeResolver.expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
         return runCatching {
             // ls -d */ 列出子目录，取基名
             val output = execRemote("ls -d ${wsRoot}/*/ 2>/dev/null | xargs -n1 basename 2>/dev/null")
@@ -342,7 +334,7 @@ class WorkspaceRepository @Inject constructor(
             Workspace(name = name, path = dir.absolutePath)
         } else {
             val cfg = remoteSshConnection.config ?: return@withContext null
-            val wsRoot = expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
+            val wsRoot = pathHomeResolver.expandHome(cfg.remoteWorkspacePath.trimEnd('/'))
             val remotePath = "$wsRoot/$name"
             runCatching {
                 if (execRemoteExit("test -d ${shellQuote(remotePath)}") == 0) {
@@ -449,7 +441,7 @@ class WorkspaceRepository @Inject constructor(
         } else {
             val cfg = remoteSshConnection.config
             if (cfg != null) {
-                val remotePath = "${cfg.remoteWorkspacePath.trimEnd('/')}/$name"
+                val remotePath = "${pathHomeResolver.expandHome(cfg.remoteWorkspacePath).trimEnd('/')}/$name"
                 runCatching { execRemoteExit("rm -rf ${shellQuote(remotePath)}") }
                     .onFailure { FileLogger.e(TAG, "远程删除工作区失败: $remotePath", it) }
             }
@@ -488,7 +480,9 @@ class WorkspaceRepository @Inject constructor(
     fun currentPath(): String {
         if (!isLocal()) {
             return _current.value?.path
-                ?: remoteSshConnection.config?.remoteWorkspacePath?.takeIf { it.isNotBlank() }
+                ?: remoteSshConnection.config?.remoteWorkspacePath
+                    ?.let { pathHomeResolver.expandHome(it) }
+                    ?.takeIf { it.isNotBlank() }
                 ?: "/"
         }
         return _current.value?.path ?: projectsRoot.absolutePath

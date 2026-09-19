@@ -54,6 +54,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aicode.feature.settings.data.repository.AppThemeMode
 import com.aicode.feature.settings.data.repository.ContainerSettingsRepository
 import com.aicode.feature.settings.data.repository.DownloadedImageRecord
+import com.aicode.feature.settings.data.repository.DEFAULT_REMOTE_WORKSPACE_ROOT
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
@@ -1530,7 +1531,7 @@ class SettingsViewModel @Inject constructor(
                     port = conn.port,
                     username = conn.username,
                     password = conn.password,
-                    remoteWorkspacePath = ssh.remoteWorkspacePath.ifBlank { "/home/${conn.username}/workspace" }
+                    remoteWorkspacePath = ssh.remoteWorkspacePath.ifBlank { DEFAULT_REMOTE_WORKSPACE_ROOT }
                 )
                 executionModeRepository.setRemoteConnection(settings)
                 executionModeRepository.setExecutionMode(ExecutionMode.REMOTE_SSH)

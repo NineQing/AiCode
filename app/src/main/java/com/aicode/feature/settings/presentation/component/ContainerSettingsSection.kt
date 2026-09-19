@@ -78,6 +78,7 @@ import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.container.ContainerProfile
 import com.aicode.feature.agent.domain.container.RootfsSource
 import com.aicode.feature.settings.data.repository.ExecutionMode
+import com.aicode.feature.settings.data.repository.DEFAULT_REMOTE_WORKSPACE_ROOT
 import com.aicode.feature.settings.presentation.ContainerResetUiState
 import com.aicode.feature.workspace.domain.model.RemoteConnection
 import com.aicode.feature.workspace.domain.model.RemoteProtocol
@@ -724,7 +725,7 @@ private fun ProfileEditSheet(
                                     onClick = {
                                         selectedConnId = conn.id
                                         if (remotePath.isBlank()) {
-                                            remotePath = "/home/${conn.username}/workspace"
+                                            remotePath = DEFAULT_REMOTE_WORKSPACE_ROOT
                                         }
                                         connExpanded = false
                                     }
@@ -737,7 +738,7 @@ private fun ProfileEditSheet(
                     value = remotePath,
                     onValueChange = { remotePath = it },
                     label = stringResource(R.string.container_remote_workspace_path),
-                    placeholder = "/home/user/workspace"
+                    placeholder = DEFAULT_REMOTE_WORKSPACE_ROOT
                 )
             }
 

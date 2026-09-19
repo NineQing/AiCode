@@ -59,12 +59,13 @@ class ExecutionModeRepository @Inject constructor(
     /** 远程 SSH 连接配置。 */
     val remoteConnectionFlow: Flow<RemoteConnectionSettings?> = context.executionModeDataStore.data.map { prefs ->
         val host = prefs[HOST_KEY]?.takeIf { it.isNotBlank() } ?: return@map null
+        val username = prefs[USERNAME_KEY] ?: ""
         RemoteConnectionSettings(
             host = host,
             port = prefs[PORT_KEY]?.toIntOrNull() ?: 22,
-            username = prefs[USERNAME_KEY] ?: "",
+            username = username,
             password = prefs[PASSWORD_KEY] ?: "",
-            remoteWorkspacePath = prefs[REMOTE_PATH_KEY] ?: "/home/${prefs[USERNAME_KEY]}/workspace"
+            remoteWorkspacePath = normalizeRemoteWorkspacePath(prefs[REMOTE_PATH_KEY], username)
         )
     }
 
@@ -82,3 +83,23 @@ class ExecutionModeRepository @Inject constructor(
         }
     }
 }
+
+/**
+ * 归一化远程工作区根路径。旧版把默认值硬编码为 `/home/<用户名>/workspace`（对 home 不在
+ * `/home/<用户名>` 的用户，如 root 的 `/root`，是错的）；`~/workspace` 则是符号链接占用的路径，
+ * 不能当工作区根（会与链接相撞形成自引用）。这两类残留值与空值一律改回默认值。
+ */
+internal fun normalizeRemoteWorkspacePath(stored: String?, username: String): String {
+    val v = stored?.trim().orEmpty()
+    return if (v.isEmpty() || v == "/home/$username/workspace" || v == "~/workspace") {
+        DEFAULT_REMOTE_WORKSPACE_ROOT
+    } else {
+        v
+    }
+}
+
+/**
+ * 远程工作区根目录的默认值。**不能用 `~/workspace`**——那是「当前工作区」符号链接占用的路径，
+ * 同名会让根目录与链接相撞。
+ */
+internal const val DEFAULT_REMOTE_WORKSPACE_ROOT = "~/.aicode/workspaces"

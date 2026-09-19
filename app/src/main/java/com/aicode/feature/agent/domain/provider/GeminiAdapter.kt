@@ -214,6 +214,7 @@ class GeminiAdapter @Inject constructor(
                 },
                 attemptOnce = { onContent ->
                 val textBuilder = StringBuilder()
+                val budget = StreamBudget()
                 val toolCalls = mutableListOf<ToolCall>()
                 val images = mutableListOf<AgentImage>()
                 // model 轮的 parts 原样快照：文本分片按段合并，functionCall 与 thoughtSignature 原样保留。
@@ -266,10 +267,12 @@ class GeminiAdapter @Inject constructor(
                                     content?.getAsJsonArray("parts")?.forEach { partEl ->
                                         val part = partEl.asJsonObject
                                         val isThought = part.get("thought")?.asBoolean == true
+                                        if (part.has("functionCall")) budget.add(part.toString())
                                         accumulateSnapshotPart(snapshotParts, part, isThought)
                                         if (part.has("text")) {
                                             val text = part.get("text")?.asString ?: ""
                                             if (text.isNotEmpty()) {
+                                                budget.add(text)
                                                 if (isThought) {
                                                     // 思考增量：仅 UI 实时展示，不计入正文、不计入正文（不落库，重试时可安全重新流出）
                                                     if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()

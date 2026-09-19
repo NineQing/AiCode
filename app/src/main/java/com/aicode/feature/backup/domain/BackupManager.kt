@@ -6,7 +6,7 @@ import java.io.OutputStream
 /**
  * 备份编排器：从各数据源采集快照并打包，或反向解包还原。
  *
- * 导出：按 [BackupOptions] 采集 → 流式序列化（metadata.json + 各 *.jsonl）→ tar.gz 压缩 → 口令非空则 AES-GCM 流式加密。
+ * 导出：按 [BackupOptions] 采集 → 流式序列化（metadata.json + 各 *.jsonl）→ tar.gz 压缩 → 口令非空则分块 AES-GCM 加密。
  * 导入：口令非空则先流式解密 → 解 tar.gz → 校验 schemaVersion → 分批合并写入各数据源。
  * 全程流式，内存峰值与数据总量解耦（只持有当前分页批次）。
  */

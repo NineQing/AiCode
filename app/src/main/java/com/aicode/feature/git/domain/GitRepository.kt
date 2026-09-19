@@ -38,6 +38,9 @@ class GitRepository @Inject constructor(
     private companion object {
         /** 提交拓扑图每页加载条数。首批与每次「加载更多」都取这么多条，超过的需滚到底再拉。 */
         const val GRAPH_PAGE_SIZE = 100
+
+        /** diff 允许读取的单侧文件字节上限：超过则不拉内容，直接降级为「文件过大」。 */
+        const val MAX_DIFF_FILE_BYTES = 2L * 1024 * 1024
     }
     /**
      * 执行一条 `git` 子命令，返回合并后的 stdout+stderr 文本。仅用于只读命令（status/branches/log/remote 等）：
@@ -62,13 +65,17 @@ class GitRepository @Inject constructor(
         // 用不限幅执行：diff 内容/文件内容可能远超 AI 工具链路的 4 万字符限幅，
         // 截断占位符会混入 diff 数据流被 UI 渲染成伪 diff 行。
         val result = engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath())
+        if (result.outputTruncated) throw GitOutputTooLargeException()
         if (result.exitCode == 0) return result.output
         throw GitCommandFailureException(result.output.ifBlank { "git 退出码 ${result.exitCode}" })
     }
 
     /** 拼命令并跑（不判退出码），[git] 与 [gitChecked] 复用。 */
-    private suspend fun gitRaw(args: Array<out String>): String =
-        engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath()).output
+    private suspend fun gitRaw(args: Array<out String>): String {
+        val result = engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath())
+        if (result.outputTruncated) throw GitOutputTooLargeException()
+        return result.output
+    }
 
     /** 拼成交给 `/bin/sh -c` 的单条命令字符串，逐参数 [shellQuote] 转义。 */
     private fun buildGitCommand(args: Array<out String>): String = buildString {
@@ -522,11 +529,16 @@ class GitRepository @Inject constructor(
      * 上层据空串判定为「新增/删除」，整个文件按全增或全删呈现。
      */
     suspend fun showFileContent(ref: String, path: String): String {
+        if (refBlobSize("$ref:$path") > MAX_DIFF_FILE_BYTES) throw GitOutputTooLargeException()
         val out = git("show", "$ref:$path")
         // git show 对不存在的路径输出 fatal 到 stderr，runCommandSync 合并了 stdout+stderr。
         // 检测到 fatal 前缀视为该版本无此文件，返回空串让 diff 按全增/全删处理。
         return if (out.startsWith("fatal:") || out.startsWith("error:")) "" else out
     }
+
+    /** 指定 ref 下文件（`<ref>:<path>` / `:<path>`）的字节数；取不到（不存在/非法 ref）时返回 0。 */
+    private suspend fun refBlobSize(spec: String): Long =
+        runCatching { git("cat-file", "-s", spec).trim().toLong() }.getOrDefault(0L)
 
     /**
      * 读取工作区当前文件内容。用于工作区改动 diff：与 `HEAD:<path>` 对比看出未暂存的改动。
@@ -539,19 +551,27 @@ class GitRepository @Inject constructor(
     suspend fun worktreeFileContent(path: String): String {
         val local = withContext(Dispatchers.IO) {
             runCatching {
-                java.io.File(workspaceRepository.currentPath(), path).takeIf { it.isFile }?.readText()
-            }.getOrNull()
+                java.io.File(workspaceRepository.currentPath(), path)
+                    .takeIf { it.isFile }
+                    ?.also { if (it.length() > MAX_DIFF_FILE_BYTES) throw GitOutputTooLargeException() }
+                    ?.readText()
+            }.getOrElse { e ->
+                if (e is GitOutputTooLargeException) throw e
+                null
+            }
         }
         if (local != null) return local
         val result = engine.runCommandSyncUnbounded(
             "cat -- ${shellQuote(path)}",
             workspaceRepository.currentPath()
         )
+        if (result.outputTruncated) throw GitOutputTooLargeException()
         return if (result.exitCode == 0) result.output else ""
     }
 
     /** 读取暂存区当前文件内容（index）。文件尚未暂存时返回空串。 */
     suspend fun indexFileContent(path: String): String {
+        if (refBlobSize(":$path") > MAX_DIFF_FILE_BYTES) throw GitOutputTooLargeException()
         val out = git("show", ":$path")
         return if (out.startsWith("fatal:") || out.startsWith("error:")) "" else out
     }

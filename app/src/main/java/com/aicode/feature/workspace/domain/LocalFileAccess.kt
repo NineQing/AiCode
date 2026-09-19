@@ -1,6 +1,7 @@
 package com.aicode.feature.workspace.domain
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.util.boundedLines
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -34,14 +35,8 @@ class LocalFileAccess @Inject constructor(
         val file = resolve(path)
         if (!file.exists()) throw NoSuchFileException(file)
         // 惰性 Sequence：每次迭代才读下一行，大文件不整份载入；迭代结束后随 use 关闭 reader。
-        // 用 for 循环（而非 forEach 非挂起 lambda）内联，yield 才能合法出现在 builder 的挂起作用域里。
-        return sequence {
-            file.bufferedReader().use { reader ->
-                for (line in reader.lineSequence()) {
-                    yield(line)
-                }
-            }
-        }
+        // 单行封顶 64K 字符，避免单个超长行把内存顶爆。
+        return boundedLines { file.bufferedReader() }
     }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean, encoding: Charset) {

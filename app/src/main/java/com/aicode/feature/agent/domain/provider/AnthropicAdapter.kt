@@ -191,6 +191,7 @@ class AnthropicAdapter @Inject constructor(
                 },
                 attemptOnce = { onContent ->
             val textBuilder = StringBuilder()
+            val budget = StreamBudget()
             // content block index -> 累积中的 tool_use（仅 tool_use 块建条目，保序）。
             val toolBlocks = LinkedHashMap<Int, ToolBlockAcc>()
             var stopReason: String? = null
@@ -258,7 +259,9 @@ class AnthropicAdapter @Inject constructor(
                                             name = block.get("name")?.asString ?: ""
                                         )
                                         "thinking" -> thinkingBlocks[index] = ThinkingBlockAcc(type = "thinking").also { acc ->
-                                            acc.thinking.append(block.get("thinking")?.takeIf { !it.isJsonNull }?.asString ?: "")
+                                            val initial = block.get("thinking")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                                            budget.add(initial)
+                                            acc.thinking.append(initial)
                                             acc.signature = block.get("signature")?.takeIf { !it.isJsonNull }?.asString
                                         }
                                         // redacted_thinking 的 data 在 start 事件一次性给全，没有对应 delta。
@@ -273,6 +276,7 @@ class AnthropicAdapter @Inject constructor(
                                         "text_delta" -> {
                                             val t = delta.get("text")?.asString ?: ""
                                             if (t.isNotEmpty()) {
+                                                budget.add(t)
                                                 textBuilder.append(t)
                                                 if (firstByteReceived.compareAndSet(false, true)) watchdog.cancel()
                                                 onContent()
@@ -282,6 +286,7 @@ class AnthropicAdapter @Inject constructor(
                                         "thinking_delta" -> {
                                             val t = delta.get("thinking")?.asString ?: ""
                                             if (t.isNotEmpty()) {
+                                                budget.add(t)
                                                 obj.get("index")?.asInt?.let { idx ->
                                                     thinkingBlocks.getOrPut(idx) { ThinkingBlockAcc(type = "thinking") }
                                                         .thinking.append(t)
@@ -305,6 +310,7 @@ class AnthropicAdapter @Inject constructor(
                                         "input_json_delta" -> {
                                             val index = obj.get("index")?.asInt
                                             val partial = delta.get("partial_json")?.asString ?: ""
+                                            budget.add(partial)
                                             if (index != null) toolBlocks[index]?.args?.append(partial)
                                         }
                                     }

@@ -48,6 +48,20 @@ data class ModelCallStats(
     val retryCount: Long = 0
 )
 
+/**
+ * 按「渠道 + 模型」聚合的用量，专供周期总费用估算。
+ * 单价由渠道（自定义元数据以「提供商ID:模型名」为键）与模型共同决定，
+ * 只按模型聚合会丢掉渠道维度、算不到自定义单价。
+ */
+data class ModelProviderCostStats(
+    val providerId: String?,
+    val model: String?,
+    val inputTokens: Long,
+    val cachedInputTokens: Long,
+    val outputTokens: Long,
+    val cacheCreationTokens: Long
+)
+
 /** 当前周期的整体汇总，供概览卡片使用。 */
 data class CallSummary(
     val calls: Int,
@@ -158,6 +172,22 @@ interface LlmCallRecordDao {
         """
     )
     fun getModelStats(start: Long): Flow<List<ModelCallStats>>
+
+    /** 按「渠道 + 模型」聚合 token 用量，供周期总费用估算（费用必须带渠道才算得到自定义单价）。 */
+    @Query(
+        """
+        SELECT providerId AS providerId,
+               model AS model,
+               SUM(inputTokens) AS inputTokens,
+               SUM(cachedInputTokens) AS cachedInputTokens,
+               SUM(outputTokens) AS outputTokens,
+               SUM(cacheCreationTokens) AS cacheCreationTokens
+        FROM llm_call_records
+        WHERE createdAt >= :start AND model IS NOT NULL AND model != ''
+        GROUP BY providerId, model
+        """
+    )
+    fun getModelProviderCostStats(start: Long): Flow<List<ModelProviderCostStats>>
 
     /** 周期整体汇总（无 GROUP BY，恒返回一行）。 */
     @Query(

@@ -49,6 +49,7 @@ import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.data.local.ModelSheetCollapseStore
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.modelMetadataKey
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowDown
 import compose.icons.feathericons.ArrowUp
@@ -394,7 +395,7 @@ internal fun ModelSelectionSheet(
                                             ModelSelectionRow(
                                                 model = model,
                                                 selected = provider.id == currentProviderId && model == currentModel,
-                                                metadata = modelMetadata[model],
+                                                metadata = modelMetadata[modelMetadataKey(provider.id, model)],
                                                 onClick = { onSelect(provider.id, model) }
                                             )
                                         }

@@ -1,6 +1,8 @@
 package com.aicode.feature.agent.domain.container
 
+import com.aicode.core.util.BoundedLineReader
 import com.aicode.core.util.FileLogger
+import com.aicode.core.util.LINE_TRUNCATED_NOTE
 import com.aicode.feature.agent.domain.container.CommandEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -168,7 +170,7 @@ class RemoteSshEngine @Inject constructor(
         val effectiveTimeout = timeoutMs.coerceIn(1L, CommandEngine.MAX_TIMEOUT_MS)
         FileLogger.d(TAG, "执行命令(远程同步) cwd=$projectPath timeout=${effectiveTimeout}ms: ${sanitizeCommandForLog(command)}")
         val session = connection.startExecSession(buildCdCommand(command, projectPath))
-        val output = if (unbounded) BoundedOutput(Int.MAX_VALUE, Int.MAX_VALUE) else BoundedOutput()
+        val output = if (unbounded) BoundedOutput.hardCapped(MAX_UNBOUNDED_CHARS) else BoundedOutput()
         var exitCode: Int? = null
         try {
             coroutineScope {
@@ -213,7 +215,7 @@ class RemoteSshEngine @Inject constructor(
             runCatching { session.close() }
         }
         FileLogger.v(TAG, "命令完成(远程, 退出码 $exitCode，输出 ${output.totalChars} 字符): ${sanitizeCommandForLog(command)}")
-        CommandResult(output.build(), exitCode)
+        CommandResult(output.build(), exitCode, output.truncated)
     }
 
     override fun isContainerInstalled(): Boolean = connection.isConnected()

@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 验证落库前的内容净化：剥离内嵌 base64 图片 data URL、超长内容截断，
- * 防止超大 content 触发 SQLite CursorWindow 崩溃（SQLiteBlobTooBigException）。
+ * 验证落库前的内容净化与按字节限长：剥离内嵌 base64 图片 data URL、超长内容按 UTF-8 字节截断，
+ * 防止超大字段撑爆单行触发 SQLite CursorWindow 崩溃。
  */
 class MessagePersistenceUseCaseTest {
 
@@ -38,8 +38,21 @@ class MessagePersistenceUseCaseTest {
 
         val result = MessagePersistenceUseCase.sanitizeContent(oversized)
 
-        assertTrue(result.length <= MessagePersistenceUseCase.MAX_CONTENT_CHARS + 64)
         assertTrue(result.endsWith(MessagePersistenceUseCase.CONTENT_TRUNCATED_MARKER))
+        val kept = result.removeSuffix(MessagePersistenceUseCase.CONTENT_TRUNCATED_MARKER)
+        assertTrue(kept.toByteArray(Charsets.UTF_8).size <= MessagePersistenceUseCase.MAX_CONTENT_BYTES)
+    }
+
+    @Test
+    fun sanitizeContent_boundsBytesForMultibyteText() {
+        // 中文单字符 3 字节：字符数上限约束不住真实占用，必须按字节截断。
+        val oversized = "汉".repeat(100_000)
+
+        val result = MessagePersistenceUseCase.sanitizeContent(oversized)
+
+        assertTrue(result.endsWith(MessagePersistenceUseCase.CONTENT_TRUNCATED_MARKER))
+        val kept = result.removeSuffix(MessagePersistenceUseCase.CONTENT_TRUNCATED_MARKER)
+        assertTrue(kept.toByteArray(Charsets.UTF_8).size <= MessagePersistenceUseCase.MAX_CONTENT_BYTES)
     }
 
     @Test
@@ -50,18 +63,37 @@ class MessagePersistenceUseCaseTest {
     }
 
     @Test
-    fun capLargeField_truncatesOversizedJson() {
+    fun capBytes_truncatesOversizedJson() {
         val oversized = "[{\"id\":\"" + "a".repeat(300_000) + "\"}]"
 
-        val result = MessagePersistenceUseCase.capLargeField(oversized)
+        val result = MessagePersistenceUseCase.capBytes(
+            oversized,
+            MessagePersistenceUseCase.MAX_SNAPSHOT_BYTES
+        )
 
-        assertTrue(result.length <= MessagePersistenceUseCase.MAX_CONTENT_CHARS)
+        assertTrue(result.toByteArray(Charsets.UTF_8).size <= MessagePersistenceUseCase.MAX_SNAPSHOT_BYTES)
     }
 
     @Test
-    fun capLargeField_keepsNormalJsonUnchanged() {
+    fun capBytes_doesNotSplitSurrogatePair() {
+        val oversized = "😀".repeat(50_000)
+
+        val result = MessagePersistenceUseCase.capBytes(
+            oversized,
+            MessagePersistenceUseCase.MAX_SNAPSHOT_BYTES
+        )
+
+        assertTrue(result.toByteArray(Charsets.UTF_8).size <= MessagePersistenceUseCase.MAX_SNAPSHOT_BYTES)
+        assertEquals(0, result.length % 2)
+    }
+
+    @Test
+    fun capBytes_keepsNormalJsonUnchanged() {
         val normal = "[{\"id\":\"call_1\",\"name\":\"writeFile\"}]"
 
-        assertEquals(normal, MessagePersistenceUseCase.capLargeField(normal))
+        assertEquals(
+            normal,
+            MessagePersistenceUseCase.capBytes(normal, MessagePersistenceUseCase.MAX_SNAPSHOT_BYTES)
+        )
     }
 }

@@ -1,5 +1,6 @@
 package com.aicode.feature.workspace.domain
 
+import com.aicode.core.util.BoundedLineReader
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
 import com.aicode.feature.agent.domain.container.friendlySshError
@@ -20,6 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.nio.charset.Charset
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.NoSuchFileException
@@ -30,6 +32,12 @@ private const val TAG = "RemoteSftpFileAccess"
 
 /** 单次 SFTP 读写缓冲大小。 */
 private const val IO_CHUNK = 32 * 1024
+
+/** `readFile` / `readBytes` 的远程文件大小上限（字节）：超过即抛 [RemoteOutputTooLargeException]，避免整篇读进内存。 */
+private const val MAX_REMOTE_READ_BYTES = 8L * 1024 * 1024
+
+/** 远程文件超过上限时抛出：调用方据此给出「内容过大」提示，而不是误判为文件不存在。 */
+class RemoteOutputTooLargeException(message: String) : IOException(message)
 
 /**
  * [FileAccessProvider] 的远程实现：走 SFTP 协议读写远程文件。
@@ -76,22 +84,53 @@ class RemoteSftpFileAccess @Inject constructor(
                 } catch (e: Exception) {
                     throw IOException(friendlySshError(e), e)
                 }
-                try {
-                    block(sftp)
-                } catch (e: Exception) {
-                    if (e !is SFTPException && e !is NoSuchFileException && e !is FileAlreadyExistsException) {
-                        runCatching { connection.invalidateSftp() }
-                    }
-                    throw e
-                }
+                guarded { block(sftp) }
             }
         }
     }
 
+    /**
+     * 复用已打开的 SFTP 通道执行一次操作（不重新取 client）。供 [readLines] 惰性迭代使用：每次只锁住
+     * 一次读取，`yield` 在锁外，调用方中途放弃迭代时不会把 [sftpMutex] 永久占住。
+     */
+    private fun <T> onSftp(block: () -> T): T = runBlocking {
+        withContext(Dispatchers.IO) { sftpMutex.withLock { guarded(block) } }
+    }
+
+    /** 传输层异常时丢弃 SFTP 通道（下次调用自动重建）后原样抛出；业务错误不重建。 */
+    private suspend fun <T> guarded(block: () -> T): T = try {
+        block()
+    } catch (e: Exception) {
+        if (e !is SFTPException && e !is NoSuchFileException && e !is FileAlreadyExistsException) {
+            runCatching { connection.invalidateSftp() }
+        }
+        throw e
+    }
+
     override fun readFile(path: String): String = String(readAll(toRemotePath(path)), Charsets.UTF_8)
 
-    override fun readLines(path: String): Sequence<String> =
-        String(readAll(toRemotePath(path)), Charsets.UTF_8).lines().asSequence()
+    /**
+     * 惰性逐行读取：每次只物化当前一行（单行封顶 64K 字符），读到哪算哪，整文件不进内存。
+     * 序列可重复迭代（每次迭代重新打开远程文件）；调用方需在 IO 线程上迭代。
+     */
+    override fun readLines(path: String): Sequence<String> {
+        val remote = toRemotePath(path)
+        return sequence {
+            val reader = withSftp { sftp ->
+                val attrs = sftp.statExistence(remote) ?: throw NoSuchFileException(File(remote))
+                if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("是目录，无法按文件读取: $remote")
+                BoundedLineReader(InputStreamReader(RemoteFileInputStream(sftp.open(remote))))
+            }
+            try {
+                while (true) {
+                    val line = onSftp { reader.readLine() } ?: break
+                    yield(line.text)
+                }
+            } finally {
+                runCatching { onSftp { reader.close() } }
+            }
+        }
+    }
 
     override fun writeFile(path: String, content: String, overwrite: Boolean, encoding: Charset) =
         writeBytes(path, content.toByteArray(encoding), overwrite)
@@ -279,10 +318,15 @@ class RemoteSftpFileAccess @Inject constructor(
 
     override fun toDisplayPath(path: String): String = toDisplayPathFromRemote(toRemotePath(path))
 
-    /** 读取远程文件全部字节；不存在抛 [NoSuchFileException]。 */
+    /** 读取远程文件全部字节；不存在抛 [NoSuchFileException]，超过 [MAX_REMOTE_READ_BYTES] 抛 [RemoteOutputTooLargeException]。 */
     private fun readAll(remote: String): ByteArray = withSftp { sftp ->
         val attrs = sftp.statExistence(remote) ?: throw NoSuchFileException(File(remote))
         if (attrs.type == FileMode.Type.DIRECTORY) throw IOException("是目录，无法按文件读取: $remote")
+        if (attrs.size > MAX_REMOTE_READ_BYTES) {
+            throw RemoteOutputTooLargeException(
+                "远程文件超过 ${MAX_REMOTE_READ_BYTES / 1024 / 1024}MB，请改用 start_line/end_line 分段读取"
+            )
+        }
         sftp.open(remote).use { rf -> readFully(rf) }
     }
 
@@ -353,6 +397,29 @@ class RemoteSftpFileAccess @Inject constructor(
         val parent = remote.substringBeforeLast('/', "")
         if (parent.isNotEmpty()) sftp.mkdirs(parent)
     }
+}
+
+/** 把 SFTP [RemoteFile] 的随机读适配为顺序 [InputStream]，供 [BoundedLineReader] 惰性逐行读取。 */
+private class RemoteFileInputStream(private val file: RemoteFile) : InputStream() {
+    private var offset = 0L
+    private val single = ByteArray(1)
+
+    override fun read(): Int {
+        val n = file.read(offset, single, 0, 1)
+        if (n <= 0) return -1
+        offset += 1
+        return single[0].toInt() and 0xFF
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (len == 0) return 0
+        val n = file.read(offset, b, off, len)
+        if (n <= 0) return -1
+        offset += n
+        return n
+    }
+
+    override fun close() = file.close()
 }
 
 /** SFTP 权限集合 → 9 位 rwx 字符串（如 `rw-r--r--`）。 */

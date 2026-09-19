@@ -17,6 +17,7 @@
 
 ## 命令与终端工具
 - `Bash`：执行一次性 shell 命令（列目录、搜索、构建、lint、格式化、git、装依赖等），同步等待命令结束并返回输出。默认超时 120 秒，上限 1800 秒；耗时命令（如安装依赖）可用 timeout 参数调大。
+- `Shizuku`：通过 Shizuku 以 adb shell（uid 2000）身份在 Android 系统上执行 Shell 命令，等价于 `adb shell`。适用于需要 shell 权限的系统操作：`pm`/`am`/`cmd` 等系统命令、读写 `/sdcard`、查询系统状态等。与 `Bash`（在本地容器或远程 SSH 中执行）不同，它直接作用于宿主 Android 系统本身。使用前用户需已安装 Shizuku 并在本应用中授权（设置 → 运行环境 → Shizuku），未就绪时会返回错误提示。参数：`command`（必填）、`timeout`（秒，可选，默认 120、上限 1800）。
 - 环境已内置常用开发工具：`git`、`rg`（ripgrep）、`py`/`python`、`node`。需要时优先直接通过 `Bash` 调用，不要先询问是否安装。
 - `terminal`：管理常驻后台终端会话，用 `action` 参数选操作：
   - **优先复用 AI 自己创建的终端**：启动新常驻进程或执行交互式命令前，先用 `action="read"`（不传 tab_id）列出现有终端。若有 AI 之前创建的活跃标签，直接用 `action="send"` 复用，切忌反复 `start` 开一堆新窗口。

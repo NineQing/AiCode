@@ -81,6 +81,7 @@ import com.aicode.feature.settings.data.repository.BackgroundSettingsRepository
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.presentation.SettingsViewModel
+import com.aicode.feature.settings.presentation.ShizukuViewModel
 import com.aicode.feature.settings.presentation.SkillImportState
 import com.aicode.feature.settings.presentation.SkillUiEntry
 import com.aicode.feature.agent.domain.skill.SkillImportError
@@ -149,6 +150,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     SubAgentDetail(R.string.settings_subagents),
     SubAgentEditor(R.string.settings_subagents),
     Container(R.string.settings_container),
+    Shizuku(R.string.settings_shizuku),
     ContainerDownloads(R.string.container_download_image),
     Proxy(R.string.proxy_title),
     Log(R.string.settings_log),
@@ -868,6 +870,17 @@ fun SettingsScreen(
                     onRestoreBuiltin = { viewModel.restoreBuiltinAlpine() },
                     remoteConnections = remoteConnections
                 )
+                SettingsSection.Shizuku -> {
+                    val shizukuViewModel: ShizukuViewModel =
+                        androidx.hilt.navigation.compose.hiltViewModel()
+                    val shizukuState by shizukuViewModel.state.collectAsStateWithLifecycle()
+                    ShizukuSection(
+                        state = shizukuState,
+                        onRequestPermission = { shizukuViewModel.requestPermission() },
+                        onOpenShizuku = { shizukuViewModel.openShizukuApp() },
+                        onRefresh = { shizukuViewModel.refresh() }
+                    )
+                }
                 SettingsSection.ContainerDownloads -> ContainerImageDownloadSection(
                     catalog = imageCatalog,
                     state = imageDownload,
@@ -1279,6 +1292,12 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.Server,
                 title = stringResource(SettingsSection.RemoteServers.titleRes),
                 onClick = { onOpen(SettingsSection.RemoteServers) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Terminal,
+                title = stringResource(SettingsSection.Shizuku.titleRes),
+                onClick = { onOpen(SettingsSection.Shizuku) }
             )
         }
 

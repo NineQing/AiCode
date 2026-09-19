@@ -1303,6 +1303,15 @@
     <string name="crash_screen_terminal">Terminal</string>
     <string name="crash_screen_git">Git</string>
     <string name="crash_screen_unknown">Unknown</string>
+    <string name="crash_banner_title">Application Error</string>
+    <string name="crash_section_environment">Environment &amp; Runtime</string>
+    <string name="crash_section_stack">Exception Stack Trace</string>
+    <string name="crash_field_workspace_mode">Workspace Mode</string>
+    <string name="crash_field_screen">Screen</string>
+    <string name="crash_field_version">App Version</string>
+    <string name="crash_field_device">Device</string>
+    <string name="crash_field_thread">Thread</string>
+    <string name="crash_field_time">Time</string>
 
     <!-- Provider balance bar -->
     <string name="balance_fetching">Fetching balance…</string>

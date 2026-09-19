@@ -1302,6 +1302,15 @@
     <string name="crash_screen_terminal">终端</string>
     <string name="crash_screen_git">Git</string>
     <string name="crash_screen_unknown">未知</string>
+    <string name="crash_banner_title">应用运行异常</string>
+    <string name="crash_section_environment">环境与运行状态</string>
+    <string name="crash_section_stack">异常调用栈</string>
+    <string name="crash_field_workspace_mode">工作区模式</string>
+    <string name="crash_field_screen">发生页面</string>
+    <string name="crash_field_version">应用版本</string>
+    <string name="crash_field_device">设备型号</string>
+    <string name="crash_field_thread">异常线程</string>
+    <string name="crash_field_time">发生时间</string>
 
     <!-- 余额面板（ProviderBalanceBar） -->
     <string name="balance_fetching">正在获取余量…</string>

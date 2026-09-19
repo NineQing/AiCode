@@ -41,16 +41,58 @@ class AIEditorApp : Application(), Configuration.Provider {
         const val MAX_CRASH_STACK_CHARS = 50_000
         private const val CRASH_PREFS = "crash_state"
         private const val KEY_CRASH_UI_SHOWING = "crash_ui_showing"
+        private const val KEY_LAST_CRASH_TIME = "last_crash_time"
+        private const val KEY_CRASH_COUNT = "crash_count"
+        /** 10 秒内的连续崩溃视为密集崩溃。 */
+        private const val CRASH_RESET_WINDOW_MS = 10_000L
+        /** 密集崩溃达到 3 次触发硬熔断退出，杜绝死循环。 */
+        private const val MAX_CONSECUTIVE_CRASHES = 3
 
         /** 当前导航路由（MainActivity 写入），崩溃时随报告带出，用于定位崩溃页面。 */
         @Volatile
         var currentRoute: String? = null
 
-        /** 错误页关闭后清除落盘标志，允许下一次崩溃再次进入错误页。 */
-        fun resetCrashUiFlag(context: android.content.Context) {
+        /** 当前工作区模式（本地 PRoot / 远程 SSH），崩溃时随报告带出。 */
+        @Volatile
+        var currentWorkspaceMode: String? = null
+
+        /** 重置崩溃状态（主进程健康运行或用户主动从错误页重启时调用）。 */
+        fun resetCrashState(context: android.content.Context) {
             context.getSharedPreferences(CRASH_PREFS, android.content.Context.MODE_PRIVATE)
-                .edit().remove(KEY_CRASH_UI_SHOWING).apply()
+                .edit()
+                .remove(KEY_CRASH_UI_SHOWING)
+                .remove(KEY_CRASH_COUNT)
+                .remove(KEY_LAST_CRASH_TIME)
+                .apply()
         }
+
+        /** 向后兼容的旧别名，保留供外部调用。 */
+        fun resetCrashUiFlag(context: android.content.Context) {
+            resetCrashState(context)
+        }
+
+        /** 兼容获取当前进程名。 */
+        fun getProcessNameCompat(context: android.content.Context): String {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                return Application.getProcessName()
+            }
+            return runCatching {
+                val cmdline = java.io.File("/proc/self/cmdline")
+                if (cmdline.exists()) {
+                    cmdline.readText().trim().trim { it <= ' ' || it == '\u0000' }
+                } else null
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: runCatching {
+                    val activityThread = Class.forName("android.app.ActivityThread")
+                    val method = activityThread.getMethod("currentProcessName")
+                    method.invoke(null) as? String
+                }.getOrNull()
+                ?: context.packageName
+        }
+
+        /** 判断当前进程是否为专门渲染崩溃错误页的子进程。 */
+        fun isCrashProcess(context: android.content.Context): Boolean =
+            getProcessNameCompat(context).endsWith(":crash")
     }
 
     override fun attachBaseContext(base: android.content.Context) {
@@ -149,6 +191,12 @@ class AIEditorApp : Application(), Configuration.Provider {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
+        if (isCrashProcess(this)) {
+            // 崩溃错误页运行在独立 :crash 进程中。
+            // 坚决不执行 super.onCreate()（避免触发 Hilt 的 @Inject 字段注入与隐式业务类加载），
+            // 也坚决不启动主进程业务协程、数据库访问或常驻服务，使错误页拥有纯净轻量的渲染环境。
+            return
+        }
         super.onCreate()
         logDeviceInfo()
         // 把提供商级代理注册表挂到 AppProxy（applyGlobal 已在 attachBaseContext 完成），
@@ -249,6 +297,17 @@ class AIEditorApp : Application(), Configuration.Provider {
         appScope.launch { mcpConfigRepository.startWatching() }
         appScope.launch { permissionRulesRepository.startWatching() }
         appScope.launch { skillConfigRepository.startWatching() }
+        // 持续同步工作区模式缓存，崩溃时随报告带出
+        appScope.launch {
+            executionModeRepository.executionModeFlow.collect { mode ->
+                currentWorkspaceMode = mode.name
+            }
+        }
+        // 主进程健康启动 10 秒后，自动清零连续崩溃计数与错误页显示标志，恢复健康状态
+        appScope.launch {
+            kotlinx.coroutines.delay(10_000)
+            resetCrashState(this@AIEditorApp)
+        }
         // 语言切换由 MainActivity 的 attachBaseContext + recreate() 统一管理。
         // MainActivity 继承 ComponentActivity（非 AppCompatActivity），
         // AppCompatDelegate.setApplicationLocales 的自动 recreate 不生效，
@@ -332,16 +391,44 @@ class AIEditorApp : Application(), Configuration.Provider {
      */
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
+        val isCrash = isCrashProcess(this)
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            FileLogger.e("CRASH", "线程 ${thread.name} 未捕获异常", throwable)
+            val processName = getProcessNameCompat(this)
+            FileLogger.e("CRASH", "线程 ${thread.name} 未捕获异常 (进程=$processName)", throwable)
             // 崩溃前同步 flush 缓冲日志，避免最后一段（含本行错误）留在内存中丢失。
             FileLogger.flushSync()
-            val prefs = getSharedPreferences(CRASH_PREFS, MODE_PRIVATE)
-            if (prefs.getBoolean(KEY_CRASH_UI_SHOWING, false)) {
-                // 错误页自身崩溃：交回系统默认处理器，避免无限重启循环
+
+            // 1. 若 :crash 进程自身发生异常：交回系统默认处理器并彻底退出，绝不二次拉起错误页
+            if (isCrash) {
+                FileLogger.e(TAG, "崩溃错误页进程发生异常，强制终止进程，避免递归")
                 previous?.uncaughtException(thread, throwable)
+                Process.killProcess(Process.myPid())
                 return@setDefaultUncaughtExceptionHandler
             }
+
+            // 2. 主进程崩溃：检查崩溃频次与状态，防止死循环无限拉起
+            val prefs = getSharedPreferences(CRASH_PREFS, MODE_PRIVATE)
+            val isUiShowing = prefs.getBoolean(KEY_CRASH_UI_SHOWING, false)
+            val lastCrashTime = prefs.getLong(KEY_LAST_CRASH_TIME, 0L)
+            val now = System.currentTimeMillis()
+            val recentCrashCount = if (now - lastCrashTime < CRASH_RESET_WINDOW_MS) {
+                prefs.getInt(KEY_CRASH_COUNT, 0) + 1
+            } else {
+                1
+            }
+            prefs.edit()
+                .putLong(KEY_LAST_CRASH_TIME, now)
+                .putInt(KEY_CRASH_COUNT, recentCrashCount)
+                .apply()
+
+            // 熔断保护：错误页正在展示又发生崩溃，或短时间内连续崩溃达到阈值
+            if (isUiShowing || recentCrashCount >= MAX_CONSECUTIVE_CRASHES) {
+                FileLogger.e(TAG, "触发崩溃熔断保护 (isUiShowing=$isUiShowing, count=$recentCrashCount)，终止自启交由系统处理")
+                previous?.uncaughtException(thread, throwable)
+                Process.killProcess(Process.myPid())
+                return@setDefaultUncaughtExceptionHandler
+            }
+
             prefs.edit().putBoolean(KEY_CRASH_UI_SHOWING, true).apply()
             try {
                 startActivity(
@@ -350,6 +437,7 @@ class AIEditorApp : Application(), Configuration.Provider {
                         putExtra(CrashActivity.EXTRA_THREAD_NAME, thread.name)
                         putExtra(CrashActivity.EXTRA_STACK, stackTraceOf(throwable))
                         putExtra(CrashActivity.EXTRA_SCREEN, currentRoute)
+                        putExtra(CrashActivity.EXTRA_WORKSPACE_MODE, currentWorkspaceMode)
                     }
                 )
             } catch (t: Throwable) {

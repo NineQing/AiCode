@@ -38,9 +38,10 @@
             </intent-filter>
         </activity>
 
-        <!-- 未捕获异常时由 AIEditorApp 的全局 handler 拉起，全屏展示崩溃详情供复制反馈。 -->
+        <!-- 未捕获异常时由 AIEditorApp 的全局 handler 拉起，全屏展示崩溃详情供复制反馈。独立进程运行，避免被主进程崩溃影响或引发 Application 业务逻辑重跑。 -->
         <activity
             android:name=".CrashActivity"
+            android:process=":crash"
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.AICode" />

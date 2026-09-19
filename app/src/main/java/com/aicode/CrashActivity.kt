@@ -64,8 +64,9 @@ class CrashActivity : ComponentActivity() {
         val threadName = intent.getStringExtra(EXTRA_THREAD_NAME) ?: "unknown"
         val stack = intent.getStringExtra(EXTRA_STACK) ?: ""
         val screen = intent.getStringExtra(EXTRA_SCREEN)
+        val mode = intent.getStringExtra(EXTRA_WORKSPACE_MODE)
         val logDir = resolveLogDir()
-        val report = buildReport(threadName, stack, screen, logDir)
+        val report = buildReport(threadName, stack, screen, mode, logDir)
         setContent {
             AIEditorTheme {
                 CrashScreen(
@@ -77,6 +78,8 @@ class CrashActivity : ComponentActivity() {
                         Toast.makeText(this, R.string.crash_copied, Toast.LENGTH_SHORT).show()
                     },
                     onRestart = {
+                        // 用户主动点击重启：清除崩溃标记与计数，允许主进程尝试冷启动
+                        AIEditorApp.resetCrashState(applicationContext)
                         startActivity(
                             Intent(this, MainActivity::class.java).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -91,13 +94,12 @@ class CrashActivity : ComponentActivity() {
                 )
             }
         }
-        // 页面内容已成功设置：清除落盘标志，允许下一次崩溃再次进入错误页。
-        // 若本页面自身崩溃，标志仍在，handler 会交回系统默认处理器避免无限重启。
-        AIEditorApp.resetCrashUiFlag(applicationContext)
+        // 注意：不在此处重置 KEY_CRASH_UI_SHOWING！
+        // 错误页展示期间保持该标志，直到用户主动点击重启或主进程健康存活，杜绝崩溃循环重入。
     }
 
-    /** 组装可复制的崩溃报告：页面、版本、设备、时间、线程、堆栈、日志位置。 */
-    private fun buildReport(threadName: String, stack: String, screen: String?, logDir: String): String {
+    /** 组装可复制的崩溃报告：页面、模式、版本、设备、时间、线程、堆栈、日志位置。 */
+    private fun buildReport(threadName: String, stack: String, screen: String?, mode: String?, logDir: String): String {
         val appVersion = runCatching {
             packageManager.getPackageInfo(packageName, 0).let { info ->
                 val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -114,6 +116,7 @@ class CrashActivity : ComponentActivity() {
         return buildString {
             appendLine(getString(R.string.crash_report_title))
             appendLine(getString(R.string.crash_report_screen, screenName(screen)))
+            appendLine(getString(R.string.crash_report_mode, modeName(mode)))
             appendLine(getString(R.string.crash_report_time, time))
             appendLine(getString(R.string.crash_report_version, appVersion))
             appendLine(getString(R.string.crash_report_device, device))
@@ -123,6 +126,13 @@ class CrashActivity : ComponentActivity() {
             appendLine()
             appendLine(getString(R.string.crash_report_log, logDir))
         }
+    }
+
+    private fun modeName(mode: String?): String = when (mode) {
+        "LOCAL_PROOT" -> getString(R.string.crash_mode_local)
+        "REMOTE_SSH" -> getString(R.string.crash_mode_remote)
+        null -> getString(R.string.crash_mode_unknown)
+        else -> mode
     }
 
     private fun screenName(route: String?): String = when (route) {
@@ -142,6 +152,7 @@ class CrashActivity : ComponentActivity() {
         const val EXTRA_THREAD_NAME = "thread_name"
         const val EXTRA_STACK = "stack"
         const val EXTRA_SCREEN = "screen"
+        const val EXTRA_WORKSPACE_MODE = "workspace_mode"
     }
 }
 

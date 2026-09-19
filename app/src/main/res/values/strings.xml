@@ -1293,6 +1293,10 @@
     <string name="crash_report_thread">线程：%1$s</string>
     <string name="crash_report_log">日志文件：%1$s</string>
     <string name="crash_report_screen">页面：%1$s</string>
+    <string name="crash_report_mode">工作区模式：%1$s</string>
+    <string name="crash_mode_local">本地 PRoot 容器</string>
+    <string name="crash_mode_remote">远程 SSH</string>
+    <string name="crash_mode_unknown">未知</string>
     <string name="crash_screen_chat">聊天</string>
     <string name="crash_screen_settings">设置</string>
     <string name="crash_screen_terminal">终端</string>

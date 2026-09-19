@@ -150,7 +150,6 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     SubAgentDetail(R.string.settings_subagents),
     SubAgentEditor(R.string.settings_subagents),
     Container(R.string.settings_container),
-    Shizuku(R.string.settings_shizuku),
     ContainerDownloads(R.string.container_download_image),
     Proxy(R.string.proxy_title),
     Log(R.string.settings_log),
@@ -870,17 +869,6 @@ fun SettingsScreen(
                     onRestoreBuiltin = { viewModel.restoreBuiltinAlpine() },
                     remoteConnections = remoteConnections
                 )
-                SettingsSection.Shizuku -> {
-                    val shizukuViewModel: ShizukuViewModel =
-                        androidx.hilt.navigation.compose.hiltViewModel()
-                    val shizukuState by shizukuViewModel.state.collectAsStateWithLifecycle()
-                    ShizukuSection(
-                        state = shizukuState,
-                        onRequestPermission = { shizukuViewModel.requestPermission() },
-                        onOpenShizuku = { shizukuViewModel.openShizukuApp() },
-                        onRefresh = { shizukuViewModel.refresh() }
-                    )
-                }
                 SettingsSection.ContainerDownloads -> ContainerImageDownloadSection(
                     catalog = imageCatalog,
                     state = imageDownload,
@@ -922,14 +910,23 @@ fun SettingsScreen(
                     onPromote = { viewModel.promoteRuleToGlobal(it) },
                     onDeleteGlobal = { viewModel.deleteGlobalRule(it) }
                 )
-                SettingsSection.AppPermissions -> AppPermissionsSection(
-                    keepaliveEnabled = keepaliveEnabled,
-                    onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
-                    screenOnEnabled = screenOnEnabled,
-                    onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
-                    agentSoundEnabled = agentSoundEnabled,
-                    onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) }
-                )
+                SettingsSection.AppPermissions -> {
+                    val shizukuViewModel: ShizukuViewModel =
+                        androidx.hilt.navigation.compose.hiltViewModel()
+                    val shizukuState by shizukuViewModel.state.collectAsStateWithLifecycle()
+                    AppPermissionsSection(
+                        keepaliveEnabled = keepaliveEnabled,
+                        onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
+                        screenOnEnabled = screenOnEnabled,
+                        onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
+                        agentSoundEnabled = agentSoundEnabled,
+                        onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) },
+                        shizukuState = shizukuState,
+                        onRequestShizukuPermission = { shizukuViewModel.requestPermission() },
+                        onOpenShizuku = { shizukuViewModel.openShizukuApp() },
+                        onRefreshShizuku = { shizukuViewModel.refresh() }
+                    )
+                }
                 SettingsSection.Backup -> {
                     val backupViewModel: com.aicode.feature.backup.presentation.BackupViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()
@@ -1292,12 +1289,6 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.Server,
                 title = stringResource(SettingsSection.RemoteServers.titleRes),
                 onClick = { onOpen(SettingsSection.RemoteServers) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Terminal,
-                title = stringResource(SettingsSection.Shizuku.titleRes),
-                onClick = { onOpen(SettingsSection.Shizuku) }
             )
         }
 

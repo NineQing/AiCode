@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.aicode.R
 import com.aicode.core.theme.Spacing
+import com.aicode.core.theme.semanticColors
+import com.aicode.feature.agent.domain.shizuku.ShizukuState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Bell
 import compose.icons.feathericons.Download
@@ -39,6 +42,7 @@ import compose.icons.feathericons.Folder
 import compose.icons.feathericons.Power
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Sun
+import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Zap
 
 /**
@@ -49,7 +53,8 @@ import compose.icons.feathericons.Zap
  * - 安装未知应用：展示授权状态，未授权点击跳转系统设置开启。
  * - 访问存储空间：展示授权状态，未授权点击申请运行时权限；已被永久拒绝时同样引导去系统设置。
  * - 忽略电池优化 / 自启动管理：跳转系统设置。
- * 页面恢复（含从系统设置页返回）时刷新各权限状态。
+ * - Shizuku：展示 adb shell 授权状态，未就绪时点击安装/启动/申请授权。
+ * 页面恢复（含从系统设置页或 Shizuku 应用返回）时刷新各权限状态。
  */
 @Composable
 internal fun AppPermissionsSection(
@@ -58,7 +63,11 @@ internal fun AppPermissionsSection(
     screenOnEnabled: Boolean,
     onToggleScreenOn: (Boolean) -> Unit,
     agentSoundEnabled: Boolean,
-    onToggleAgentSound: (Boolean) -> Unit
+    onToggleAgentSound: (Boolean) -> Unit,
+    shizukuState: ShizukuState,
+    onRequestShizukuPermission: () -> Unit,
+    onOpenShizuku: () -> Unit,
+    onRefreshShizuku: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -76,6 +85,7 @@ internal fun AppPermissionsSection(
         apkInstallAllowed = context.packageManager.canRequestPackageInstalls()
         storageGranted = checkStorageGranted(context)
         batteryExempt = isIgnoringBatteryOptimizations(context)
+        onRefreshShizuku()
         onPauseOrDispose { }
     }
 
@@ -227,7 +237,32 @@ internal fun AppPermissionsSection(
                 subtitle = stringResource(R.string.settings_autostart_subtitle),
                 onClick = { OemAutoStartGuide.openAutoStartSettings(context) }
             )
+            SettingsDivider()
+            val shizukuAction: (() -> Unit)? = when (shizukuState) {
+                ShizukuState.NOT_INSTALLED, ShizukuState.NOT_RUNNING -> onOpenShizuku
+                ShizukuState.PERMISSION_DENIED -> onRequestShizukuPermission
+                ShizukuState.READY -> null
+            }
+            SettingsRow(
+                icon = FeatherIcons.Terminal,
+                title = stringResource(R.string.settings_shizuku),
+                subtitle = stringResource(shizukuState.hintRes()),
+                onClick = shizukuAction,
+                trailing = {
+                    Text(
+                        text = stringResource(shizukuState.statusRes()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            )
         }
+        Text(
+            text = stringResource(R.string.settings_shizuku_desc),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.semanticColors.subtleText,
+            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
+        )
     }
 
     if (showStorageDeniedDialog) {
@@ -246,6 +281,24 @@ internal fun AppPermissionsSection(
             onDismiss = { showNotificationDeniedDialog = false }
         )
     }
+}
+
+/** Shizuku 状态对应的右侧状态文字。 */
+@StringRes
+private fun ShizukuState.statusRes(): Int = when (this) {
+    ShizukuState.NOT_INSTALLED -> R.string.settings_shizuku_status_not_installed
+    ShizukuState.NOT_RUNNING -> R.string.settings_shizuku_status_not_running
+    ShizukuState.PERMISSION_DENIED -> R.string.settings_shizuku_status_denied
+    ShizukuState.READY -> R.string.settings_shizuku_status_ready
+}
+
+/** Shizuku 状态对应的副标题（点击提示）。 */
+@StringRes
+private fun ShizukuState.hintRes(): Int = when (this) {
+    ShizukuState.NOT_INSTALLED -> R.string.settings_shizuku_hint_not_installed
+    ShizukuState.NOT_RUNNING -> R.string.settings_shizuku_hint_not_running
+    ShizukuState.PERMISSION_DENIED -> R.string.settings_shizuku_hint_denied
+    ShizukuState.READY -> R.string.settings_shizuku_hint_ready
 }
 
 /** 权限无法通过系统弹框授予时，提醒用户去系统设置手动开启。 */

@@ -999,7 +999,7 @@
     <string name="perm_promote_to_global">Promote to global</string>
     <string name="perm_safety_group">Safety</string>
     <string name="perm_disable_safety_interception">Disable safety interception</string>
-    <string name="perm_disable_safety_interception_desc">When on, AUTO mode no longer blocks catastrophic deletes (rm of root, system dirs, or the workspace)</string>
+    <string name="perm_disable_safety_interception_desc">When on, AUTO mode no longer blocks catastrophic deletes (rm of root, system dirs, or the workspace), and the Shizuku tool no longer prompts</string>
 
     <!-- Provider Editor -->
     <string name="provider_section_basic">General</string>

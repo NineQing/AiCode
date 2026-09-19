@@ -17,7 +17,8 @@ private val Context.toolSafetyDataStore by preferencesDataStore(name = "tool_saf
  * 持久化「禁用安全拦截」开关，默认关闭。
  *
  * 开启后，AUTO（自动）模式下连灾难性 `rm`（删除根目录、系统关键目录、工作区根目录等）
- * 也不再拦截，命令一律放行。仅作用于 AUTO 模式，BUILD / PLAN 模式的安全拦截不受影响。
+ * 也不再拦截，命令一律放行，`Shizuku` 工具也不再逐次弹窗。仅作用于 AUTO 模式：
+ * BUILD / PLAN 模式的安全拦截不受影响，Shizuku 在 BUILD 下的「不可记忆」也不受影响。
  */
 @Singleton
 class ToolSafetySettingsRepository @Inject constructor(

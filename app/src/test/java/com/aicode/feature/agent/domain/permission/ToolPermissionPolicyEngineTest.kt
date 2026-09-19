@@ -367,6 +367,75 @@ class ToolPermissionPolicyEngineTest {
         )
     }
 
+    // ── Shizuku 高危工具：一律弹窗、不可记忆，AUTO 不豁免 ─────────────
+
+    private fun shizuku(command: String) = mapOf("command" to JsonPrimitive(command))
+
+    @Test
+    fun shizuku_buildMode_asksWithoutRememberable() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+        assertNotNull(r.rememberDisabledReason)
+    }
+
+    @Test
+    fun shizuku_safeCommandStillAsks() = runTest {
+        val e = engine()
+        // 内置安全白名单（ls）对 Shizuku 不适用，仍需弹窗
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("ls -la /sdcard"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+    }
+
+    @Test
+    fun shizuku_rememberedAllowRuleIgnored() = runTest {
+        val e = engine(PermissionRule("Shizuku", "pm", PermissionDecision.ALLOW))
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+    }
+
+    @Test
+    fun shizuku_denyRuleStillDenies() = runTest {
+        val e = engine(PermissionRule("Shizuku", "pm", PermissionDecision.DENY))
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
+    @Test
+    fun shizuku_autoMode_asks() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+        assertNotNull(r.rememberDisabledReason)
+    }
+
+    @Test
+    fun shizuku_autoMode_safetyDisabled_allows() = runTest {
+        val e = engine(safetyDisabled = true)
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.AUTO)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ALLOW, r.verdict)
+    }
+
+    @Test
+    fun shizuku_buildMode_safetyDisabled_stillAsksWithoutRememberable() = runTest {
+        val e = engine(safetyDisabled = true)
+        // 开关仅解除 AUTO 豁免，不可记忆在 BUILD 下始终生效
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.BUILD)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.ASK, r.verdict)
+        assertTrue(r.rememberablePatterns.isEmpty())
+    }
+
+    @Test
+    fun shizuku_planMode_denied() = runTest {
+        val e = engine()
+        val r = e.evaluate(tool(ToolCapability.EXECUTE_COMMANDS), "Shizuku", shizuku("pm list packages"), AgentMode.PLAN)
+        assertEquals(ToolPermissionPolicyEngine.Verdict.DENY, r.verdict)
+    }
+
     // ── 非 shell 工具 ───────────────────────────────────────────────
 
     @Test

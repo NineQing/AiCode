@@ -93,7 +93,7 @@ class ModelMetadataService @Inject constructor(
     /** 纯只读链路：内存 → 磁盘缓存(24h 内) → 内置 assets → 空目录（由调用方回退默认值），绝不发网络请求。
      *  网络刷新失败时（[fetchCatalogFromSources]），会把过期磁盘缓存降级塞入内存 [cached]，
      *  避免回退到更旧的内置 assets 快照。 */
-    private fun loadCatalog(): Map<String, Map<String, ModelMetadata>> {
+    private fun loadCatalog(): Catalog {
         cached?.let {
             return it.catalog
         }
@@ -108,7 +108,7 @@ class ModelMetadataService @Inject constructor(
             return it.catalog
         }
 
-        return emptyMap()
+        return Catalog(emptyMap(), emptyMap())
     }
 
     /**
@@ -228,87 +228,9 @@ class ModelMetadataService @Inject constructor(
         source = ModelMetadata.Source.INFERRED
     )
 
-    private fun findMetadata(
-        catalog: Map<String, Map<String, ModelMetadata>>,
-        type: ProviderType,
-        modelId: String
-    ): ModelMetadata? {
-        val normalized = modelId.removePrefix("models/")
-        val preferredProviders = when (type) {
-            ProviderType.OPENAI -> listOf(
-                "openai", "openrouter", "deepseek", "groq", "xai", "mistral",
-                "togetherai", "alibaba", "moonshot", "github-copilot"
-            )
-            ProviderType.ANTHROPIC -> listOf("anthropic", "google-vertex-anthropic")
-            ProviderType.GEMINI -> listOf("google", "google-vertex")
-        }
-
-        // 先精确匹配，失败后依次尝试剥离常见后缀的变体（如 gpt-5-high -> gpt-5）
-        for (candidate in strippedCandidates(normalized)) {
-            for (provider in preferredProviders) {
-                catalog[provider]?.get(candidate)?.let { return it }
-            }
-            catalog.values.firstNotNullOfOrNull { models -> models[candidate] }?.let { return it }
-        }
-        return null
-    }
-
-    /** 生成匹配候选：原始 id 在前，随后迭代剥离常见后缀（-thinking/-preview/-high/-low 及括号形式），可连续剥离多层。 */
-    private fun strippedCandidates(modelId: String): List<String> {
-        val candidates = mutableListOf(modelId)
-        var current = modelId
-        var changed: Boolean
-        do {
-            changed = false
-            for (suffix in MODEL_SUFFIXES) {
-                if (current.length > suffix.length && current.endsWith(suffix)) {
-                    current = current.dropLast(suffix.length)
-                    candidates.add(current)
-                    changed = true
-                    break
-                }
-            }
-        } while (changed)
-        return candidates
-    }
-
-    private fun parseCatalog(root: JsonElement): Map<String, Map<String, ModelMetadata>> {
-        return root.jsonObject.mapValues { (providerId, providerEl) ->
-            val models = providerEl.jsonObject["models"]?.jsonObject.orEmpty()
-            models.mapValues { (_, modelEl) ->
-                val model = modelEl.jsonObject
-                val limit = model["limit"]?.jsonObject
-                val modalities = model["modalities"]?.jsonObject
-                val inputModalities = modalities?.get("input")?.jsonArray
-                    ?.mapNotNull { it.jsonPrimitive.content }
-                    .orEmpty()
-                val cost = model["cost"]?.jsonObject
-                val reasoningOptions = parseReasoningOptions(model["reasoning_options"])
-                ModelMetadata(
-                    id = model["id"]?.jsonPrimitive?.content ?: "",
-                    providerId = providerId,
-                    displayName = model["name"]?.jsonPrimitive?.content ?: model["id"]?.jsonPrimitive?.content.orEmpty(),
-                    contextTokens = limit?.get("context")?.jsonPrimitive?.intOrNull ?: 0,
-                    inputTokens = limit?.get("input")?.jsonPrimitive?.intOrNull,
-                    outputTokens = limit?.get("output")?.jsonPrimitive?.intOrNull,
-                    supportsTools = model["tool_call"]?.jsonPrimitive?.booleanOrNull == true,
-                    supportsVision = "image" in inputModalities || "video" in inputModalities || "pdf" in inputModalities,
-                    supportsReasoning = model["reasoning"]?.jsonPrimitive?.booleanOrNull == true,
-                    supportsCustomTemperature = model["temperature"]?.jsonPrimitive?.booleanOrNull == true,
-                    reasoningEffortOptions = reasoningOptions.takeIf { it.isNotEmpty() },
-                    inputCostUsdPerM = cost?.get("input")?.jsonPrimitive?.doubleOrNull,
-                    outputCostUsdPerM = cost?.get("output")?.jsonPrimitive?.doubleOrNull,
-                    cacheReadCostUsdPerM = cost?.get("cache_read")?.jsonPrimitive?.doubleOrNull,
-                    cacheWriteCostUsdPerM = cost?.get("cache_write")?.jsonPrimitive?.doubleOrNull,
-                    source = ModelMetadata.Source.MODELS_DEV
-                )
-            }
-        }
-    }
-
     private data class Cache(
         val loadedAtMs: Long,
-        val catalog: Map<String, Map<String, ModelMetadata>>
+        val catalog: Catalog
     )
 
     companion object {
@@ -321,6 +243,136 @@ class ModelMetadataService @Inject constructor(
                 ?.mapNotNull { it.jsonPrimitive.content }
                 .orEmpty()
 
+        /**
+         * 解析后的模型目录：[byProvider] 保留目录里的原始 id 大小写；[lowerByProvider] 结构相同但键统一小写
+         * （复用同一批 [ModelMetadata] 实例），用于大小写不敏感匹配。
+         */
+        internal data class Catalog(
+            val byProvider: Map<String, Map<String, ModelMetadata>>,
+            val lowerByProvider: Map<String, Map<String, ModelMetadata>>
+        )
+
+        internal fun parseCatalog(root: JsonElement): Catalog {
+            val byProvider = root.jsonObject.mapValues { (providerId, providerEl) ->
+                val models = providerEl.jsonObject["models"]?.jsonObject.orEmpty()
+                models.mapValues { (_, modelEl) ->
+                    val model = modelEl.jsonObject
+                    val limit = model["limit"]?.jsonObject
+                    val modalities = model["modalities"]?.jsonObject
+                    val inputModalities = modalities?.get("input")?.jsonArray
+                        ?.mapNotNull { it.jsonPrimitive.content }
+                        .orEmpty()
+                    val cost = model["cost"]?.jsonObject
+                    val reasoningOptions = parseReasoningOptions(model["reasoning_options"])
+                    ModelMetadata(
+                        id = model["id"]?.jsonPrimitive?.content ?: "",
+                        providerId = providerId,
+                        displayName = model["name"]?.jsonPrimitive?.content ?: model["id"]?.jsonPrimitive?.content.orEmpty(),
+                        contextTokens = limit?.get("context")?.jsonPrimitive?.intOrNull ?: 0,
+                        inputTokens = limit?.get("input")?.jsonPrimitive?.intOrNull,
+                        outputTokens = limit?.get("output")?.jsonPrimitive?.intOrNull,
+                        supportsTools = model["tool_call"]?.jsonPrimitive?.booleanOrNull == true,
+                        supportsVision = "image" in inputModalities || "video" in inputModalities || "pdf" in inputModalities,
+                        supportsReasoning = model["reasoning"]?.jsonPrimitive?.booleanOrNull == true,
+                        supportsCustomTemperature = model["temperature"]?.jsonPrimitive?.booleanOrNull == true,
+                        reasoningEffortOptions = reasoningOptions.takeIf { it.isNotEmpty() },
+                        inputCostUsdPerM = cost?.get("input")?.jsonPrimitive?.doubleOrNull,
+                        outputCostUsdPerM = cost?.get("output")?.jsonPrimitive?.doubleOrNull,
+                        cacheReadCostUsdPerM = cost?.get("cache_read")?.jsonPrimitive?.doubleOrNull,
+                        cacheWriteCostUsdPerM = cost?.get("cache_write")?.jsonPrimitive?.doubleOrNull,
+                        source = ModelMetadata.Source.MODELS_DEV
+                    )
+                }
+            }
+            return Catalog(
+                byProvider = byProvider,
+                lowerByProvider = byProvider.mapValues { (_, models) ->
+                    models.mapKeys { (id, _) -> id.lowercase() }
+                }
+            )
+        }
+
+        /**
+         * 模型 id 匹配：原名优先（精确 → 忽略大小写），两者都落空才逐级剥离 vendor 前缀重试；
+         * 每一轮都先按 [preferredProviders] 顺序查，再退到全目录的同名键。
+         */
+        internal fun findMetadata(
+            catalog: Catalog,
+            type: ProviderType,
+            modelId: String
+        ): ModelMetadata? {
+            val preferred = preferredProviders(type)
+            val normalized = if (modelId.startsWith(MODELS_PREFIX, ignoreCase = true)) {
+                modelId.substring(MODELS_PREFIX.length)
+            } else {
+                modelId
+            }
+            for (name in listOf(normalized) + vendorStrippedCandidates(normalized)) {
+                lookup(catalog.byProvider, preferred, strippedCandidates(name))?.let { return it }
+                lookup(catalog.lowerByProvider, preferred, strippedCandidates(name.lowercase()))?.let { return it }
+            }
+            return null
+        }
+
+        private fun preferredProviders(type: ProviderType): List<String> = when (type) {
+            ProviderType.OPENAI -> listOf(
+                "openai", "openrouter", "deepseek", "groq", "xai", "mistral",
+                "togetherai", "alibaba", "moonshot", "github-copilot"
+            )
+            ProviderType.ANTHROPIC -> listOf("anthropic", "google-vertex-anthropic")
+            ProviderType.GEMINI -> listOf("google", "google-vertex")
+        }
+
+        /** 在 [catalog]（键大小写已由调用方对齐）里按候选顺序查找：先偏好 provider，再全目录同名键。 */
+        private fun lookup(
+            catalog: Map<String, Map<String, ModelMetadata>>,
+            preferred: List<String>,
+            candidates: List<String>
+        ): ModelMetadata? {
+            for (candidate in candidates) {
+                for (provider in preferred) {
+                    catalog[provider]?.get(candidate)?.let { return it }
+                }
+                catalog.values.firstNotNullOfOrNull { models -> models[candidate] }?.let { return it }
+            }
+            return null
+        }
+
+        /**
+         * 逐级剥离 vendor 前缀后的候选（`z-ai/glm-5.3-flash` → `glm-5.3-flash`，
+         * `@cf/zai-org/glm-5.3-flash` → `zai-org/glm-5.3-flash` → `glm-5.3-flash`）。
+         */
+        private fun vendorStrippedCandidates(modelId: String): List<String> {
+            val candidates = mutableListOf<String>()
+            var current = modelId
+            while (true) {
+                val slash = current.indexOf('/')
+                if (slash < 0 || slash == current.lastIndex) break
+                current = current.substring(slash + 1)
+                candidates.add(current)
+            }
+            return candidates
+        }
+
+        /** 生成匹配候选：原始 id 在前，随后迭代剥离常见后缀（-thinking/-preview/-high/-low 及括号形式），可连续剥离多层。 */
+        private fun strippedCandidates(modelId: String): List<String> {
+            val candidates = mutableListOf(modelId)
+            var current = modelId
+            var changed: Boolean
+            do {
+                changed = false
+                for (suffix in MODEL_SUFFIXES) {
+                    if (current.length > suffix.length && current.endsWith(suffix)) {
+                        current = current.dropLast(suffix.length)
+                        candidates.add(current)
+                        changed = true
+                        break
+                    }
+                }
+            } while (changed)
+            return candidates
+        }
+
         const val TAG = "ModelMetadataService"
         private const val PREFS_NAME = "model_metadata_prefs"
         private const val KEY_LAST_SOURCE = "last_success_source"
@@ -329,6 +381,9 @@ class ModelMetadataService @Inject constructor(
         const val CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000L
         const val DEFAULT_CONTEXT_TOKENS = 128_000
         const val DEFAULT_OUTPUT_TOKENS = 64_000
+
+        /** Gemini 风格的模型 id 前缀（`models/gemini-2.5-pro`），匹配前剥离，忽略大小写。 */
+        private const val MODELS_PREFIX = "models/"
 
         /** 兜底模糊匹配：依次尝试剥离的模型 id 后缀。 */
         private val MODEL_SUFFIXES = listOf(

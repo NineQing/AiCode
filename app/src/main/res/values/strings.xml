@@ -11,15 +11,15 @@
     <string name="settings_general">偏好设置</string>
     <string name="settings_general_models">模型</string>
     <string name="settings_auto_remove_stale_models">拉取模型后自动移除无效模型</string>
-    <string name="settings_auto_remove_stale_models_desc">拉取成功后，移除远端已不存在的本地模型</string>
+    <string name="settings_auto_remove_stale_models_desc">拉取成功后，移除远端已不存在的本地模型条目</string>
     <string name="settings_general_session">会话</string>
     <string name="settings_startup_session">启动时会话</string>
     <string name="settings_startup_session_new">新开会话</string>
-    <string name="settings_startup_session_new_desc">复用还没发过消息的空会话，否则新建</string>
+    <string name="settings_startup_session_new_desc">复用尚未发送过消息的空会话，否则新建</string>
     <string name="settings_startup_session_recent">打开最近会话</string>
     <string name="settings_startup_session_recent_desc">直接进入最近更新的会话</string>
     <string name="settings_general_network">网络</string>
-    <string name="settings_first_byte_timeout">首字超时</string>
+    <string name="settings_first_byte_timeout">首字节超时</string>
     <string name="settings_first_byte_timeout_desc">等待首个响应块的最长时间</string>
     <string name="settings_stream_idle_timeout">数据块间隔超时</string>
     <string name="settings_stream_idle_timeout_desc">两个响应块之间的最长等待</string>
@@ -32,9 +32,9 @@
     <string name="settings_retries_input_hint">填 0 表示不重试</string>
     <string name="settings_general_input">输入</string>
     <string name="settings_enter_to_send">回车键发送消息</string>
-    <string name="settings_enter_to_send_desc">关闭时回车换行，由发送按钮发送</string>
+    <string name="settings_enter_to_send_desc">关闭后回车换行，需点发送按钮发送</string>
     <string name="settings_compaction_threshold">自动压缩阈值</string>
-    <string name="settings_compaction_threshold_desc">上下文用到窗口的这个比例时自动压缩</string>
+    <string name="settings_compaction_threshold_desc">上下文占用达到窗口的该比例时自动压缩</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_compaction_threshold_input_hint">填 1-100 的整数百分比</string>
     <string name="settings_vision_model">识图模型</string>
@@ -45,7 +45,7 @@
     <string name="settings_skills">技能</string>
     <string name="settings_container">容器与镜像</string>
     <string name="settings_log_no_files">还没有日志文件</string>
-    <string name="settings_log_read_failed">读取日志失败: %1$s</string>
+    <string name="settings_log_read_failed">读取日志失败：%1$s</string>
     <string name="settings_models_fetch_failed">拉取失败</string>
     <string name="settings_log">日志</string>
     <string name="settings_permissions">工具授权</string>
@@ -78,7 +78,7 @@
     <string name="settings_token_stats_legend_input">输入</string>
     <string name="settings_token_stats_legend_output">输出</string>
     <string name="settings_token_stats_legend_cached">缓存</string>
-    <string name="settings_token_stats_provider">渠道统计</string>
+    <string name="settings_token_stats_provider">供应商统计</string>
     <string name="settings_token_stats_model">模型统计</string>
     <string name="settings_token_stats_success_rate">成功率 %1$s</string>
     <string name="settings_token_stats_recent_calls">调用记录</string>
@@ -88,12 +88,12 @@
     <string name="settings_token_stats_calls_suffix2">%1$d 次调用</string>
     <string name="settings_token_stats_col_model">模型</string>
     <string name="settings_token_stats_col_reasoning_effort">思考强度</string>
-    <string name="settings_token_stats_col_provider">渠道</string>
+    <string name="settings_token_stats_col_provider">供应商</string>
     <string name="settings_token_stats_col_input">输入</string>
     <string name="settings_token_stats_col_output">输出</string>
     <string name="settings_token_stats_col_cached">缓存</string>
     <string name="settings_token_stats_col_cache_hit_rate">命中率</string>
-    <string name="settings_token_stats_col_ttfb">首字</string>
+    <string name="settings_token_stats_col_ttfb">首字节</string>
     <string name="settings_token_stats_col_duration">耗时</string>
     <string name="settings_token_stats_col_time">时间</string>
     <string name="settings_token_stats_col_status">状态</string>
@@ -119,7 +119,7 @@
     <string name="storage_clean_all_desc">清理以上全部项，不动聊天记录、容器与工作区</string>
     <string name="storage_clean_confirm_title">确认清理</string>
     <string name="storage_clean_confirm_all">将清理缓存、日志、工具输出与识图会话缓存，共约 %1$s。聊天记录、容器与工作区不受影响。</string>
-    <string name="storage_clean_confirm_single">将删除“%1$s”，约 %2$s。此操作不可恢复。</string>
+    <string name="storage_clean_confirm_single">将删除「%1$s」，约 %2$s。此操作不可恢复。</string>
     <string name="storage_category_chat">聊天记录</string>
     <string name="storage_category_container">容器</string>
     <string name="storage_category_container_images">容器镜像包</string>
@@ -135,7 +135,7 @@
     <string name="storage_clean_logs">运行日志</string>
     <string name="storage_clean_logs_desc">应用日志与 AI 请求日志，删除不影响功能</string>
     <string name="storage_clean_tool_output">工具输出存档</string>
-    <string name="storage_clean_tool_output_desc">AI 超长工具输出的落盘副本，删除后旧消息里的输出路径不再可读</string>
+    <string name="storage_clean_tool_output_desc">AI 超长工具输出保存到磁盘的副本，删除后旧消息里的输出路径不再可读</string>
     <string name="storage_clean_vision">识图会话缓存</string>
     <string name="storage_clean_vision_desc">识图追问的历史，删除后无法继续追问旧图片</string>
     <string name="storage_untitled_session">未命名会话</string>
@@ -167,7 +167,7 @@
     <string name="theme_preset_coffee">咖啡</string>
     <string name="theme_preset_graphite">石墨</string>
     <string name="theme_preset_forest">森林</string>
-    <string name="theme_dynamic_color">莫奈取色</string>
+    <string name="theme_dynamic_color">动态取色</string>
     <string name="theme_dynamic_color_desc">从系统壁纸提取配色，开启后配色方案不再生效</string>
     <string name="theme_dynamic_color_unsupported">需要 Android 12 及以上系统</string>
     <string name="settings_background_image">背景图</string>
@@ -179,14 +179,14 @@
     <string name="provider_cache_anthropic_subtitle">为 system/工具/消息前缀打显式缓存断点，降低重复输入成本</string>
     <string name="provider_cache_openai_chat_title">OpenAI 兼容缓存键</string>
     <string name="provider_cache_openai_chat_subtitle">为请求携带 prompt_cache_key 缓存键</string>
-    <string name="provider_section_balance">自定义面板 (DIY)</string>
+    <string name="provider_section_balance">自定义面板</string>
     <string name="provider_balance_script">面板脚本</string>
     <string name="provider_balance_script_placeholder">例如 demo_balance.py</string>
     <string name="provider_balance_select_script">选择脚本</string>
-    <string name="provider_balance_script_desc">执行并预览面板卡片</string>
-    <string name="provider_balance_test_btn">测试运行</string>
+    <string name="provider_balance_script_desc">执行并预览面板</string>
+    <string name="provider_balance_test_btn">运行测试</string>
     <string name="provider_balance_run_test">运行测试</string>
-    <string name="provider_balance_preview_title">卡片预览</string>
+    <string name="provider_balance_preview_title">面板预览</string>
     <string name="provider_test_detail_title">测试调试信息</string>
     <string name="provider_test_req_url">请求 URL</string>
     <string name="provider_test_req_headers">请求头</string>
@@ -194,13 +194,13 @@
     <string name="provider_test_resp_headers">响应头</string>
     <string name="provider_test_resp_body">响应体</string>
     <string name="provider_test_error_detail">错误堆栈</string>
-    <string name="provider_balance_test_success">执行成功，解析到 %1$d 项组件</string>
+    <string name="provider_balance_test_success">执行成功，解析到 %1$d 个组件</string>
     <string name="provider_balance_test_failed">执行失败</string>
     <string name="provider_balance_no_scripts">~/.aicode/scripts 目录下暂无脚本</string>
     <string name="provider_balance_select_title">选择面板脚本</string>
     <string name="provider_balance_clear_script">不使用面板脚本 (清空)</string>
     <string name="provider_balance_refresh">刷新面板</string>
-    <string name="provider_balance_loading">正在加载面板...</string>
+    <string name="provider_balance_loading">正在加载面板…</string>
     <string name="provider_balance_error">面板加载失败</string>
     <string name="provider_balance_raw_output">原始输出</string>
     <string name="provider_balance_interval_title">刷新周期</string>
@@ -225,7 +225,7 @@
     <string name="provider_custom">自定义供应商</string>
     <string name="provider_add_tab_configured">需配置</string>
     <string name="provider_add_tab_instant">开箱即用</string>
-    <string name="provider_add_instant_placeholder">开箱即用的免费供应商即将开放，敬请期待</string>
+    <string name="provider_add_instant_placeholder">开箱即用的免费供应商即将开放</string>
     <string name="provider_preset_loading">正在加载预设库…</string>
     <string name="provider_preset_empty">未找到匹配的预设</string>
     <string name="provider_balance_interval_30m">每 30 分钟</string>
@@ -308,11 +308,11 @@
     <string name="common_edit">编辑</string>
     <string name="common_enabled">已启用</string>
     <string name="common_disabled">已禁用</string>
-    <string name="credential_token">访问令牌 Token / PAT</string>
+    <string name="credential_token">访问令牌（Token / PAT）</string>
     <string name="credential_auto_inject_title">自动注入凭证</string>
-    <string name="credential_auto_inject_hint">把 App 里保存的 git 凭据同步到远程服务器，仅对当前工作区根目录下的仓库生效，不影响你在服务器上手动使用 git</string>
+    <string name="credential_auto_inject_hint">把应用中保存的 git 凭据同步到远程服务器，仅对当前工作区根目录下的仓库生效，不影响你在服务器上手动使用 git</string>
     <string name="credential_auto_inject_prompt_title">自动注入 git 凭证？</string>
-    <string name="credential_auto_inject_prompt_body">是否让 aicode 把 App 中保存的 git 凭据同步到该远程服务器？仅对当前工作区根目录下的仓库生效，不会改动服务器的全局 git 配置。</string>
+    <string name="credential_auto_inject_prompt_body">是否让 AiCode 把应用中保存的 git 凭据同步到该远程服务器？仅对当前工作区根目录下的仓库生效，不会改动服务器的全局 git 配置。</string>
     <string name="credential_auto_inject_enable">开启</string>
     <string name="common_rename">重命名</string>
     <string name="common_hide">隐藏</string>
@@ -356,7 +356,7 @@
     <string name="chat_add_attachment">添加附件</string>
     <string name="chat_take_photo">拍照</string>
     <string name="chat_reasoning_effort">思考强度</string>
-    <string name="chat_reasoning_effort_none">关闭</string>
+    <string name="chat_reasoning_effort_none">不思考</string>
     <string name="chat_reasoning_effort_minimal">极低</string>
     <string name="chat_reasoning_effort_low">低</string>
     <string name="chat_reasoning_effort_medium">中</string>
@@ -370,7 +370,7 @@
     <string name="chat_attachment_preview">预览 %1$s</string>
     <string name="chat_attachment_open">打开 %1$s</string>
     <string name="chat_no_model_selected">未选择模型</string>
-    <string name="chat_open_git">打开版本控制</string>
+    <string name="chat_open_git">打开 Git</string>
     <string name="chat_open_terminal">打开终端</string>
     <string name="chat_ssh_connected">SSH：已连接</string>
     <string name="chat_ssh_connecting">SSH：连接中…</string>
@@ -387,7 +387,7 @@
     <string name="agent_tool_executing">%1$s 执行中…</string>
     <string name="agent_stop_refusal">模型基于内容安全策略拒绝了本次回答。</string>
     <string name="agent_stop_context_exceeded">本次输入超出模型上下文窗口，请先压缩上下文或新建会话。</string>    <string name="agent_context_no_compaction">当前上下文无需压缩（消息过少）</string>
-    <string name="agent_compaction_failed">压缩失败: %1$s</string>
+    <string name="agent_compaction_failed">压缩失败：%1$s</string>
     <string name="agent_model_not_selected">未选择</string>
     <!-- About -->
     <string name="about_version">版本</string>
@@ -402,7 +402,7 @@
     <string name="about_download">前往下载</string>
     <string name="about_later">稍后</string>
     <string name="about_check_failed">检查失败</string>
-    <string name="about_ok">好</string>
+    <string name="about_ok">确定</string>
     <string name="about_parse_version_failed">无法解析最新版本号</string>
     <string name="about_network_error">网络错误</string>
     <string name="about_auto_check_update">自动检查更新</string>
@@ -410,8 +410,8 @@
     <string name="about_update_channel">更新通道</string>
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_stable_desc">仅检测正式版更新</string>
-    <string name="update_channel_latest">最新版</string>
-    <string name="update_channel_latest_desc">包含预览版（RC）更新</string>
+    <string name="update_channel_latest">预览版</string>
+    <string name="update_channel_latest_desc">除正式版外，还检测预览版（RC）更新</string>
     <string name="about_no_changelog">暂无更新说明</string>
 
     <!-- Ask User Question -->
@@ -423,7 +423,7 @@
 
     <!-- Backup -->
     <string name="backup_exported">备份已导出</string>
-    <string name="backup_write_failed">写入失败: %1$s</string>
+    <string name="backup_write_failed">写入失败：%1$s</string>
     <string name="backup_read_failed">读取备份文件失败</string>
     <string name="backup_export_title">导出备份</string>
     <string name="backup_export_subtitle">选择要导出的数据，可设置口令加密</string>
@@ -439,7 +439,7 @@
     <string name="backup_import_done">导入完成</string>    <string name="backup_actions">操作</string>
     <string name="backup_select_data">选择导出数据</string>
     <string name="backup_data_remote">连接与同步</string>
-    <string name="backup_data_chat_history">聊天历史</string>
+    <string name="backup_data_chat_history">聊天记录</string>
     <string name="backup_data_mcp">MCP 服务器</string>
     <string name="backup_data_permissions">授权规则</string>
     <string name="backup_data_app_settings">应用设置</string>
@@ -502,8 +502,8 @@
     <string name="file_browser_new_file">新建文件</string>
     <string name="file_browser_new_folder">新建文件夹</string>
     <string name="file_browser_name_label">名称</string>
-    <string name="file_browser_delete_file_confirm">确定删除文件“%1$s”？</string>
-    <string name="file_browser_delete_folder_confirm">确定删除文件夹“%1$s”及其全部内容？</string>
+    <string name="file_browser_delete_file_confirm">确定删除文件「%1$s」？</string>
+    <string name="file_browser_delete_folder_confirm">确定删除文件夹「%1$s」及其全部内容？</string>
     <string name="file_browser_create_failed">创建失败，可能已存在同名项或无写入权限</string>
     <string name="file_browser_rename_failed">重命名失败，可能已存在同名项</string>
     <string name="file_browser_delete_failed">删除失败</string>
@@ -544,15 +544,15 @@
     <string name="chat_export_session_failed">导出失败</string>
 
     <!-- Chat Input Bar -->
-    <string name="chat_input_placeholder">输入消息与 AI 聊天…</string>
-    <string name="chat_queue_hint">AI 工作中，回车发送将自动排队</string>
+    <string name="chat_input_placeholder">输入消息，与 AI 对话…</string>
+    <string name="chat_queue_hint">AI 正在处理中，回车发送将自动排队</string>
     <string name="chat_input_expand">展开输入框</string>
     <string name="chat_input_fullscreen_title">全屏输入</string>
     <string name="chat_queue_title">待发送队列（%1$d）</string>
     <string name="chat_queue_remove">移除排队消息</string>
     <string name="chat_upload_file">上传文件</string>
     <string name="chat_upload_image">上传图片</string>
-    <string name="chat_remove_attachment">移除附件</string>    <string name="chat_no_models_hint">暂无可用模型，请在「管理」中添加</string>
+    <string name="chat_remove_attachment">移除附件</string>    <string name="chat_no_models_hint">暂无可用模型，请在「AI 供应商」中添加</string>
     <string name="chat_stop">停止</string>
     <string name="chat_send">发送</string>
     <string name="chat_perm_single_use_desc">含命令替换/管道/重定向，无法记住，仅可单次放行</string>
@@ -590,7 +590,7 @@
     <string name="chat_status_generating_image">正在生成图片</string>
     <string name="chat_status_updating_todo">正在整理待办</string>
     <string name="chat_status_starting_subagent">正在启动子代理</string>
-    <string name="chat_status_reading_memory">正在读写记忆</string>
+    <string name="chat_status_reading_memory">正在读取记忆</string>
     <string name="chat_tool_running">工具执行中</string>
     <string name="chat_tool_succeeded">工具执行成功</string>
     <string name="chat_tool_failed">工具执行失败</string>
@@ -665,7 +665,7 @@
     <string name="container_env_value">变量值</string>
     <string name="container_no_env_vars">无自定义环境变量</string>
     <string name="container_add_env_var">添加环境变量</string>
-    <string name="container_no_sftp_channel">暂无可用的 SFTP 通道，请先在「远程服务器」页配置一个 SFTP 连接通道。</string>
+    <string name="container_no_sftp_channel">暂无可用的 SFTP 通道，请先在「连接与同步」页配置一个 SFTP 连接通道。</string>
     <string name="container_select_ssh_channel">选择 SSH 通道</string>
     <string name="container_ssh_channel">SSH 连接通道</string>
     <string name="container_remote_workspace_path">远程工作区路径</string>
@@ -690,10 +690,10 @@
 
     <!-- Credential Editor -->
     <string name="credential_edit">编辑凭据</string>
-    <string name="credential_host">远程主机 host</string>
+    <string name="credential_host">远程主机</string>
     <!-- Credential Toast -->
     <string name="credential_toast_saved">凭据已保存</string>
-    <string name="credential_toast_save_failed">保存失败: %1$s</string>
+    <string name="credential_toast_save_failed">保存失败：%1$s</string>
     <string name="credential_toast_deleted">凭据已删除</string>
     <string name="credential_toast_identity_saved">署名与仓库地址已保存</string>
 
@@ -719,7 +719,7 @@
     <string name="git_tab_status">状态</string>
     <string name="git_tab_branches">分支</string>
     <string name="git_tab_commits">提交</string>
-    <string name="git_computing_diff">正在计算差异...</string>
+    <string name="git_computing_diff">正在计算差异…</string>
     <string name="git_status_clean">工作区干净，无改动</string>
     <string name="git_commit_needs_identity">尚未配置提交署名，请在「凭据与署名」页填写用户名和邮箱</string>
     <string name="git_staged_count">已暂存 (%1$s)</string>
@@ -775,7 +775,7 @@
     <string name="git_latest_date">最新日期</string>
     <string name="git_files_changed">%1$s 个文件改动</string>
     <string name="git_no_files_changed">该提交无文件改动</string>
-    <string name="git_loading_files">正在加载改动文件...</string>
+    <string name="git_loading_files">正在加载改动文件…</string>
     <string name="git_not_a_repo">当前工作区不是 Git 仓库</string>
     <string name="git_init_desc">初始化后会在此创建 .git，之后可暂存、提交、关联远程。</string>
     <string name="git_init_repo">初始化 Git 仓库</string>
@@ -795,16 +795,16 @@
     <string name="git_pull_continue">继续拉取</string>
 
     <!-- Git Toast Messages -->
-    <string name="git_toast_load_branches_failed">加载分支失败: %1$s</string>
-    <string name="git_toast_refresh_failed">刷新失败: %1$s</string>
+    <string name="git_toast_load_branches_failed">加载分支失败：%1$s</string>
+    <string name="git_toast_refresh_failed">刷新失败：%1$s</string>
     <string name="git_toast_action_refresh_failed">%1$s（刷新失败）</string>
     <string name="git_toast_no_remote_pull">未配置远程仓库，无法拉取</string>
     <string name="git_toast_no_remote_push">未配置远程仓库，无法推送</string>
-    <string name="git_toast_load_more_failed">加载更多失败: %1$s</string>
+    <string name="git_toast_load_more_failed">加载更多失败：%1$s</string>
     <string name="git_toast_action_success">%1$s成功</string>
-    <string name="git_toast_action_failed">%1$s失败: %2$s</string>
+    <string name="git_toast_action_failed">%1$s失败：%2$s</string>
     <string name="git_toast_checkout_success">已切换到 %1$s</string>
-    <string name="git_toast_checkout_failed">切换失败: %1$s</string>
+    <string name="git_toast_checkout_failed">切换失败：%1$s</string>
     <string name="git_toast_diff_failed">加载差异失败</string>
     <string name="git_toast_path_copied">已复制路径</string>
     <string name="git_action_stage_all">全部暂存</string>
@@ -883,7 +883,7 @@
 
     <!-- Skills Settings -->
     <string name="skills_empty">还没有安装技能</string>
-    <string name="skills_empty_hint">点右上角「＋」新建或导入，也可把含 SKILL.md 的目录放进 ~/.aicode/skills/</string>
+    <string name="skills_empty_hint">点右上角「+」新建或导入，也可把含 SKILL.md 的目录放进 ~/.aicode/skills/</string>
     <string name="skills_no_project_skills">当前项目暂无技能</string>
     <string name="skills_no_global_skills">暂无全局技能</string>
     <string name="skills_enable">是否启用</string>
@@ -930,7 +930,7 @@
     <!-- Subagent Settings -->
     <string name="settings_subagents">子代理</string>
     <string name="subagents_empty">还没有自定义子代理</string>
-    <string name="subagents_empty_hint">点右上角「＋」新建一个，或把 agent 的 .md 定义放进 ~/.aicode/agents/</string>
+    <string name="subagents_empty_hint">点右上角「+」新建一个，或把 agent 的 .md 定义放进 ~/.aicode/agents/</string>
     <string name="subagents_no_project">当前项目暂无子代理</string>
     <string name="subagents_no_global">暂无全局子代理</string>
     <string name="subagents_delete_confirm_title">删除子代理</string>
@@ -976,7 +976,7 @@
     <string name="subagent_editor_error_name_conflict">该作用域下已存在同名子代理</string>
     <string name="subagent_editor_error_io">写入定义文件失败，请稍后重试</string>
     <string name="subagent_inject_base">子代理基线</string>
-    <string name="subagent_inject_base_hint">工具用法与路径约定，轻量省 token</string>
+    <string name="subagent_inject_base_hint">工具用法与路径约定，轻量、节省 Token</string>
     <string name="subagent_inject_main_rules">完整通用规则</string>
     <string name="subagent_inject_main_rules_hint">与「子代理基线」二选一即可；两个都开会重复注入规则、多占上下文</string>
     <string name="subagent_inject_skills">技能清单</string>
@@ -1032,7 +1032,7 @@
     <string name="provider_fetch_missing_fields_detail">响应缺少列表字段 (models 或 data): %1$s</string>
     <string name="provider_fetch_success">成功拉取到 %1$d 个模型 · %2$dms</string>
     <string name="provider_fetch_http_error">HTTP %1$d · %2$dms</string>
-    <string name="provider_test_success">连通 · %1$dms</string>
+    <string name="provider_test_success">连接正常 · %1$dms</string>
     <string name="common_error">错误</string>
     <string name="common_select">选择</string>
     <string name="provider_model_context_input">输入窗口 (Token)</string>
@@ -1107,7 +1107,7 @@
     <string name="remote_auth_key">密钥</string>
     <string name="remote_login_key">登录密钥</string>
     <string name="remote_select_key">选择密钥</string>
-    <string name="remote_no_keys_hint">暂无密钥，请先到「SSH 密钥」页添加</string>
+    <string name="remote_no_keys_hint">暂无密钥，请先到「SSH 主机密钥」页添加</string>
     <string name="remote_key_passphrase">口令（可选）</string>
     <string name="remote_toggle_password">切换密码可见性</string>
     <string name="remote_test_dir">测试目录</string>
@@ -1116,19 +1116,19 @@
     <string name="remote_add_workspace">添加挂载目录</string>
     <string name="remote_select_channel">选择远程通道</string>
     <string name="remote_link_channel">关联远程连接通道</string>
-    <string name="remote_mount_subdir">镜像目标子目录</string>
+    <string name="remote_mount_subdir">挂载目标子目录</string>
     <string name="remote_target_dir">远程目标目录</string>
     <string name="remote_browse_dir">浏览目录</string>
-    <string name="remote_local_channel_subdir_desc">本地通道的镜像根目录来自连接配置；这里填写根目录下的子目录，通常保持 / 即可。</string>
+    <string name="remote_local_channel_subdir_desc">本地通道的挂载根目录来自连接配置；这里填写根目录下的子目录，通常保持 / 即可。</string>
     <string name="remote_select_local_workspace">选择本地工作区</string>
     <string name="remote_mount_already_exists">该挂载已存在：相同的通道、远程目录与工作区组合</string>
     <string name="remote_map_to_local">映射到本地工作区</string>
     <string name="remote_no_local_workspace">暂无本地工作区，请先在侧边栏创建一个。</string>
     <string name="remote_auto_connect_on_start">应用启动时自动连接</string>
-    <string name="remote_auto_connect_and_sync">开机自动连接并同步该工作区</string>
+    <string name="remote_auto_connect_and_sync">应用启动时自动连接并同步该工作区</string>
     <string name="remote_select_remote_dir">选择远程目录</string>
-    <string name="remote_current_path">当前路径: %1$s</string>
-    <string name="remote_load_failed">加载失败: %1$s</string>
+    <string name="remote_current_path">当前路径：%1$s</string>
+    <string name="remote_load_failed">加载失败：%1$s</string>
     <string name="remote_parent_dir">.. (上一级)</string>
     <string name="remote_confirm_select">确认选择</string>
 
@@ -1136,17 +1136,17 @@
     <string name="ftp_usage_title">使用说明</string>
     <string name="ftp_usage_item_1">手机与电脑连接同一 WiFi</string>
     <string name="ftp_usage_item_2">电脑文件管理器输入下方地址访问</string>
-    <string name="ftp_usage_item_3">即可管理手机工作区（projects）的项目</string>
-    <string name="ftp_running">运行中: %1$s</string>
+    <string name="ftp_usage_item_3">即可管理手机工作区里的项目</string>
+    <string name="ftp_running">运行中：%1$s</string>
     <string name="ftp_not_running">服务未开启</string>
-    <string name="ftp_error">错误: %1$s</string>
+    <string name="ftp_error">错误：%1$s</string>
     <string name="ftp_config_title">服务参数配置</string>
     <string name="ftp_listen_port">监听端口</string>
     <string name="ftp_login_username">登录用户名</string>
     <string name="ftp_login_password">登录密码</string>
     <string name="ftp_allow_anonymous">允许匿名访问</string>
     <string name="ftp_anonymous_desc">无需输入用户名和密码即可连接</string>
-    <string name="ftp_auto_start">开机自启</string>
+    <string name="ftp_auto_start">应用启动时自启</string>
     <string name="ftp_auto_start_desc">应用启动时后台自动运行 FTP 服务</string>
     <string name="ftp_config_saved">配置已保存</string>
     <string name="ftp_save_config">保存配置</string>
@@ -1168,12 +1168,12 @@
     <string name="remote_go_add">去添加</string>
 
     <!-- Remote Server ViewModel -->
-    <string name="remote_upload_all_failed">全量上传失败: %1$s</string>
-    <string name="remote_upload_all_success">全量上传成功！</string>
-    <string name="remote_download_all_failed">全量下载失败: %1$s</string>
-    <string name="remote_download_all_success">全量下载成功！</string>
-    <string name="remote_connect_success">连接成功！</string>
-    <string name="remote_connect_failed">连接失败: %1$s</string>
+    <string name="remote_upload_all_failed">全量上传失败：%1$s</string>
+    <string name="remote_upload_all_success">全量上传完成</string>
+    <string name="remote_download_all_failed">全量下载失败：%1$s</string>
+    <string name="remote_download_all_success">全量下载完成</string>
+    <string name="remote_connect_success">连接成功</string>
+    <string name="remote_connect_failed">连接失败：%1$s</string>
     <string name="remote_unknown_error">未知错误</string>
     <string name="ssh_host_key_settings_title">SSH 主机密钥</string>
     <string name="ssh_host_key_tab_keys">密钥</string>
@@ -1198,7 +1198,7 @@
     <string name="sync_saved">同步设置已保存</string>
     <string name="sync_follow_gitignore">遵循 .gitignore 规则</string>
     <string name="sync_gitignore_desc">自动读取项目根目录的 .gitignore 并忽略其中内容。</string>
-    <string name="sync_max_batch_size">单次最大同步队列数量</string>
+    <string name="sync_max_batch_size">单次同步队列上限</string>
     <string name="sync_batch_size_desc">超出此数量的操作将分批排队执行，防止突发大量修改导致断连。</string>
     <string name="sync_max_batch_count">最大数量</string>
     <string name="sync_path_mapping">%1$s → %2$s</string>    <string name="status_connected">已连接</string>
@@ -1261,7 +1261,7 @@
     <string name="title_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后再选标题总结专用模型。</string>
 
     <!-- Image Generation Model -->
-    <string name="image_gen_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后（需支持图像输出，如 gpt-image-1 / dall-e-3），再选生图模型。</string>
+    <string name="image_gen_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后（需支持图片输出，如 gpt-image-1 / dall-e-3），再选生图模型。</string>
 
     <!-- Web Search Result -->
     <string name="web_search_title">网络搜索</string>
@@ -1349,7 +1349,7 @@
 
     <!-- 通用 -->
     <string name="common_open_link_failed">无法打开链接</string>
-    <string name="common_copied_with_title">已复制: %1$s</string>
+    <string name="common_copied_with_title">已复制：%1$s</string>
 
     <!-- 供应商编辑：余额脚本测试 -->
     <string name="provider_balance_show_raw">查看原始输出</string>
@@ -1371,7 +1371,7 @@
     <!-- 代理设置 -->
     <string name="proxy_title">网络代理</string>
     <string name="proxy_enable">启用代理</string>
-    <string name="proxy_enable_subtitle">开启后 App 网络请求与容器内命令统一走代理</string>
+    <string name="proxy_enable_subtitle">开启后应用网络请求与容器内命令统一走代理</string>
     <string name="proxy_type">代理类型</string>
     <string name="proxy_type_http">HTTP</string>
     <string name="proxy_type_socks5">SOCKS5</string>
@@ -1396,7 +1396,7 @@
     <string name="provider_multi_key_strategy_sequential">顺序</string>
     <string name="provider_multi_key_strategy_sequential_desc">始终用靠前的 Key，失败达阈值才切下一个</string>
     <string name="provider_multi_key_strategy_round_robin">轮询</string>
-    <string name="provider_multi_key_strategy_round_robin_desc">新会话轮流起步以摊平额度；同一会话内不换 Key，保住缓存命中</string>
+    <string name="provider_multi_key_strategy_round_robin_desc">新会话轮流起步以摊平额度；同一会话内不换 Key，保持缓存命中</string>
     <string name="provider_multi_key_failover">失败切换</string>
     <string name="provider_multi_key_status_codes">自动切换状态码</string>
     <string name="provider_multi_key_status_codes_hint">逗号分隔，留空使用默认 401,402,403,429</string>
@@ -1431,7 +1431,7 @@
     <string name="onboarding_open_sidebar_title">打开侧边栏</string>
     <string name="onboarding_open_sidebar_desc">点击左上角按钮打开侧边栏，前往设置配置你的 AI 模型。</string>
     <string name="onboarding_enter_settings_title">进入设置</string>
-    <string name="onboarding_enter_settings_desc">点击进入系统设置，管理你的 AI 供应商与模型配置。</string>
+    <string name="onboarding_enter_settings_desc">点击进入 App 设置，管理你的 AI 供应商与模型配置。</string>
     <string name="onboarding_config_provider_title">进入 AI 供应商</string>
     <string name="onboarding_config_provider_desc">点击进入 AI 供应商管理列表，准备配置模型供应商。</string>
     <string name="onboarding_provider_add_title">添加供应商</string>
@@ -1441,11 +1441,11 @@
     <string name="onboarding_provider_fetch_models_title">拉取模型</string>
     <string name="onboarding_provider_fetch_models_desc">配置好密钥后，点击「拉取模型」即可自动同步可用模型列表。</string>
     <string name="onboarding_provider_select_fetched_model_title">添加拉取的模型</string>
-    <string name="onboarding_provider_select_fetched_model_desc">已获取到可用模型！点击添加按钮将该模型加入当前供应商。</string>
+    <string name="onboarding_provider_select_fetched_model_desc">已获取到可用模型，点击添加按钮将该模型加入当前供应商。</string>
     <string name="onboarding_open_model_picker_title">打开模型面板</string>
     <string name="onboarding_open_model_picker_desc">回到主页，点击输入框左侧的模型图标打开选择面板。</string>
     <string name="onboarding_choose_model_in_sheet_title">选择会话模型</string>
     <string name="onboarding_choose_model_in_sheet_desc">点击刚刚添加的模型，指定当前对话使用的 AI。</string>
     <string name="onboarding_send_message_title">开始对话</string>
-    <string name="onboarding_send_message_desc">模型已就绪！在输入框输入你的编程需求或问题，开始与 AI 助手协同工作吧！</string>
+    <string name="onboarding_send_message_desc">模型已就绪，在输入框输入你的编程需求或问题，开始与 AI 助手协同工作。</string>
 </resources>

@@ -179,14 +179,14 @@
     <string name="provider_cache_anthropic_subtitle">Mark system/tools/messages prefixes with explicit cache breakpoints to cut repeated input cost</string>
     <string name="provider_cache_openai_chat_title">OpenAI-compatible cache key</string>
     <string name="provider_cache_openai_chat_subtitle">Send prompt_cache_key with requests</string>
-    <string name="provider_section_balance">DIY Dashboard</string>
+    <string name="provider_section_balance">Custom Dashboard</string>
     <string name="provider_balance_script">Dashboard Script</string>
     <string name="provider_balance_script_placeholder">e.g. demo_balance.py</string>
     <string name="provider_balance_select_script">Select Script</string>
-    <string name="provider_balance_script_desc">Execute and preview card output</string>
-    <string name="provider_balance_test_btn">Test Run</string>
+    <string name="provider_balance_script_desc">Execute and preview dashboard output</string>
+    <string name="provider_balance_test_btn">Run Test</string>
     <string name="provider_balance_run_test">Run Test</string>
-    <string name="provider_balance_preview_title">Card Preview</string>
+    <string name="provider_balance_preview_title">Dashboard Preview</string>
     <string name="provider_test_detail_title">Test Debug Details</string>
     <string name="provider_test_req_url">Request URL</string>
     <string name="provider_test_req_headers">Request Headers</string>
@@ -312,7 +312,7 @@
     <string name="credential_auto_inject_title">Auto-inject credentials</string>
     <string name="credential_auto_inject_hint">Sync git credentials saved in the app to this remote server, effective only for repositories under the current workspace root. Does not affect your manual git usage on the server.</string>
     <string name="credential_auto_inject_prompt_title">Auto-inject git credentials?</string>
-    <string name="credential_auto_inject_prompt_body">Allow aicode to sync git credentials saved in the app to this remote server? It only applies to repositories under the current workspace root and will not modify the server\'s global git config.</string>
+    <string name="credential_auto_inject_prompt_body">Allow AiCode to sync git credentials saved in the app to this remote server? It only applies to repositories under the current workspace root and will not modify the server\'s global git config.</string>
     <string name="credential_auto_inject_enable">Enable</string>
     <string name="common_rename">Rename</string>
     <string name="common_hide">Hide</string>
@@ -370,7 +370,7 @@
     <string name="chat_attachment_preview">Preview %1$s</string>
     <string name="chat_attachment_open">Open %1$s</string>
     <string name="chat_no_model_selected">No model selected</string>
-    <string name="chat_open_git">Open version control</string>
+    <string name="chat_open_git">Open Git</string>
     <string name="chat_open_terminal">Open terminal</string>
     <string name="chat_ssh_connected">SSH: Connected</string>
     <string name="chat_ssh_connecting">SSH: Connecting…</string>
@@ -410,8 +410,8 @@
     <string name="about_update_channel">Update Channel</string>
     <string name="update_channel_stable">Stable</string>
     <string name="update_channel_stable_desc">Stable releases only</string>
-    <string name="update_channel_latest">Latest</string>
-    <string name="update_channel_latest_desc">Includes pre-releases (RC)</string>
+    <string name="update_channel_latest">Preview</string>
+    <string name="update_channel_latest_desc">Also detects pre-releases (RC)</string>
     <string name="about_no_changelog">No changelog available</string>
 
     <!-- Ask User Question -->
@@ -552,7 +552,7 @@
     <string name="chat_queue_remove">Remove from queue</string>
     <string name="chat_upload_file">Upload File</string>
     <string name="chat_upload_image">Upload Image</string>
-    <string name="chat_remove_attachment">Remove attachment</string>    <string name="chat_no_models_hint">No models available, add one in "Manage"</string>
+    <string name="chat_remove_attachment">Remove attachment</string>    <string name="chat_no_models_hint">No models available, add one in "AI Vendors"</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_send">Send</string>
     <string name="chat_perm_single_use_desc">Contains command substitution/pipes/redirects, cannot be remembered, single-use only</string>
@@ -665,7 +665,7 @@
     <string name="container_env_value">Variable value</string>
     <string name="container_no_env_vars">No custom environment variables</string>
     <string name="container_add_env_var">Add environment variable</string>
-    <string name="container_no_sftp_channel">No SFTP channel available. Please configure an SFTP connection in the "Remote Server" page first.</string>
+    <string name="container_no_sftp_channel">No SFTP channel available. Please configure an SFTP connection in the "Connections &amp; Sync" page first.</string>
     <string name="container_select_ssh_channel">Select SSH Channel</string>
     <string name="container_ssh_channel">SSH Channel</string>
     <string name="container_remote_workspace_path">Remote Workspace Path</string>
@@ -1107,7 +1107,7 @@
     <string name="remote_auth_key">Key</string>
     <string name="remote_login_key">Login key</string>
     <string name="remote_select_key">Select key</string>
-    <string name="remote_no_keys_hint">No keys yet, add one in the SSH Keys page</string>
+    <string name="remote_no_keys_hint">No keys yet, add one in the SSH Host Keys page</string>
     <string name="remote_key_passphrase">Passphrase (optional)</string>
     <string name="remote_toggle_password">Toggle password visibility</string>
     <string name="remote_test_dir">Test Directory</string>
@@ -1119,13 +1119,13 @@
     <string name="remote_mount_subdir">Mount Target Subdirectory</string>
     <string name="remote_target_dir">Remote Target Directory</string>
     <string name="remote_browse_dir">Browse Directory</string>
-    <string name="remote_local_channel_subdir_desc">The local channel\'s image root comes from the connection config; fill in a subdirectory under the root, usually just /.</string>
+    <string name="remote_local_channel_subdir_desc">The local channel\'s mount root comes from the connection config; fill in a subdirectory under the root, usually just /.</string>
     <string name="remote_select_local_workspace">Select Local Workspace</string>
     <string name="remote_mount_already_exists">This mount already exists: same channel, remote directory and workspace combination</string>
     <string name="remote_map_to_local">Map to Local Workspace</string>
     <string name="remote_no_local_workspace">No local workspaces, please create one in the sidebar first.</string>
     <string name="remote_auto_connect_on_start">Auto-connect on app start</string>
-    <string name="remote_auto_connect_and_sync">Auto-connect and sync this workspace on boot</string>
+    <string name="remote_auto_connect_and_sync">Auto-connect and sync this workspace on app start</string>
     <string name="remote_select_remote_dir">Select Remote Directory</string>
     <string name="remote_current_path">Current path: %1$s</string>
     <string name="remote_load_failed">Load failed: %1$s</string>
@@ -1146,7 +1146,7 @@
     <string name="ftp_login_password">Login Password</string>
     <string name="ftp_allow_anonymous">Allow Anonymous</string>
     <string name="ftp_anonymous_desc">Connect without username and password</string>
-    <string name="ftp_auto_start">Auto-start on boot</string>
+    <string name="ftp_auto_start">Auto-start on app launch</string>
     <string name="ftp_auto_start_desc">Automatically start FTP service in background on app launch</string>
     <string name="ftp_config_saved">Configuration saved</string>
     <string name="ftp_save_config">Save Configuration</string>
@@ -1169,10 +1169,10 @@
 
     <!-- Remote Server ViewModel -->
     <string name="remote_upload_all_failed">Full upload failed: %1$s</string>
-    <string name="remote_upload_all_success">Full upload successful!</string>
+    <string name="remote_upload_all_success">Full upload complete</string>
     <string name="remote_download_all_failed">Full download failed: %1$s</string>
-    <string name="remote_download_all_success">Full download successful!</string>
-    <string name="remote_connect_success">Connection successful!</string>
+    <string name="remote_download_all_success">Full download complete</string>
+    <string name="remote_connect_success">Connected</string>
     <string name="remote_connect_failed">Connection failed: %1$s</string>
     <string name="remote_unknown_error">Unknown error</string>
     <string name="ssh_host_key_settings_title">SSH Host Keys</string>
@@ -1432,7 +1432,7 @@
     <string name="onboarding_open_sidebar_title">Open Sidebar</string>
     <string name="onboarding_open_sidebar_desc">Tap the top-left button to open sidebar and navigate to settings to configure models.</string>
     <string name="onboarding_enter_settings_title">Go to Settings</string>
-    <string name="onboarding_enter_settings_desc">Tap to open system settings to manage AI vendors and API keys.</string>
+    <string name="onboarding_enter_settings_desc">Tap to open App settings to manage AI vendors and API keys.</string>
     <string name="onboarding_config_provider_title">AI Vendors</string>
     <string name="onboarding_config_provider_desc">Tap to open the AI vendors list and start setting up your model vendors.</string>
     <string name="onboarding_provider_add_title">Add Vendor</string>
@@ -1442,11 +1442,11 @@
     <string name="onboarding_provider_fetch_models_title">Fetch Models</string>
     <string name="onboarding_provider_fetch_models_desc">Once the key is configured, tap “Fetch models” to sync available models.</string>
     <string name="onboarding_provider_select_fetched_model_title">Add Fetched Model</string>
-    <string name="onboarding_provider_select_fetched_model_desc">Models retrieved! Tap the add button to add this model to the vendor.</string>
+    <string name="onboarding_provider_select_fetched_model_desc">Models retrieved. Tap the add button to add this model to the vendor.</string>
     <string name="onboarding_open_model_picker_title">Open Model Panel</string>
     <string name="onboarding_open_model_picker_desc">Back on home, tap the model icon next to the input box to open the selection panel.</string>
     <string name="onboarding_choose_model_in_sheet_title">Choose Model</string>
     <string name="onboarding_choose_model_in_sheet_desc">Tap the model you just added to set it for your chat session.</string>
     <string name="onboarding_send_message_title">Start Chatting</string>
-    <string name="onboarding_send_message_desc">Model ready! Type your coding tasks or questions here to start collaborating with the AI assistant.</string>
+    <string name="onboarding_send_message_desc">Model ready. Type your coding tasks or questions here to start collaborating with the AI assistant.</string>
 </resources>

@@ -78,7 +78,14 @@ class ContextCompactor @Inject constructor(
         }
 
         val tokensSource = if (lastInputTokens > 0) "真实 usage" else "本地估算"
-        FileLogger.i(TAG, "上下文约 $currentTokens tokens（$tokensSource），${if (force) "手动强制压缩" else "达到压缩触发条件（阈值 $triggerThreshold/$contextLimit 或硬上限），触发自动压缩"}。")
+        // 窗口来源一并打出来：命中目录（含命中的 provider 与自定义覆盖）还是走了 128k 兜底，
+        // 是排查「压缩时机与预期不符」的第一手依据。
+        val windowSource = if (windowMetadata.contextTokens > 0) "目录 ${windowMetadata.providerId}" else "128k 兜底"
+        FileLogger.i(
+            TAG,
+            "会话 ${sessionId ?: "-"} 上下文约 $currentTokens tokens（$tokensSource），窗口 $contextLimit（$windowSource），" +
+                "${if (force) "手动强制压缩" else "达到压缩触发条件（阈值 $triggerThreshold 或硬上限），触发自动压缩"}。"
+        )
         onEvent(AgentEvent.CompactionStarted(currentTokens))
 
         // 拆分 Head（需要压缩的老数据）和 Tail（保留的新数据）

@@ -15,10 +15,7 @@ fun Throwable.toUserMessage(): String {
     var depth = 0
     while (current != null && depth < 4) {
         val msg = current.message?.trim().orEmpty()
-        val label = when {
-            msg.isNotEmpty() -> msg
-            else -> friendlyName(current)
-        }
+        val label = if (msg.isNotEmpty()) msg else friendlyName(current)
         if (parts.none { it == label }) parts.add(label)
         current = current.cause
         depth++

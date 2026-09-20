@@ -186,20 +186,7 @@ class BackupManagerImpl @Inject constructor(
             }
             .onSuccess { FileLogger.i(TAG, "导入备份完成：$it") }
             .onFailure { FileLogger.e(TAG, "导入备份失败", it) }
-            .recoverCatching { e ->
-                when (e) {
-                    is BackupDecryptionException -> throw e
-                    is IllegalStateException -> throw e
-                    else -> throw IllegalArgumentException(
-                        if (pw != null) {
-                            "备份文件已损坏，或口令与备份文件不匹配"
-                        } else {
-                            "不是有效的 AiCode 备份文件；如果这是加密备份，请输入导出口令"
-                        },
-                        e
-                    )
-                }
-            }
+            .recoverCatching { e -> mapImportError(e, pw) }
         }
     }
 
@@ -228,20 +215,23 @@ class BackupManagerImpl @Inject constructor(
             }
             .onSuccess { FileLogger.i(TAG, "导入预览完成：${it.workspaces.size} 个工作区") }
             .onFailure { FileLogger.e(TAG, "导入预览失败", it) }
-            .recoverCatching { e ->
-                when (e) {
-                    is BackupDecryptionException -> throw e
-                    is IllegalStateException -> throw e
-                    else -> throw IllegalArgumentException(
-                        if (pw != null) {
-                            "备份文件已损坏，或口令与备份文件不匹配"
-                        } else {
-                            "不是有效的 AiCode 备份文件；如果这是加密备份，请输入导出口令"
-                        },
-                        e
-                    )
-                }
-            }
+            .recoverCatching { e -> mapImportError(e, pw) }
+        }
+    }
+
+    /** 把导入异常映射为用户可读的 IllegalArgumentException（解密异常原样抛出）。 */
+    private fun mapImportError(e: Throwable, pw: CharArray?): Nothing {
+        when (e) {
+            is BackupDecryptionException -> throw e
+            is IllegalStateException -> throw e
+            else -> throw IllegalArgumentException(
+                if (pw != null) {
+                    "备份文件已损坏，或口令与备份文件不匹配"
+                } else {
+                    "不是有效的 AiCode 备份文件；如果这是加密备份，请输入导出口令"
+                },
+                e
+            )
         }
     }
 

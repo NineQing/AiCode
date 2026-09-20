@@ -657,7 +657,6 @@ private fun HintText(text: String) {
     )
 }
 
-/** 行号 gutter 背景与编辑区拉开一点亮度差便于区分。基于编辑器背景色自适应，随主题走。 */
 /**
  * 给编辑器底色掺入当前主题的表面色。
  *
@@ -679,6 +678,8 @@ private fun applyLineNumberBackground(editor: CodeEditor, dark: Boolean) {
     val target = if (dark) Color.White else Color.Black
     scheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, lerp(base, target, 0.08f).toArgb())
 }
+
+/** 行号 gutter 背景与编辑区拉开一点亮度差便于区分。基于编辑器背景色自适应，随主题走。 */
 
 /** 把 sp 换算为像素，用于行号左边距等需 px 的 sora API。 */
 private fun spToPx(context: android.content.Context, sp: Float): Float =

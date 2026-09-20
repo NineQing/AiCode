@@ -29,6 +29,7 @@ class SyncEngine(
         private const val PING_INTERVAL_MS = 30_000L
         private const val RECONNECT_BASE_MS = 5_000L
         private const val RECONNECT_MAX_MS = 60_000L
+        private const val FILE_SYNC_DELAY_MS = 50L
     }
 
     private val customIgnores = ignoredPatternsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -149,7 +150,7 @@ class SyncEngine(
                 } else {
                     try {
                         syncClient.downloadFile(rPath, lFile.absolutePath)
-                        delay(50) // 延时加大到50ms
+                        delay(FILE_SYNC_DELAY_MS)
                     } catch (e: Exception) {
                         FileLogger.e(TAG, "Download Error for $rPath: ${e.message}")
                         forceReconnect()
@@ -177,12 +178,14 @@ class SyncEngine(
                 val rPath = "$remoteDir/${file.name}"
                 if (file.isDirectory) {
                     // 远程目录可能已由先前同步创建，已存在时报错可忽略。
-                    try { syncClient.createDirectory(rPath) } catch (e: Exception) {}
+                    try { syncClient.createDirectory(rPath) } catch (e: Exception) {
+                        FileLogger.w(TAG, "Sync: 远程目录创建失败 $rPath: ${e.message}")
+                    }
                     push(file, rPath)
                 } else {
                     try {
                         syncClient.uploadFile(file.absolutePath, rPath)
-                        delay(50) // 延时加大到50ms
+                        delay(FILE_SYNC_DELAY_MS)
                     } catch (e: Exception) {
                         FileLogger.e(TAG, "Upload Error for $rPath: ${e.message}")
                         forceReconnect()
@@ -266,12 +269,12 @@ class SyncEngine(
                 } else {
                     syncClient.uploadFile(localPath, remotePath)
                     FileLogger.i(TAG, "Sync: Uploaded to $remotePath")
-                    delay(50) // 延时加大到50ms
+                    delay(FILE_SYNC_DELAY_MS)
                 }
             } else {
                 syncClient.delete(remotePath)
                 FileLogger.i(TAG, "Sync: Deleted $remotePath")
-                delay(50)
+                delay(FILE_SYNC_DELAY_MS)
             }
             retryCounts.remove(localPath) // 成功后清除重试计数
         } catch (e: Exception) {
@@ -302,7 +305,9 @@ class SyncEngine(
         try {
             // 断开旧连接可能因网络中断本身失败，忽略后继续尝试重连。
             syncClient.disconnect()
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "Sync: 断开旧连接失败: ${e.message}")
+        }
         try {
             syncClient.connect(
                 connection.host,

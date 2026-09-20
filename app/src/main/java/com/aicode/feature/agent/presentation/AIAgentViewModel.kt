@@ -653,7 +653,7 @@ class AIAgentViewModel @Inject constructor(
     /** 当前会话绑定的 providerId/model（null 表示未绑定，回退全局 active provider）。 */
     val currentSessionProviderModel: StateFlow<Pair<String?, String?>> =
         currentSessionState.map { s -> (s?.providerId ?: "") to (s?.model ?: "") }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, null as String? to null as String?)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, Pair(null, null))
 
     /**
      * 当前会话的消息状态：会话切换时自动切换到对应历史，并携带所属会话 id 与 loaded 标志，

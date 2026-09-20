@@ -116,6 +116,6 @@ data class TerminalThemePreset(
 
         fun findById(id: String): TerminalThemePreset =
             ALL_PRESETS.firstOrNull { it.id == id }
-                ?: if (id == "github_light") GITHUB_DARK else TERMIUS_DARK
+                ?: TERMIUS_DARK
     }
 }

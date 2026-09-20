@@ -192,11 +192,7 @@ class McpManager @Inject constructor(
             }
             return@withLock
         }
-        _statuses.value = _statuses.value.map {
-            if (it.name == name) McpServerStatus(name, McpServerStatus.State.CONNECTING) else it
-        }
-        val result = withContext(Dispatchers.IO) { connectOne(cfg) }
-        _statuses.value = _statuses.value.map { if (it.name == name) result else it }
+        reconnectOne(cfg)
     }
 
     /**
@@ -208,14 +204,7 @@ class McpManager @Inject constructor(
         for (cfg in servers) {
             val connected = synchronized(activeClients) { activeClients.containsKey(cfg.name) }
             if (connected) continue
-            if (_statuses.value.none { it.name == cfg.name }) {
-                _statuses.value = _statuses.value + McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING)
-            }
-            _statuses.value = _statuses.value.map {
-                if (it.name == cfg.name) McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING) else it
-            }
-            val result = withContext(Dispatchers.IO) { connectOne(cfg) }
-            _statuses.value = _statuses.value.map { if (it.name == cfg.name) result else it }
+            reconnectOne(cfg)
         }
     }
 
@@ -225,6 +214,17 @@ class McpManager @Inject constructor(
      */
     fun reconnectUnconnectedAsync() {
         scope.launch { reconnectUnconnected() }
+    }
+
+    private suspend fun reconnectOne(cfg: McpServerConfig) {
+        if (_statuses.value.none { it.name == cfg.name }) {
+            _statuses.value = _statuses.value + McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING)
+        }
+        _statuses.value = _statuses.value.map {
+            if (it.name == cfg.name) McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING) else it
+        }
+        val result = withContext(Dispatchers.IO) { connectOne(cfg) }
+        _statuses.value = _statuses.value.map { if (it.name == cfg.name) result else it }
     }
 
     /** 解析 stdio server 的运行时容器：本地模式用当前 profile，远程 SSH 模式用默认容器。 */
@@ -258,14 +258,7 @@ class McpManager @Inject constructor(
         FileLogger.i(TAG, "容器配置变化，重建 ${servers.size} 个 stdio MCP server")
         for (cfg in servers) {
             teardownServer(cfg.name)
-            if (_statuses.value.none { it.name == cfg.name }) {
-                _statuses.value = _statuses.value + McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING)
-            }
-            _statuses.value = _statuses.value.map {
-                if (it.name == cfg.name) McpServerStatus(cfg.name, McpServerStatus.State.CONNECTING) else it
-            }
-            val result = withContext(Dispatchers.IO) { connectOne(cfg) }
-            _statuses.value = _statuses.value.map { if (it.name == cfg.name) result else it }
+            reconnectOne(cfg)
         }
     }
 

@@ -96,7 +96,6 @@ fun FloatingTabBar(
     val surfaceColor = colorScheme.surface
     val surfaceVariantColor = colorScheme.surfaceVariant
     val outlineVariantColor = colorScheme.outlineVariant
-    val primaryColor = colorScheme.primary
     val primaryContainerColor = colorScheme.primaryContainer
     val cardSurfaceColor = MaterialTheme.semanticColors.cardSurface
     val mutedSurfaceColor = MaterialTheme.semanticColors.mutedSurface
@@ -191,7 +190,6 @@ fun FloatingTabBar(
                 .padding(horizontal = 6.dp, vertical = 3.dp)
                 .pointerInput(items) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = { },
                         onDrag = { change, _ ->
                             change.consume()
                             val x = change.position.x
@@ -236,8 +234,6 @@ fun FloatingTabBar(
 
             if (tabWidth > 0f) {
                 val indicatorWidthDp = with(density) { tabWidth.toDp() }
-                val primaryColor = MaterialTheme.colorScheme.primaryContainer
-
                 val indicatorBrush = remember(isLight, primaryContainerColor) {
                     if (isLight) {
                         Brush.verticalGradient(
@@ -250,11 +246,11 @@ fun FloatingTabBar(
                     }
                 }
 
-                val indicatorBorderBrush = remember(isLight, primaryColor) {
+                val indicatorBorderBrush = remember(isLight, primaryContainerColor) {
                     Brush.verticalGradient(
                         listOf(
-                            if (isLight) Color.Black.copy(alpha = 0.08f) else primaryColor.copy(alpha = 0.35f),
-                            if (isLight) Color.Black.copy(alpha = 0.02f) else primaryColor.copy(alpha = 0.08f)
+                            if (isLight) Color.Black.copy(alpha = 0.08f) else primaryContainerColor.copy(alpha = 0.35f),
+                            if (isLight) Color.Black.copy(alpha = 0.02f) else primaryContainerColor.copy(alpha = 0.08f)
                         )
                     )
                 }
@@ -384,7 +380,6 @@ fun FloatingTabBar(
     val surfaceColor = colorScheme.surface
     val surfaceVariantColor = colorScheme.surfaceVariant
     val outlineVariantColor = colorScheme.outlineVariant
-    val primaryColor = colorScheme.primary
     val primaryContainerColor = colorScheme.primaryContainer
     val cardSurfaceColor = MaterialTheme.semanticColors.cardSurface
     val mutedSurfaceColor = MaterialTheme.semanticColors.mutedSurface
@@ -504,8 +499,6 @@ fun FloatingTabBar(
 
             if (tabWidth > 0f) {
                 val indicatorWidthDp = with(density) { tabWidth.toDp() }
-                val primaryColor = MaterialTheme.colorScheme.primaryContainer
-
                 val indicatorBrush = remember(isLight, primaryContainerColor) {
                     if (isLight) {
                         Brush.verticalGradient(
@@ -518,11 +511,11 @@ fun FloatingTabBar(
                     }
                 }
 
-                val indicatorBorderBrush = remember(isLight, primaryColor) {
+                val indicatorBorderBrush = remember(isLight, primaryContainerColor) {
                     Brush.verticalGradient(
                         listOf(
-                            if (isLight) Color.Black.copy(alpha = 0.08f) else primaryColor.copy(alpha = 0.35f),
-                            if (isLight) Color.Black.copy(alpha = 0.02f) else primaryColor.copy(alpha = 0.08f)
+                            if (isLight) Color.Black.copy(alpha = 0.08f) else primaryContainerColor.copy(alpha = 0.35f),
+                            if (isLight) Color.Black.copy(alpha = 0.02f) else primaryContainerColor.copy(alpha = 0.08f)
                         )
                     )
                 }

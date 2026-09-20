@@ -13,7 +13,6 @@ import com.aicode.feature.settings.domain.repository.AIProviderRepository
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -29,17 +28,10 @@ class AIProviderRepositoryImpl @Inject constructor(
         const val TAG = "AIProviderRepo"
         private val json = Json { ignoreUnknownKeys = true }
 
-        private fun encodeScriptParams(params: Map<String, String>): String =
-            if (params.isEmpty()) "" else json.encodeToString(params)
+        private fun encodeMap(map: Map<String, String>): String =
+            if (map.isEmpty()) "" else json.encodeToString(map)
 
-        private fun decodeScriptParams(raw: String): Map<String, String> =
-            if (raw.isBlank()) emptyMap()
-            else runCatching { json.decodeFromString<Map<String, String>>(raw) }.getOrDefault(emptyMap())
-
-        private fun encodeCustomHeaders(headers: Map<String, String>): String =
-            if (headers.isEmpty()) "" else json.encodeToString(headers)
-
-        private fun decodeCustomHeaders(raw: String): Map<String, String> =
+        private fun decodeMap(raw: String): Map<String, String> =
             if (raw.isBlank()) emptyMap()
             else runCatching { json.decodeFromString<Map<String, String>>(raw) }.getOrDefault(emptyMap())
     }
@@ -131,8 +123,8 @@ class AIProviderRepositoryImpl @Inject constructor(
             proxyPort = proxyPort,
             proxyUsername = proxyUsername,
             proxyPassword = proxyPassword,
-            customHeaders = decodeCustomHeaders(customHeaders),
-            scriptParams = decodeScriptParams(scriptParams)
+            customHeaders = decodeMap(customHeaders),
+            scriptParams = decodeMap(scriptParams)
         ).sanitized()
     }
 
@@ -166,8 +158,8 @@ class AIProviderRepositoryImpl @Inject constructor(
             proxyPort = proxyPort,
             proxyUsername = proxyUsername,
             proxyPassword = proxyPassword,
-            customHeaders = encodeCustomHeaders(customHeaders),
-            scriptParams = encodeScriptParams(scriptParams)
+            customHeaders = encodeMap(customHeaders),
+            scriptParams = encodeMap(scriptParams)
         )
     }
 }

@@ -173,6 +173,12 @@ export default defineConfig({
           ]
         },
         {
+          text: '设备调试',
+          items: [
+            { text: '用 adb 无线调试其他设备', link: '/advanced/adb-wireless-debug' }
+          ]
+        },
+        {
           text: '扩展开发',
           items: [
             { text: '自定义面板', link: '/advanced/dashboard-cards' }

@@ -44,7 +44,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -287,10 +286,10 @@ internal fun ToolMessageBody(
         }
         // 文件卡片：工具结束后常显在消息底部，点击用系统 app 打开。
         if (!running && message.attachments.isNotEmpty()) {
-            val context = LocalContext.current
+            val opener = LocalAttachmentOpener.current
             MessageAttachmentPreviewRow(
                 attachments = message.attachments,
-                onClick = { openAttachment(context, it) }
+                onClick = { opener.open(it) }
             )
         }
     }

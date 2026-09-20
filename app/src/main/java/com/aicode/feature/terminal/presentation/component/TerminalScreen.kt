@@ -344,6 +344,35 @@ private fun TabChip(
     }
 }
 
+private fun applyTerminalColors(
+    view: TerminalView,
+    tab: TerminalTab,
+    settings: TerminalSettings
+) {
+    val preset = settings.theme
+    TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
+    TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
+    TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
+    for (i in 0 until minOf(16, preset.ansiColors.size)) {
+        TerminalColors.COLOR_SCHEME.mDefaultColors[i] = preset.ansiColors[i]
+    }
+
+    tab.session.emulator?.mColors?.let { colors ->
+        colors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
+        colors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
+        colors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
+        for (i in 0 until minOf(16, preset.ansiColors.size)) {
+            colors.mCurrentColors[i] = preset.ansiColors[i]
+        }
+    }
+
+    (tab.client as? AppTerminalSessionClient)?.cursorStyle = settings.cursorStyle
+    tab.session.emulator?.setCursorStyle()
+
+    view.onScreenUpdated()
+    view.invalidate()
+}
+
 /** Termux TerminalView 的 Compose 包装：渲染与输入全部由该开源组件负责。 */
 @Composable
 private fun TerminalSurface(
@@ -377,29 +406,7 @@ private fun TerminalSurface(
             tab.view = view
             view.attachSession(tab.session)
 
-            // 同步更新全局默认色彩表与当前会话色彩
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
-            for (i in 0 until minOf(16, preset.ansiColors.size)) {
-                TerminalColors.COLOR_SCHEME.mDefaultColors[i] = preset.ansiColors[i]
-            }
-
-            tab.session.emulator?.mColors?.let { colors ->
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
-                for (i in 0 until minOf(16, preset.ansiColors.size)) {
-                    colors.mCurrentColors[i] = preset.ansiColors[i]
-                }
-            }
-
-            // 同步更新光标样式
-            (tab.client as? AppTerminalSessionClient)?.cursorStyle = settings.cursorStyle
-            tab.session.emulator?.setCursorStyle()
-
-            view.onScreenUpdated()
-            view.invalidate()
+            applyTerminalColors(view, tab, settings)
             view.requestFocus()
             view
         },
@@ -414,28 +421,7 @@ private fun TerminalSurface(
                 view.tag = targetFontKey
             }
 
-            // 同步更新全局默认色彩表与当前会话色彩
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
-            TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
-            for (i in 0 until minOf(16, preset.ansiColors.size)) {
-                TerminalColors.COLOR_SCHEME.mDefaultColors[i] = preset.ansiColors[i]
-            }
-
-            tab.session.emulator?.mColors?.let { colors ->
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = preset.background
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = preset.foreground
-                colors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = preset.cursor
-                for (i in 0 until minOf(16, preset.ansiColors.size)) {
-                    colors.mCurrentColors[i] = preset.ansiColors[i]
-                }
-            }
-            // 同步更新光标样式
-            (tab.client as? AppTerminalSessionClient)?.cursorStyle = settings.cursorStyle
-            tab.session.emulator?.setCursorStyle()
-
-            view.onScreenUpdated()
-            view.invalidate()
+            applyTerminalColors(view, tab, settings)
         },
         onRelease = { view ->
             if (tab.view === view) tab.view = null
@@ -562,11 +548,7 @@ private fun KeyChip(
         active -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.semanticColors.subtleBorder
     }
-    val fg = when {
-        active -> MaterialTheme.colorScheme.onPrimary
-        isLight -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurface
-    }
+    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
 
     var pressed by remember { mutableStateOf(false) }
     var sentRepeated by remember { mutableStateOf(false) }

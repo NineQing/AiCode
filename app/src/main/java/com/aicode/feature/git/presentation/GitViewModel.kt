@@ -47,6 +47,9 @@ import javax.inject.Inject
  * （暂存/提交/拉取/推送）执行后自动刷新并通过 [GitUiState.toast] 反馈。[GitUiState.busy]
  * 守卫防止并发写操作相互踩踏。
  */
+private fun GitGraph.toGitCommits() =
+    commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+
 @HiltViewModel
 class GitViewModel @Inject constructor(
     private val repository: GitRepository,
@@ -169,7 +172,7 @@ class GitViewModel @Inject constructor(
                 val allRefs = repository.loadAllRefs()
                 // 用全量 refs 更新 graph 标注（远程分支+标签补全）。
                 val graph = repository.graphAppend(_state.value.graph.commits, allRefs.refsByCommit)
-                val commits = graph.commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+                val commits = graph.toGitCommits()
                 _state.update {
                     it.copy(branches = allRefs.branches, tags = allRefs.tags, graph = graph, commits = commits, branchesLoading = false, branchesLoaded = true)
                 }
@@ -212,7 +215,7 @@ class GitViewModel @Inject constructor(
                     return@launch
                 }
                 val snap = loadSnapshot(includeIdentity = true)
-                val commits = snap.graph.commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+                val commits = snap.graph.toGitCommits()
                 _state.update {
                     it.copy(loading = false, notARepo = false, status = snap.status, commits = commits, graph = snap.graph, hasRemote = snap.hasRemote, hasIdentity = snap.hasIdentity, untrackedDirFiles = snap.untrackedDirFiles, branchesLoaded = false, branchesLoading = false, branches = emptyList(), tags = emptyList())
                 }
@@ -248,7 +251,7 @@ class GitViewModel @Inject constructor(
             try {
                 if (repository.isRepo()) {
                     val snap = loadSnapshot(includeIdentity = false)
-                    val commits = snap.graph.commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+                    val commits = snap.graph.toGitCommits()
                     _state.update { it.copy(busy = false, status = snap.status, commits = commits, graph = snap.graph, hasRemote = snap.hasRemote, untrackedDirFiles = snap.untrackedDirFiles, notARepo = false, toast = msg) }
                     refreshBranchesIfLoaded()
                 } else {
@@ -364,7 +367,7 @@ class GitViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val graph = repository.graphAppend(current.graph.commits, current.graph.refs)
-                val commits = graph.commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+                val commits = graph.toGitCommits()
                 _state.update { it.copy(graph = graph, commits = commits, graphLoadingMore = false) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -393,7 +396,7 @@ class GitViewModel @Inject constructor(
             try {
                 if (repository.isRepo()) {
                     val snap = loadSnapshot(includeIdentity = false)
-                    val commits = snap.graph.commits.map { GitCommit(it.hash, it.shortHash, it.author, it.date, it.message) }
+                    val commits = snap.graph.toGitCommits()
                     _state.update { it.copy(checkoutLoading = null, status = snap.status, commits = commits, graph = snap.graph, hasRemote = snap.hasRemote, notARepo = false, toast = msg) }
                     // 切换分支后分支列表可能变化，若已加载过则刷新。
                     refreshBranchesIfLoaded()

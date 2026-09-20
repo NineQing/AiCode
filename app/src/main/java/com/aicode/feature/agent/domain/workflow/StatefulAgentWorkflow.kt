@@ -65,6 +65,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -167,8 +168,8 @@ class StatefulAgentWorkflow @Inject constructor(
         val raw: String,
         val isError: Boolean,
         /** 仅 sendFile 等展示型工具：随结果附带的文件卡片元数据，供 UI 渲染，不回放进模型上下文。 */
-        val attachments: List<com.aicode.feature.agent.presentation.AgentAttachment> = emptyList(),
-        val images: List<com.aicode.feature.agent.domain.model.AgentImage> = emptyList()
+        val attachments: List<AgentAttachment> = emptyList(),
+        val images: List<AgentImage> = emptyList()
     )
 
     /** 批量工具执行结果：携带 toolCall 元信息，供最后按原始顺序组装 ToolResultMessage。 */
@@ -178,8 +179,8 @@ class StatefulAgentWorkflow @Inject constructor(
         val result: String,
         val isError: Boolean,
         /** 仅 sendFile 等展示型工具：随结果附带的文件卡片元数据，供 UI 渲染，不回放进模型上下文。 */
-        val attachments: List<com.aicode.feature.agent.presentation.AgentAttachment> = emptyList(),
-        val images: List<com.aicode.feature.agent.domain.model.AgentImage> = emptyList()
+        val attachments: List<AgentAttachment> = emptyList(),
+        val images: List<AgentImage> = emptyList()
     )
 
     /** 需要在外部环境中执行的副作用 (SideEffect) */
@@ -1051,7 +1052,6 @@ class StatefulAgentWorkflow @Inject constructor(
         AgentMode.BUILD -> null
     }
 
-    /** 工具切换成功后拼进 switchMode 工具结果的模式状态通知（当轮即可见，无需等下一条用户消息）。 */
     /**
      * 把待送通知注入工具结果：优先作为 transport JSON 顶层的 `notifications` 字段，结果仍是合法 JSON，
      * UI 的 formatToolResult（只读 data/message）与各类结构化解析不受影响。
@@ -1063,6 +1063,7 @@ class StatefulAgentWorkflow @Inject constructor(
         return JsonObject(obj + ("notifications" to AgentNotificationFormatter.buildJsonArray(items))).toString()
     }
 
+    /** 工具切换成功后拼进 switchMode 工具结果的模式状态通知（当轮即可见，无需等下一条用户消息）。 */
     private fun buildModeSwitchNotice(mode: AgentMode): String = when (mode) {
         AgentMode.PLAN -> "\n\n" + promptProvider.resolvePrompt(MODE_REMINDER_PLAN_FILE)
             .replace(LEADING_COMMENT, "")
@@ -1114,9 +1115,9 @@ class StatefulAgentWorkflow @Inject constructor(
     private suspend fun requestPermissionIfNeeded(
         tool: AgentTool?,
         callId: String,
-        arguments: Map<String, kotlinx.serialization.json.JsonElement>,
+        arguments: Map<String, JsonElement>,
         argsPreview: String,
-        mode: com.aicode.feature.agent.domain.model.AgentMode,
+        mode: AgentMode,
         sessionId: String?
     ): PermissionCheckResult {
         if (tool == null) {
@@ -1135,7 +1136,7 @@ class StatefulAgentWorkflow @Inject constructor(
         val eval = policyEngine.evaluate(tool, tool.name, arguments, mode)
         if (eval.verdict == ToolPermissionPolicyEngine.Verdict.DENY) {
             val reason = eval.denyReason ?: "该工具被项目安全规则策略禁止执行"
-            val code = if (mode == com.aicode.feature.agent.domain.model.AgentMode.PLAN) "PLAN_MODE_REJECTED" else "SYSTEM_DENIED"
+            val code = if (mode == AgentMode.PLAN) "PLAN_MODE_REJECTED" else "SYSTEM_DENIED"
             return PermissionCheckResult(false, reason, code)
         }
 

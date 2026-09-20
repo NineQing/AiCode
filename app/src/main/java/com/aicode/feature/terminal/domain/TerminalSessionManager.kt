@@ -7,7 +7,6 @@ import com.aicode.feature.agent.domain.container.LinuxContainerEngine
 import com.aicode.feature.terminal.presentation.component.AppTerminalSessionClient
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
 import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -205,10 +204,14 @@ class TerminalSessionManager @Inject constructor(
         return id
     }
 
+    private fun runningTab(id: String): TerminalTab? {
+        val t = tab(id) ?: return null
+        return if (t.runState is RunState.Running) t else null
+    }
+
     /** 按 id 向标签发送输入并回车执行（AI 持续发命令的入口）。返回是否命中标签且仍活跃。 */
     override fun sendInput(id: String, input: String, appendNewline: Boolean): Boolean {
-        val tab = tab(id) ?: return false
-        if (tab.runState !is RunState.Running) return false
+        val tab = runningTab(id) ?: return false
         val text = if (appendNewline && !input.endsWith("\n")) input + "\n" else input
         writeToSession(tab.session, text)
         return true
@@ -216,16 +219,14 @@ class TerminalSessionManager @Inject constructor(
 
     /** 按 id 向标签写入原始文本，不自动追加回车。 */
     override fun writeToTab(id: String, text: String): Boolean {
-        val tab = tab(id) ?: return false
-        if (tab.runState !is RunState.Running) return false
+        val tab = runningTab(id) ?: return false
         writeToSession(tab.session, text)
         return true
     }
 
     /** 按 id 向标签写入原始字节（控制字符，如 Ctrl-C=0x03）。 */
     override fun writeBytesToTab(id: String, vararg bytes: Int): Boolean {
-        val tab = tab(id) ?: return false
-        if (tab.runState !is RunState.Running) return false
+        val tab = runningTab(id) ?: return false
         val arr = ByteArray(bytes.size) { bytes[it].toByte() }
         tab.session.write(arr, 0, arr.size)
         return true
@@ -282,9 +283,7 @@ class TerminalSessionManager @Inject constructor(
         }
         bumpRevision()
 
-        if (tab.isBackground && remaining.none { it.isBackground && it.runState is RunState.Running }) {
-            stopKeepaliveService()
-        }
+        if (tab.isBackground) maybeStopKeepalive(tab)
         FileLogger.i(TAG, "关闭终端标签 $id")
         return true
     }
@@ -353,9 +352,7 @@ class TerminalSessionManager @Inject constructor(
                         current.runState = RunState.Finished(exitCode)
                         bumpRevision()
                         FileLogger.i(TAG, "兜底：标签 $tabId 检测到退出标记，强制收尾 exit=$exitCode")
-                        if (current.isBackground && _tabs.value.none { it.isBackground && it.runState is RunState.Running }) {
-                            stopKeepaliveService()
-                        }
+                        if (current.isBackground) maybeStopKeepalive(current)
                         if (current.notifyOnExit && !current.finishedNotified) {
                             current.finishedNotified = true
                             _tabFinishedEvents.tryEmit(
@@ -411,9 +408,7 @@ class TerminalSessionManager @Inject constructor(
                     target.runState = RunState.Finished(finished.exitStatus)
                     bumpRevision()
                     FileLogger.i(TAG, "终端标签 ${target.id} 会话结束 exit=${finished.exitStatus}")
-                    if (target.isBackground && _tabs.value.none { it.isBackground && it.runState is RunState.Running }) {
-                        stopKeepaliveService()
-                    }
+                    if (target.isBackground) maybeStopKeepalive(target)
                     if (target.notifyOnExit && !target.finishedNotified) {
                         target.finishedNotified = true
                         _tabFinishedEvents.tryEmit(
@@ -453,5 +448,11 @@ class TerminalSessionManager @Inject constructor(
         }
         appContext.startService(intent)
         FileLogger.i(TAG, "后台保活 Service 已停止")
+    }
+
+    private fun maybeStopKeepalive(closingTab: TerminalTab) {
+        if (closingTab.isBackground && _tabs.value.none { it.isBackground && it.runState is RunState.Running }) {
+            stopKeepaliveService()
+        }
     }
 }

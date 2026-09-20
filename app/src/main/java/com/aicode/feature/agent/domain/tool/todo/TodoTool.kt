@@ -140,7 +140,7 @@ class TodoTool @Inject constructor(
         return ToolResult.Success(JsonObject(mapOf(
             "total" to JsonPrimitive(total),
             "completed" to JsonPrimitive(completed),
-            "items" to kotlinx.serialization.json.JsonArray(
+            "items" to JsonArray(
                 items.map { entity ->
                     JsonObject(mapOf(
                         "id" to JsonPrimitive(entity.id),

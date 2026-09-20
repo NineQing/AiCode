@@ -5,8 +5,6 @@ import android.util.Log
 import com.google.gson.GsonBuilder
 import java.io.File
 
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger

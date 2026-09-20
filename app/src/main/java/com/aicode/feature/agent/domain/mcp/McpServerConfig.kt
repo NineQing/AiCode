@@ -15,4 +15,14 @@ data class McpServerConfig(
     val disabledTools: Set<String> = emptySet()
 ) {
     val isStdio: Boolean get() = !command.isNullOrBlank()
+
+    companion object {
+        /**
+         * 名称会拼进 function-calling 工具名（`mcp__{名称}__{工具名}`），只允许 ASCII 字母、数字、下划线与连字符；
+         * 中文等其它 Unicode 字符不符合 provider 的工具命名规范。
+         */
+        private val NAME_REGEX = Regex("[a-zA-Z0-9_-]+")
+
+        fun isValidName(name: String): Boolean = NAME_REGEX.matches(name)
+    }
 }

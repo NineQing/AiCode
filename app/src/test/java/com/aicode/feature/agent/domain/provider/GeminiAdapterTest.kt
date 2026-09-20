@@ -289,6 +289,64 @@ class GeminiAdapterTest {
         assertFalse(functionResponse.containsKey("id"))
     }
 
+    @Test
+    fun parallel_tool_results_share_one_user_turn() = runTest {
+        val api = FakeApi(textResponse())
+        adapter(api).complete(
+            "sys",
+            listOf(
+                user("hi"),
+                AgentMessage.AssistantMessage(
+                    content = "",
+                    toolCalls = listOf(
+                        ToolCall(id = "call-1", name = "readFile", arguments = KxJsonObject(emptyMap())),
+                        ToolCall(id = "call-2", name = "readFile", arguments = KxJsonObject(emptyMap()))
+                    )
+                ),
+                AgentMessage.ToolResultMessage(id = "call-1", toolName = "readFile", result = "a"),
+                AgentMessage.ToolResultMessage(id = "call-2", toolName = "readFile", result = "b")
+            )
+        )
+
+        // 两个 functionResponse 拆成两轮会被网关判成 tool 结果缺失（HTTP 400）。
+        val toolTurns = contents(api.lastRequest).filter { it["role"] == "user" }.drop(1)
+        assertEquals(1, toolTurns.size)
+        @Suppress("UNCHECKED_CAST")
+        val parts = toolTurns.single()["parts"] as List<Map<*, *>>
+        assertEquals(
+            listOf("call-1", "call-2"),
+            parts.map { (it["functionResponse"] as Map<*, *>)["id"] }
+        )
+    }
+
+    @Test
+    fun user_text_after_tool_results_starts_new_turn() = runTest {
+        val api = FakeApi(textResponse())
+        adapter(api).complete(
+            "sys",
+            listOf(
+                user("hi"),
+                AgentMessage.AssistantMessage(
+                    content = "",
+                    toolCalls = listOf(ToolCall(id = "call-1", name = "readFile", arguments = KxJsonObject(emptyMap())))
+                ),
+                AgentMessage.ToolResultMessage(id = "call-1", toolName = "readFile", result = "a"),
+                user("继续"),
+                AgentMessage.AssistantMessage(
+                    content = "",
+                    toolCalls = listOf(ToolCall(id = "call-2", name = "readFile", arguments = KxJsonObject(emptyMap())))
+                ),
+                AgentMessage.ToolResultMessage(id = "call-2", toolName = "readFile", result = "b")
+            )
+        )
+
+        val userTurns = contents(api.lastRequest).filter { it["role"] == "user" }
+        assertEquals(4, userTurns.size)
+        @Suppress("UNCHECKED_CAST")
+        val lastParts = userTurns.last()["parts"] as List<Map<*, *>>
+        assertEquals("call-2", (lastParts.single()["functionResponse"] as Map<*, *>)["id"])
+    }
+
     // ── Interactions API（useResponseApi = true）─────────────────────────────
 
     private fun interactionsAdapter(api: FakeApi, maxOutput: Int? = null): GeminiAdapter =

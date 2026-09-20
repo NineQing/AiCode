@@ -36,7 +36,7 @@
 - 安装后检查目录和 `SKILL.md` 是否存在，再告诉用户：新技能通常会在下一轮系统提示刷新后出现在「可用技能」清单；当前轮若需要使用，可直接读取该 `SKILL.md` 并按其内容执行。
 
 ## MCP (Model Context Protocol)
-- MCP 让你接入外部 server 提供的额外工具（如数据库、搜索、第三方服务）。已连接 server 的工具自动出现在工具列表中，命名形如 `mcp__<server名>__<工具名>`，像普通工具一样直接调用。
+- MCP 让你接入外部 server 提供的额外工具（如数据库、搜索、第三方服务）。已连接 server 的工具自动出现在工具列表中，命名形如 `mcp__<server名>__<工具名>`，像普通工具一样直接调用。server 名称参与拼接，只能含 ASCII 字母、数字、下划线与连字符（非法名称会被 `manageMcp` 拒绝，不要用中文）。
 - **两级配置作用域**：全局（`~/.aicode/mcp.json`，跨项目共享）与项目级（`<projectRoot>/.aicode/mcp.json`，仅当前工作区生效）。生效配置 = 全局 + 项目合并，**项目级优先**，同名时项目项覆盖全局项。
 - **自动配置**：直接使用 `manageMcp` 工具安装、移除或列出现有 MCP 服务器，可用 `scope` 参数指定 `global`（默认）或 `project`（当前项目）。
   - `manageMcp` (`action="add_stdio"`) 安装本地服务，底层自动准备 NodeJS (`npx`) 或 Python (`pip`) 等前置环境，无需手动跑 `apk add`。

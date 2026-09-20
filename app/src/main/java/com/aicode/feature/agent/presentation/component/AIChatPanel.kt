@@ -1040,9 +1040,17 @@ fun AIChatPanel(
         chatImageLoader(viewModel.fileAccess, viewerDecodeSpec.maxEdge, viewerDecodeSpec.maxPixels)
     }
 
+    // 文件卡片点击用系统 app 打开：重取/拷贝需要在 IO 线程跑（远程模式要下载），故由这里注入协程。
+    val attachmentOpener = remember(viewModel.fileAccess, context) {
+        AttachmentOpener { attachment ->
+            scope.launch { openSentAttachment(context, attachment, viewModel.fileAccess) }
+        }
+    }
+
     CompositionLocalProvider(
         LocalMarkdownImageTransformer provides markdownImageTransformer,
-        LocalImageViewer provides imageViewerState
+        LocalImageViewer provides imageViewerState,
+        LocalAttachmentOpener provides attachmentOpener
     ) {
         Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

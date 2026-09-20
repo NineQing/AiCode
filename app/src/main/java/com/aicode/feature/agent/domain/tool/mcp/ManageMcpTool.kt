@@ -49,7 +49,7 @@ class ManageMcpTool @Inject constructor(
         "server_name" to ToolParameter(
             name = "server_name",
             type = ParameterType.STRING,
-            description = "MCP 服务器名称（操作非 list 时必填）",
+            description = "MCP 服务器名称（操作非 list 时必填），只能含 ASCII 字母、数字、下划线与连字符",
             required = false
         ),
         "command" to ToolParameter(
@@ -137,6 +137,7 @@ class ManageMcpTool @Inject constructor(
                 }
                 "add_stdio" -> {
                     val name = args["server_name"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("add_stdio 缺少 server_name")
+                    if (!McpServerConfig.isValidName(name)) return ToolResult.Error(invalidNameMessage(name))
                     val command = args["command"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("add_stdio 缺少 command")
                     val commandArgs = args["args"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
                     
@@ -157,6 +158,7 @@ class ManageMcpTool @Inject constructor(
                 }
                 "add_http" -> {
                     val name = args["server_name"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("add_http 缺少 server_name")
+                    if (!McpServerConfig.isValidName(name)) return ToolResult.Error(invalidNameMessage(name))
                     val url = args["url"]?.jsonPrimitive?.contentOrNull ?: return ToolResult.Error("add_http 缺少 url")
                     
                     val newServer = McpServerConfig(
@@ -180,6 +182,9 @@ class ManageMcpTool @Inject constructor(
             ToolResult.Error("管理 MCP 失败: ${e.message}")
         }
     }
+
+    private fun invalidNameMessage(name: String): String =
+        "server_name 只能含 ASCII 字母、数字、下划线与连字符（当前：$name）——server 名称会拼成 mcp__<server_name>__<tool> 送给模型，必须符合工具命名规范。"
 
     private fun resolveScope(args: Map<String, JsonElement>): McpScope =
         when (args["scope"]?.jsonPrimitive?.contentOrNull) {

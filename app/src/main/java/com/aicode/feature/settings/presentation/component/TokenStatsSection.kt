@@ -624,14 +624,14 @@ private fun formatCache(context: android.content.Context, cached: Long): String 
 private fun formatCallTime(epochMillis: Long): String =
     SimpleDateFormat("yyyy/M/d HH:mm", Locale.getDefault()).format(Date(epochMillis))
 
-/** 单次调用缓存命中率：缓存输入 / 总输入（与概览卡片同口径，总输入含缓存命中部分；Anthropic 的 input_tokens 不含 cache_read，该口径会偏大，clamp 到 100%）。 */
+/** 单次调用缓存命中率：缓存输入 / 总输入（inputTokens 含缓存命中部分，各 provider 适配器已统一该口径）。 */
 private fun formatRecordCacheHitRate(call: LlmCallRecordEntity): String {
     if (call.inputTokens <= 0) return "-"
     val rate = min(call.cachedInputTokens * 100.0 / call.inputTokens, 100.0)
     return String.format(Locale.getDefault(), "%.1f%%", rate)
 }
 
-/** 缓存命中率：缓存输入 / 总输入（总输入含缓存命中部分）；Anthropic 的 input_tokens 不含 cache_read，该口径会偏大，clamp 到 100%。 */
+/** 概览缓存命中率：缓存输入 / 总输入（与单次调用同口径）；clamp 到 100% 兜住个别服务端上报的异常值。 */
 private fun formatCacheHitRate(s: CallSummary): String {
     if (s.inputTokens <= 0) return "-"
     val rate = min(s.cachedInputTokens * 100.0 / s.inputTokens, 100.0)

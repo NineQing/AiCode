@@ -107,7 +107,10 @@ fun McpServerEditDialog(
         mutableStateListOf<String>().apply { addAll(initial?.disabledTools ?: emptyList()) }
     }
 
-    val canSave = name.isNotBlank() && if (isStdio) command.isNotBlank() else url.isNotBlank()
+    // 名称会拼进 `mcp__<名称>__<工具名>` 送给模型，必须符合 function-calling 命名规范。
+    val nameError = name.isNotBlank() && !McpServerConfig.isValidName(name)
+
+    val canSave = name.isNotBlank() && !nameError && if (isStdio) command.isNotBlank() else url.isNotBlank()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val configuration = LocalConfiguration.current
@@ -251,7 +254,13 @@ fun McpServerEditDialog(
                                 label = stringResource(R.string.common_name),
                                 placeholder = stringResource(R.string.mcp_name_hint),
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = nameError,
+                                supportingText = if (nameError) {
+                                    { Text(stringResource(R.string.mcp_name_invalid)) }
+                                } else {
+                                    null
+                                }
                             )
 
                             // 传输类型选择

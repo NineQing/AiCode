@@ -681,6 +681,9 @@ class GeminiAdapter @Inject constructor(
         val result = mutableListOf<Map<String, Any>>()
         // 防御性跟踪：上一个 assistant(即 model) 消息是否包含 functionCall
         var lastModelHadFunctionCall = false
+        // 同一 model 轮次的多个工具结果必须并进同一个 user content：并行调用时 Gemini 与各家兼容
+        // 网关都按「一轮回传全部 functionResponse」配对，拆成多轮会被判成 tool 结果缺失（HTTP 400）。
+        var pendingToolResponseParts: MutableList<Map<String, Any>>? = null
 
         for (message in messages) {
             when (message) {
@@ -699,9 +702,11 @@ class GeminiAdapter @Inject constructor(
                         )
                     )
                     lastModelHadFunctionCall = false
+                    pendingToolResponseParts = null
                 }
                 is AgentMessage.AssistantMessage -> {
                     lastModelHadFunctionCall = message.toolCalls.isNotEmpty()
+                    pendingToolResponseParts = null
                     // 上轮 model 输出存有原样快照时直接原样回传：thoughtSignature 是 part 级元数据，
                     // 重建 parts 会丢失签名，Gemini 3 系就接不上上一轮的推理上下文。
                     val snapshot = decodeSnapshotParts(message.thinkingBlocksJson)
@@ -735,7 +740,10 @@ class GeminiAdapter @Inject constructor(
                 is AgentMessage.ToolResultMessage -> {
                     // 防御性清理：跳过没有配对 functionCall 的孤立 functionResponse
                     if (!lastModelHadFunctionCall) continue
-                    val parts = mutableListOf<Map<String, Any>>()
+                    val parts = pendingToolResponseParts ?: mutableListOf<Map<String, Any>>().also {
+                        result.add(mapOf("role" to "user", "parts" to it))
+                        pendingToolResponseParts = it
+                    }
                     // 文件类工具喂模型用精简投影文本，UI/持久化仍走完整 result。
                     val modelText = message.modelResult
                         ?: modelToolResultText(message.toolName, message.result)
@@ -753,12 +761,6 @@ class GeminiAdapter @Inject constructor(
                     message.images.forEach { image ->
                         parts.add(image.toGeminiInlineDataPart())
                     }
-                    result.add(
-                        mapOf(
-                            "role" to "user",
-                            "parts" to parts
-                        )
-                    )
                 }
             }
         }

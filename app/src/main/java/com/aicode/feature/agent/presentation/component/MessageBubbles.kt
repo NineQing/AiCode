@@ -183,8 +183,7 @@ internal fun formatTaskDuration(millis: Long): String {
 }
 
 /**
- * 单条消息的缓存命中率：命中缓存的输入 / 总输入，与设置页 Token 统计同口径。
- * Anthropic 的 input_tokens 不含 cache_read，该口径会偏大，故封顶 100%。
+ * 单条消息的缓存命中率：命中缓存的输入 / 总输入（inputTokens 含缓存命中部分），与设置页 Token 统计同口径。
  * 无输入统计或本次未命中缓存时返回 null（不占位，避免把「渠道不报缓存数据」误示为 0% 命中）。
  */
 internal fun formatCacheHitRate(inputTokens: Int, cachedInputTokens: Int): String? {

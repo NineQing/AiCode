@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +42,7 @@ import com.aicode.core.ui.LocalImageViewer
 import com.aicode.core.ui.THUMBNAIL_MAX_EDGE
 import com.aicode.core.ui.decodeSampledBitmap
 import com.aicode.feature.agent.presentation.AgentAttachment
+import com.aicode.feature.workspace.domain.FileAccessProvider
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.FileText
@@ -211,13 +213,32 @@ private fun AttachmentImageThumb(attachment: AgentAttachment) {
 }
 
 /**
- * 用系统对应 app 打开附件文件（FileProvider 授权 URI）。
- * 文件不存在或无匹配 app 时 toast 提示。
+ * 打开已发送的非图片附件（用系统 app）。默认空实现，与 `LocalImageViewer` 同一套路 ——
+ * 卡片渲染在 `ToolMessageBody` 这类中间层，用 CompositionLocal 避免一路加回调参数、
+ * 免去中间层为转发 lambda 改签名。
  */
-internal fun openAttachment(context: Context, attachment: AgentAttachment) {
-    val file = File(attachment.localPath)
-    if (!file.exists() || !file.isFile) {
-        Toast.makeText(context, context.getString(R.string.chat_open_file_failed), Toast.LENGTH_SHORT).show()
+fun interface AttachmentOpener {
+    fun open(attachment: AgentAttachment)
+}
+
+internal val LocalAttachmentOpener = staticCompositionLocalOf<AttachmentOpener> { AttachmentOpener { } }
+
+/**
+ * 用系统对应 app 打开附件文件（FileProvider 授权 URI）。
+ *
+ * 卡片记录的 [AgentAttachment.localPath] 不保证仍然有效：远程 SSH 模式下它是 `copyToLocal` 的临时副本
+ * （进程重启或系统清缓存后消失），外部本地目录工作区、自定义挂载源的文件又落在 FileProvider 声明的目录树之外。
+ * 因此失效时退回 [AgentAttachment.containerPath] 经 [fileAccess] 重取，重取到的路径仍无法授权时
+ * 再复制进 cacheDir（已由 cache-path 覆盖）分享。文件确实不存在与最终无法分享分别提示，不再混用一句文案。
+ */
+internal suspend fun openSentAttachment(
+    context: Context,
+    attachment: AgentAttachment,
+    fileAccess: FileAccessProvider
+) {
+    val local = withContext(Dispatchers.IO) { resolveLocalFile(attachment, fileAccess) }
+    if (local == null) {
+        Toast.makeText(context, context.getString(R.string.chat_open_file_missing), Toast.LENGTH_SHORT).show()
         return
     }
     // APK 安装包：系统安装器要求「允许安装未知应用」授权，未授权时引导用户去设置页开启，
@@ -238,10 +259,14 @@ internal fun openAttachment(context: Context, attachment: AgentAttachment) {
             return
         }
     }
-    val uri: Uri = try {
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    } catch (e: Exception) {
-        Toast.makeText(context, context.getString(R.string.chat_open_file_failed), Toast.LENGTH_SHORT).show()
+    val shareable = withContext(Dispatchers.IO) {
+        if (isShareable(context, local)) local else copyToShareCache(context, local)
+    }
+    val uri = shareable?.let {
+        runCatching { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it) }.getOrNull()
+    }
+    if (uri == null) {
+        Toast.makeText(context, context.getString(R.string.chat_open_file_unshareable), Toast.LENGTH_SHORT).show()
         return
     }
     val intent = Intent(Intent.ACTION_VIEW)
@@ -253,6 +278,32 @@ internal fun openAttachment(context: Context, attachment: AgentAttachment) {
         Toast.makeText(context, context.getString(R.string.chat_open_file_no_app), Toast.LENGTH_SHORT).show()
     }
 }
+
+/** 卡片记录的宿主路径失效（远程临时副本被清、文件被删或移动）时，退回容器路径重取。 */
+private suspend fun resolveLocalFile(attachment: AgentAttachment, fileAccess: FileAccessProvider): File? {
+    attachment.localPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isFile }?.let { return it }
+    val containerPath = attachment.containerPath
+    if (containerPath.isBlank()) return null
+    return runCatching { fileAccess.copyToLocal(containerPath) }.getOrNull()?.takeIf { it.isFile }
+}
+
+/** 路径落在 FileProvider 声明的目录树内时可直接授权；不能就抛异常，故按能否取到 URI 判定。 */
+private fun isShareable(context: Context, file: File): Boolean =
+    runCatching { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file) }.isSuccess
+
+/**
+ * 把无法直接授权的文件（外部本地目录工作区、自定义挂载源、SD 卡等）复制进 cacheDir 再分享。
+ * 目标目录按源路径散列分隔：既避开同名文件互相覆盖，也不把散列值挂进分享出去的文件名。
+ */
+private fun copyToShareCache(context: Context, source: File): File? = runCatching {
+    val dir = File(File(context.cacheDir, SHARE_CACHE_DIR), source.absolutePath.hashCode().toString())
+    dir.mkdirs()
+    val target = File(dir, source.name.ifBlank { "file" })
+    source.copyTo(target, overwrite = true)
+    target
+}.getOrNull()
+
+private const val SHARE_CACHE_DIR = "sent_files"
 
 private fun isApk(attachment: AgentAttachment): Boolean {
     if (attachment.mimeType.equals("application/vnd.android.package-archive", ignoreCase = true)) return true

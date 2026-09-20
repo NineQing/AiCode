@@ -757,25 +757,35 @@ fun AIChatPanel(
         takePictureLauncher.launch(uri)
     }
 
-    // 缓冲流式文本：流式期间跟随 streamingText；流式刚结束而数据库尚未完成派发期间（messages 末尾仍是 USER 消息），
-    // 持续保留本轮完整文本，撑住底部气泡，彻底杜绝「字快打完了突然整段蒸发消失（空白闪回）」；
+    // 缓冲流式文本与思考过程：流式期间跟随 streamingText / streamingReasoning；流式刚结束而数据库尚未完成派发期间（messages 末尾仍是 USER/TOOL 消息），
+    // 持续保留本轮完整文本与思考，撑住底部气泡，彻底杜绝「字快打完了突然整段蒸发消失（空白闪回）」或「思考块突然消失又冒出」；
     // 一旦 messages 列表末尾正式接纳了本轮助手消息，立即清空让位。
     var retainedStreamingText by remember { mutableStateOf<String?>(null) }
+    var retainedStreamingReasoning by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentSessionId) {
         retainedStreamingText = null
+        retainedStreamingReasoning = null
     }
 
     val lastMsg = messages.lastOrNull()
     // 本轮助手消息是否已经在消息列表中正式就位渲染：
-    // 只有末尾消息是 ASSISTANT 且前缀吻合，才代表本轮输出已落库进 messages 列表
+    // 只有末尾消息是 ASSISTANT 且正文与思考前缀吻合，才代表本轮输出已落库进 messages 列表
     val isAssistantSettled = lastMsg?.role == MessageRole.ASSISTANT && run {
         val currentText = streamingText ?: retainedStreamingText
-        if (currentText.isNullOrBlank()) {
+        val currentReasoning = streamingReasoning ?: retainedStreamingReasoning
+        val textSettled = if (currentText.isNullOrBlank()) {
             true
         } else {
             val prefix = currentText.trimStart().take(20)
             prefix.isEmpty() || lastMsg.content.trimStart().startsWith(prefix)
         }
+        val reasoningSettled = if (currentReasoning.isNullOrBlank()) {
+            true
+        } else {
+            val prefix = currentReasoning.trimStart().take(20)
+            prefix.isEmpty() || (lastMsg.reasoning?.trimStart()?.startsWith(prefix) == true)
+        }
+        textSettled && reasoningSettled
     }
 
     LaunchedEffect(streamingText, isAssistantSettled) {
@@ -787,8 +797,20 @@ fun AIChatPanel(
         }
     }
 
+    LaunchedEffect(streamingReasoning, isAssistantSettled) {
+        val sr = streamingReasoning
+        if (sr != null && sr.hasVisibleContent()) {
+            retainedStreamingReasoning = sr
+        } else if (isAssistantSettled) {
+            retainedStreamingReasoning = null
+        }
+    }
+
     val displayStreamingText = if (isAssistantSettled) null else (streamingText ?: retainedStreamingText)
     val showStreaming = displayStreamingText?.hasVisibleContent() == true
+
+    val displayStreamingReasoning = if (isAssistantSettled) null else (streamingReasoning ?: retainedStreamingReasoning)
+    val showReasoning = displayStreamingReasoning?.hasVisibleContent() == true
 
     // 打字机渲染进度：持有在 LazyColumn 之外，尾巴 item 滚出视口被 dispose 后进度不丢。
     val typewriter = rememberTypewriterStreamingText(
@@ -801,7 +823,7 @@ fun AIChatPanel(
     // 正文开始输出（streamingText 非空）即视为思考结束：思考打字机立即收尾，
     // 避免思考还没打完、正文已开始导致两者叠着慢慢打。
     val typewriterReasoningText = rememberTypewriterStreamingText(
-        text = streamingReasoning ?: "",
+        text = displayStreamingReasoning ?: "",
         active = streamingReasoning != null && streamingText == null,
         sessionKey = currentSessionId
     ).text
@@ -1166,8 +1188,8 @@ fun AIChatPanel(
                                 )
                             }
                         }
-                        val reasoning = streamingReasoning
-                        val showReasoning = reasoning != null && reasoning.isNotEmpty()
+                        val reasoning = displayStreamingReasoning
+                        val showReasoning = reasoning?.hasVisibleContent() == true
                         // 忙碌状态指示器：在没有正文/思考流式输出、未在压缩、未被权限弹窗或询问挂起时展示。
                         // 工具正在执行或模型正在准备工具时，文案会由 thinkingLabel 动态呈现为对应场景（如「正在读取文件」）；
                         // 既无流式又无具体工具时兜底显示「正在思考」。

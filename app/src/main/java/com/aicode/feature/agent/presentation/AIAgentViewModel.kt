@@ -1443,7 +1443,9 @@ class AIAgentViewModel @Inject constructor(
                         // 避免落库消息先行发射导致 UI 出现「落库消息与流式气泡同屏并存」的时差。
                         setStreamingReasoning(sessionId, null)
                         setStreamingText(sessionId, null)
-                        setPreparingTool(sessionId, null)
+                        if (event.toolCalls.isEmpty()) {
+                            setPreparingTool(sessionId, null)
+                        }
 
                         val normalized = if (event.content.hasVisibleContent()) event.content else ""
                         val reasoning = event.reasoning.takeIf { it.hasVisibleContent() }

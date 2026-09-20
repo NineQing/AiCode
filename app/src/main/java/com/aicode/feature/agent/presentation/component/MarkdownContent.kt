@@ -72,10 +72,34 @@ internal class MarkdownRenderCache(
         }
     }
 
-    fun get(text: String): MarkdownParseState.Success? = parsedStates[text]
+    fun get(text: String): MarkdownParseState.Success? =
+        parsedStates[text] ?: parsedStates[text.trim()]
+
+    /**
+     * 在缓存中寻找是 [text] 前缀的最长解析态。
+     * 流式转落库交接瞬间，全文可能比上一帧打字机内容多出尾部字符，直接拿最长前缀 AST 兜底，
+     * 确保首帧以排版好的 Markdown 呈现，彻底消灭裸纯文本（- **xxx**）闪现。
+     */
+    fun getBestPrefix(text: String): MarkdownParseState.Success? {
+        val exact = get(text)
+        if (exact != null) return exact
+        var bestMatch: MarkdownParseState.Success? = null
+        var bestLength = 0
+        for ((key, value) in parsedStates) {
+            if (key.length in (bestLength + 1)..text.length && text.startsWith(key)) {
+                bestMatch = value
+                bestLength = key.length
+            }
+        }
+        return bestMatch
+    }
 
     fun put(state: MarkdownParseState.Success) {
         parsedStates[state.content] = state
+        val trimmed = state.content.trim()
+        if (trimmed != state.content) {
+            parsedStates[trimmed] = state
+        }
     }
 }
 
@@ -169,6 +193,7 @@ internal fun MarkdownContent(
         val mdState = rememberMarkdownState(content = processed, retainState = true)
         val parseState by mdState.state.collectAsState()
         val cachedState = cache?.get(processed)
+        val prefixFallback = cache?.getBestPrefix(processed)
         // 委托属性不能智能转换，先取局部快照再判断
         val currentState = parseState
         val parsedState: MarkdownParseState = when {
@@ -177,19 +202,18 @@ internal fun MarkdownContent(
             else -> currentState
         }
 
-        // 最近一次成功解析的结果：Loading 期间的渲染兜底
-        var lastSuccessState by remember { mutableStateOf<MarkdownParseState.Success?>(null) }
+        // 最近一次成功解析的结果：Loading 期间的渲染兜底（初始首帧即用前缀缓存，杜绝纯文本裸奔）
+        var lastSuccessState by remember { mutableStateOf<MarkdownParseState.Success?>(prefixFallback) }
         if (parsedState is MarkdownParseState.Success) {
             lastSuccessState = parsedState
-            LaunchedEffect(cache, parsedState) {
-                cache?.put(parsedState)
-            }
+            // 同步写入缓存：让同轮次接力的落库消息首帧即可命中，避免 LaunchedEffect 异步延迟导致的裸纯文本闪烁
+            cache?.put(parsedState)
         }
 
-        // Success 渲染当前结果；Loading 渲染上次成功结果（避免纯文本闪现）；Error 回退原文
+        // Success 渲染当前结果；Loading 优先渲染本组件或前缀缓存的成功结果（杜绝裸纯文本闪现）；Error 回退原文
         val renderState: MarkdownParseState.Success? = when (parsedState) {
             is MarkdownParseState.Success -> parsedState
-            is MarkdownParseState.Loading -> lastSuccessState
+            is MarkdownParseState.Loading -> lastSuccessState ?: prefixFallback
             is MarkdownParseState.Error -> null
         }
 
@@ -350,7 +374,6 @@ private fun buildHighlightedText(
             val spanStyle = when (highlight) {
                 is ColorHighlight -> SpanStyle(color = Color(highlight.rgb).copy(alpha = 1f))
                 is BoldHighlight -> SpanStyle(fontWeight = FontWeight.Bold)
-                else -> null
             }
             if (spanStyle != null) addStyle(spanStyle, start, end)
         }

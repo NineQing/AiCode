@@ -105,7 +105,6 @@ private val FLOATING_LAYER_GAP_DP = 8.dp
 private const val AUTO_SCROLL_TOLERANCE_PX = 2
 
 /** 流式结束后尾巴保留时长（ms）：等落库消息接管，避免高度骤减导致视口上跳。 */
-private const val STREAMING_TAIL_RETAIN_MS = 150L
 
 /** 滚动到底部按钮直径（dp）。 */
 private const val SCROLL_TO_BOTTOM_BTN_SIZE = 34
@@ -432,9 +431,12 @@ fun AIChatPanel(
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val streamingReasoning by viewModel.streamingReasoning.collectAsStateWithLifecycle()
     val preparingTool by viewModel.preparingTool.collectAsStateWithLifecycle()
-    // 等待模型时的状态文案：模型已经在吐某次工具调用的参数时（工具名先到，参数可能还要好几秒），
-    // 直接说清在做什么，而不是一直「正在思考」——上游在工具名一出现就上报了 ToolCallPreparing。
-    val thinkingLabel = preparingTool?.let { stringResource(toolRunningLabelRes(it)) }
+    // 等待模型或工具执行时的状态文案：
+    // 1. 若当前有正在执行的工具（runningTool）或模型正在准备的工具（preparingTool，工具名先到参数还在流式），
+    //    直接说清在做什么（「正在读取文件」、「正在编辑文件」等，见 toolRunningLabelRes）；
+    // 2. 否则（如等待模型首字吐出、纯思考间隙）兜底显示「正在思考」。
+    val activeToolName = runningTool.lastOrNull()?.toolName?.takeIf { it.isNotBlank() } ?: preparingTool
+    val thinkingLabel = activeToolName?.let { stringResource(toolRunningLabelRes(it)) }
         ?: stringResource(R.string.chat_status_thinking)
     val pendingPermission by viewModel.pendingToolPermission.collectAsStateWithLifecycle()
     val pendingPermissionSessionTitle by viewModel.pendingToolPermissionSessionTitle.collectAsStateWithLifecycle()
@@ -755,24 +757,42 @@ fun AIChatPanel(
         takePictureLauncher.launch(uri)
     }
 
-    // 流式结束过渡：streamingText 清空后保留最后文本，直到打字机把最后一段打完
-    // （见下面的 typewriter.settled），避免尾巴 item 高度骤减导致视口被 clamp 上移、
-    // 露出历史消息（结束瞬间“闪回”看到用户消息）。
-    var tailStreamingText by remember { mutableStateOf<String?>(null) }
-    // 会话切换时立即丢掉尾巴：保留窗口只用于同一会话内「流式结束 → 落库消息接管」的交接，
-    // 跳会话留着会让新会话底部先闪一下上一个会话的流式气泡。必须声明在下面那个 effect 之前：
-    // 两者同帧重启时按声明顺序执行，清空得先跑，否则会把新会话刚填上的尾巴又抹掉。
+    // 缓冲流式文本：流式期间跟随 streamingText；流式刚结束而数据库尚未完成派发期间（messages 末尾仍是 USER 消息），
+    // 持续保留本轮完整文本，撑住底部气泡，彻底杜绝「字快打完了突然整段蒸发消失（空白闪回）」；
+    // 一旦 messages 列表末尾正式接纳了本轮助手消息，立即清空让位。
+    var retainedStreamingText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentSessionId) {
-        tailStreamingText = null
+        retainedStreamingText = null
     }
 
+    val lastMsg = messages.lastOrNull()
+    // 本轮助手消息是否已经在消息列表中正式就位渲染：
+    // 只有末尾消息是 ASSISTANT 且前缀吻合，才代表本轮输出已落库进 messages 列表
+    val isAssistantSettled = lastMsg?.role == MessageRole.ASSISTANT && run {
+        val currentText = streamingText ?: retainedStreamingText
+        if (currentText.isNullOrBlank()) {
+            true
+        } else {
+            val prefix = currentText.trimStart().take(20)
+            prefix.isEmpty() || lastMsg.content.trimStart().startsWith(prefix)
+        }
+    }
+
+    LaunchedEffect(streamingText, isAssistantSettled) {
+        val st = streamingText
+        if (st != null && st.hasVisibleContent()) {
+            retainedStreamingText = st
+        } else if (isAssistantSettled) {
+            retainedStreamingText = null
+        }
+    }
+
+    val displayStreamingText = if (isAssistantSettled) null else (streamingText ?: retainedStreamingText)
+    val showStreaming = displayStreamingText?.hasVisibleContent() == true
+
     // 打字机渲染进度：持有在 LazyColumn 之外，尾巴 item 滚出视口被 dispose 后进度不丢。
-    // active = 上游仍在吐字；streamingText 清空后（active=false）打字机不再一帧补全，
-    // 而是把剩余的一小段匀速打完（见 rememberTypewriterStreamingText），期间 settled=false。
-    // 文本优先取 streamingText（组合外的 ViewModel 状态）：切页返回的首帧 tailStreamingText
-    // 还没被下面的 LaunchedEffect 回填，此刻若传空文本，打字机会把恢复出的进度判成换轮从头重打。
     val typewriter = rememberTypewriterStreamingText(
-        text = streamingText ?: tailStreamingText ?: "",
+        text = displayStreamingText ?: "",
         active = streamingText != null,
         sessionKey = currentSessionId
     )
@@ -785,35 +805,6 @@ fun AIChatPanel(
         active = streamingReasoning != null && streamingText == null,
         sessionKey = currentSessionId
     ).text
-
-    LaunchedEffect(streamingText, typewriter.settled) {
-        val st = streamingText
-        if (st != null && st.hasVisibleContent()) {
-            tailStreamingText = st
-            return@LaunchedEffect
-        }
-        // 上游已清空但打字机还在收尾：此刻渲染的就是这段文字（尾巴气泡或接管它的落库消息），
-        // 提前撤掉会让视口高度骤减。settled 变化会重启本 effect，届时再走让位路径。
-        if (!typewriter.settled) return@LaunchedEffect
-        delay(STREAMING_TAIL_RETAIN_MS)
-        tailStreamingText = null
-    }
-
-    // 尾巴交棒：上游清空后，刚落库的最后一条助手消息（正文以本轮流式全文开头）就是尾巴正在
-    // 揭示的内容。它一出现在列表里就由它自己接着渲染（见 LazyColumn 的 contentOverride），
-    // 尾巴气泡让位——同一段文字上下各渲染一份，看起来就像内容重复了一遍。
-    // 只认最后一条助手消息：往前翻容易误伤历史里正文恰好以同一段文字开头的旧消息
-    // （把它的正文换成当前打字进度就是显式的错乱）。认不出来时（正文被改写、落库失败）
-    // 保持旧行为：尾巴继续打完，落库消息照常显示。
-    val tailOwnerId: String? = run {
-        if (streamingText != null) return@run null
-        val tail = tailStreamingText ?: return@run null
-        messages.lastOrNull { it.role == MessageRole.ASSISTANT }
-            ?.takeIf { it.content.startsWith(tail) }
-            ?.id
-    }
-    // 收尾期间由落库消息接管渲染（内容换成打字机当前进度）；追上后它自己渲染全文。
-    val handoffMessageId = if (!typewriter.settled) tailOwnerId else null
 
     // 自动滚动跟随
     // 两个状态都必须 saveable：窄窗打开编辑器 / 终端 / Git / 设置都是全屏路由，聊天页整棵组合
@@ -1163,25 +1154,16 @@ fun AIChatPanel(
                                     contentPadding = if (inExpandedGroup) ToolGroupMemberPadding else PaddingValues(0.dp),
                                     taskDurationMs = taskDurations[message.id],
                                     turnUsage = turnUsages[message.id],
-                                    // 收尾交棒：这条消息就是尾巴正在揭示的那段文字，正文换成打字机
-                                    // 当前进度，让它在自己的位置上把最后一小段打完（分块渲染的
-                                    // 长消息不换，正文片段与整体进度对不齐会串行）。
-                                    contentOverride = if (message.id == handoffMessageId && item.slice == null) {
-                                        typewriterRenderText
-                                    } else {
-                                        null
-                                    },
                                     entryDelayMs = messageEntryDelays[message.id]
                                 )
                             }
                         }
                         val reasoning = streamingReasoning
                         val showReasoning = reasoning != null && reasoning.isNotEmpty()
-                        val streaming = tailStreamingText
-                        // 尾巴气泡只在「还没有落库消息接管这段文字」时渲染（tailOwnerId 为空）：
-                        // 一旦接管，同一段文字由那条消息自己按打字机进度揭示，尾巴再渲染就重复了。
-                        val showStreaming = tailOwnerId == null && streaming != null && streaming.hasVisibleContent()
-                        val showThinking = !showReasoning && !showStreaming && !isCompacting && isBusy && runningTool.isEmpty() && pendingPermission == null && pendingQuestion == null
+                        // 忙碌状态指示器：在没有正文/思考流式输出、未在压缩、未被权限弹窗或询问挂起时展示。
+                        // 工具正在执行或模型正在准备工具时，文案会由 thinkingLabel 动态呈现为对应场景（如「正在读取文件」）；
+                        // 既无流式又无具体工具时兜底显示「正在思考」。
+                        val showThinking = !showReasoning && !showStreaming && !isCompacting && isBusy && pendingPermission == null && pendingQuestion == null
                         val showRetrying = retryState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
                         val showKeySwitched = keySwitchState != null && isBusy && !isCompacting && !showStreaming && !showReasoning
                         val tailKind = when {

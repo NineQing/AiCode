@@ -70,8 +70,8 @@ internal object ChatStyle {
     /** 行内小面板（指令、结果）圆角。 */
     val panelCorner = 8.dp
 
-    /** 工具行最小高度：保证指腹可点，又不至于把密集列表撑松。 */
-    val toolRowMinHeight = 40.dp
+    /** 工具行最小高度：保证指腹可点，布局紧凑不松散。 */
+    val toolRowMinHeight = 32.dp
 
     /** 代码卡头部高度。 */
     val codeHeaderHeight = 36.dp

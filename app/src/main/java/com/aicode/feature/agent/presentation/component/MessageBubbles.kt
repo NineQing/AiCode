@@ -220,10 +220,6 @@ internal fun AgentMessageItem(
     /** 长消息分块渲染：非 null 时正文 MarkdownContent 只渲染该片段。
      *  分块之间气泡无缝衔接（首块带思考、末块带操作行与底部圆角），复制按钮仍复制整条 message.content。 */
     contentSlice: String? = null,
-    /** 流式收尾交棒：非 null 时正文按该文本（打字机当前进度）渲染，其余（时间、用量、按钮）照常。
-     *  上游刚结束时由 [AIChatPanel] 传入，让这条消息在自己的位置上把最后一小段文字打完，
-     *  打完（或不是交棒目标）传回 null，即恢复渲染完整正文。 */
-    contentOverride: String? = null,
     /** 是否为分块的首块（渲染思考块、顶部圆角）；非分块消息恒为 true。 */
     isChunkHeader: Boolean = true,
     /** 是否为分块的末块（渲染操作行、底部圆角、与下一条列表 item 的间距）；非分块消息恒为 true。 */
@@ -297,8 +293,8 @@ internal fun AgentMessageItem(
             .padding(contentPadding)
             // LazyColumn 不再统一 spacedBy：末块（或非分块消息）自带与下一条 item 的间距，
             // 相邻分块之间零间距无缝衔接，整段长回复在外观上仍是连续的一整段。
-            // 扁平文档流下正文之间没有气泡边框兜底，间距要略大一点才分得清「轮次」。
-            .padding(bottom = if (isChunkFooter) Spacing.md else 0.dp),
+            // 扁平文档流下正文之间没有气泡边框兜底，紧凑排布分清「轮次」。
+            .padding(bottom = if (isChunkFooter) Spacing.sm else 0.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         if (hasReasoning && isChunkHeader) {
@@ -367,14 +363,9 @@ internal fun AgentMessageItem(
                                     )
                                 ) {
                                     MarkdownContent(
-                                        text = contentOverride ?: contentSlice ?: message.content,
+                                        text = contentSlice ?: message.content,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(
-                                                top = if (chunked && !isChunkHeader) 0.dp else Spacing.xs,
-                                                bottom = Spacing.xs,
-                                            ),
+                                        modifier = Modifier.fillMaxWidth(),
                                         cache = markdownCache,
                                     )
                                 }

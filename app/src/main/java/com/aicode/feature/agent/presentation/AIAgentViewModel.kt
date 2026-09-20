@@ -1439,6 +1439,12 @@ class AIAgentViewModel @Inject constructor(
                         )
                     }
                     is AgentEvent.AssistantText -> {
+                        // 流式收尾：在落库并触发 UI messages 更新之前，先同步清空流式状态，
+                        // 避免落库消息先行发射导致 UI 出现「落库消息与流式气泡同屏并存」的时差。
+                        setStreamingReasoning(sessionId, null)
+                        setStreamingText(sessionId, null)
+                        setPreparingTool(sessionId, null)
+
                         val normalized = if (event.content.hasVisibleContent()) event.content else ""
                         val reasoning = event.reasoning.takeIf { it.hasVisibleContent() }
                         messagePersistenceUseCase.persist(
@@ -1465,11 +1471,6 @@ class AIAgentViewModel @Inject constructor(
                                 }
                             }
                         }
-                        setStreamingReasoning(sessionId, null)
-                        setStreamingText(sessionId, null)
-                        // 流已收尾：模型本轮不会再吐工具参数了，清掉"准备调什么"的临时状态
-                        // （真要执行会在紧接着的 ToolCallStarted 里重新由工具行表达）
-                        setPreparingTool(sessionId, null)
                     }
                     is AgentEvent.ToolCallStarted -> {
                         val msgId = "tool_${event.id}"

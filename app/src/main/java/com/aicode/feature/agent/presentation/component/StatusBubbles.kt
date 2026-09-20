@@ -367,8 +367,8 @@ private const val TYPEWRITER_DRAIN_HARD_MS = 600L
 /** 上游吐字速率估算的滑动窗口时长（ms）。 */
 private const val TYPEWRITER_RATE_WINDOW_MS = 500L
 
-/** 打字机渲染节流间隔（ms）：Markdown 解析频率上限约 1/间隔。 */
-private const val TYPEWRITER_RENDER_INTERVAL_MS = 100L
+/** 打字机渲染节流间隔（ms）：~40fps 高频平滑快照，彻底消除低速模型的顿挫感。 */
+private const val TYPEWRITER_RENDER_INTERVAL_MS = 24L
 
 /** 按码点数量截断字符串，避免把 emoji 等代理对截成孤立的半个字符。 */
 private fun truncateToCodePoints(text: String, codePoints: Int): String {
@@ -698,12 +698,12 @@ internal fun ReasoningBubble(
         horizontalArrangement = Arrangement.Start
     ) {
         // 扁平化：思考不再是染色/描边卡片，只是一段弱化的灰色小字（靠色阶与字号与正文区分）
-        Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 32.dp)
+                        .heightIn(min = 28.dp)
                         .clickable { expanded = !expanded },
                     verticalAlignment = Alignment.CenterVertically
                 ) {

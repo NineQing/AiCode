@@ -20,7 +20,7 @@ AI 助手与开发者可以依据此规范，编写面板脚本（Python / Node 
 - **二进制 / 可执行脚本**：如果具备可执行权限（`chmod +x`），底层直接执行。
 
 ### 1.3 路径解析规则
-在提供商设置项「面板脚本」中，支持以下几种路径填写方式：
+在供应商设置项「面板脚本」中，支持以下几种路径填写方式：
 1. **纯文件名**（推荐，如 `demo_balance.py`）：自动在 `~/.aicode/scripts/` 目录下查找；
 2. **相对路径**（如 `scripts/my_panel.py` 或 `.aicode/scripts/my_panel.py`）：自动从 `~/.aicode/` 展开；
 3. **波浪号路径**（如 `~/.aicode/scripts/my_panel.py` 或 `~/my_script.py`）：自动展开为 `/root/` 对应路径；
@@ -36,7 +36,7 @@ AI 助手与开发者可以依据此规范，编写面板脚本（Python / Node 
 
 > **关于「输入 Token」的说明**：`LAST_INPUT_TOKENS` 和 `TOTAL_INPUT_TOKENS` 均为 API 返回的**总输入 Token**（即 `input_tokens` / `prompt_tokens` / `promptTokenCount`），**已包含缓存命中部分**。`LAST_CACHED_TOKENS` 是其中命中服务端缓存的部分（子集）。因此，纯新增输入 = `LAST_INPUT_TOKENS` - `LAST_CACHED_TOKENS`。
 >
-> **关于模型变量的说明**：下表 `AICODE_MODEL_*` 系列都跟着**当前渠道**取——你在提供商 → 模型里给该模型填的自定义窗口、单价与能力开关会直接生效，没填的才回退自动识别结果。
+> **关于模型变量的说明**：下表 `AICODE_MODEL_*` 系列都跟着**当前渠道**取——你在供应商 → 模型里给该模型填的自定义窗口、单价与能力开关会直接生效，没填的才回退自动识别结果。
 
 | 环境变量名 | 示例值 | 说明 |
 | :--- | :--- | :--- |
@@ -74,31 +74,31 @@ AI 助手与开发者可以依据此规范，编写面板脚本（Python / Node 
 | `AICODE_WORKSPACE` | `/root/workspace` | 当前工作区在容器内的根路径，恒为 `~/workspace`（展开为 `/root/workspace`）；宿主真实路径不会传给脚本 |
 | `AICODE_WORKSPACE_NAME` | `my-app` | 工作区目录名 |
 
-### 提供商变量
+### 供应商变量
 
 | 环境变量名 | 示例值 | 说明 |
 | :--- | :--- | :--- |
-| `AICODE_PROVIDER_NAME` | `OpenAI API` | 提供商名称 |
-| `AICODE_PROVIDER_TYPE` | `OPENAI` | 协议类型（OPENAI / ANTHROPIC / GEMINI） |
-| `AICODE_PROVIDER_API_KEY` | `sk-...` | 提供商 API Key |
-| `AICODE_PROVIDER_BASE_URL` | `https://api.openai.com/` | 提供商 Base URL |
+| `AICODE_PROVIDER_NAME` | `OpenAI API` | 供应商名称 |
+| `AICODE_PROVIDER_TYPE` | `OPENAI` | 上游格式（OPENAI / ANTHROPIC / GEMINI） |
+| `AICODE_PROVIDER_API_KEY` | `sk-...` | 供应商 API Key |
+| `AICODE_PROVIDER_BASE_URL` | `https://api.openai.com/` | 供应商 Base URL |
 
 #### 自定义脚本参数（面板 / DIY 脚本）
 
-在「提供商编辑 → 面板 (DIY)」中可配置任意数量的自定义脚本参数（Key-Value）。
+在「供应商编辑 → 面板 (DIY)」中可配置任意数量的自定义脚本参数（Key-Value）。
 执行面板脚本时，每个参数会以 `AICODE_KEY_<KEY>` 的形式注入脚本环境变量：
 
 - KEY 会规整为**大写**，仅保留字母、数字与下划线，例如 ACCOUNT_ID → AICODE_KEY_ACCOUNT_ID；
 - 同名键不区分大小写，冲突时以后添加的为准；
-- 参数值支持引用当前提供商的配置占位符，避免敏感信息（如 API Key）重复填写。
+- 参数值支持引用当前供应商的配置占位符，避免敏感信息（如 API Key）重复填写。
 
 | 占位符 | 说明 |
 | :--- | :--- |
 | {{PROVIDER_API_KEY}} | 当前生效的 API Key |
-| {{PROVIDER_ID}} | 提供商记录 ID |
-| {{PROVIDER_NAME}} | 提供商名称 |
-| {{PROVIDER_TYPE}} | 协议类型（OPENAI / ANTHROPIC / GEMINI） |
-| {{BASE_URL}} | 提供商 Base URL |
+| {{PROVIDER_ID}} | 供应商记录 ID |
+| {{PROVIDER_NAME}} | 供应商名称 |
+| {{PROVIDER_TYPE}} | 上游格式（OPENAI / ANTHROPIC / GEMINI） |
+| {{BASE_URL}} | 供应商 Base URL |
 | {{DEFAULT_MODEL}} | 默认模型 |
 | {{SELECTED_MODEL}} | 当前选中的模型 |
 | {{MODEL}} | 实际生效的模型（优先选中，其次默认） |

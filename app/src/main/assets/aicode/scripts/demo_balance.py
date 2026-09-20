@@ -3,7 +3,7 @@
 """
 AiCode 余额查询示例脚本 (demo_balance.py) - 余额制 Adaptive Card 模板
 
-本脚本演示如何为 AiCode 提供商返回余额、消费统计与快捷控制台动作的 Adaptive Card 数据。
+本脚本演示如何为 AiCode 供应商返回余额、消费统计与快捷控制台动作的 Adaptive Card 数据。
 """
 
 import json

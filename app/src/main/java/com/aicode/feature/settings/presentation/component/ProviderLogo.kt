@@ -149,7 +149,7 @@ fun ProviderLogoIcon(
         val brandKey = providerBrandKey(provider)
         Image(
             painter = painterResource(res),
-            contentDescription = provider?.name ?: "AI Provider",
+            contentDescription = provider?.name ?: "AI Vendor",
             colorFilter = if (brandKey != null && shouldTintModelLogo(brandKey)) ColorFilter.tint(modelLogoTint()) else null,
             modifier = modifier.size(size)
         )

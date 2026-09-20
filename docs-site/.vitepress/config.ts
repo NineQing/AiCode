@@ -37,13 +37,13 @@ export default defineConfig({
               items: [
                 { text: 'Quick Start', link: '/en/guide/quick-start' },
                 { text: 'Feature Overview', link: '/en/guide/overview' },
-                { text: 'Free Providers', link: '/en/guide/free-providers' }
+                { text: 'Free Vendors', link: '/en/guide/free-providers' }
               ]
             },
             {
               text: 'Models & Usage',
               items: [
-                { text: 'AI Providers & Models', link: '/en/guide/providers' }
+                { text: 'AI Vendors & Models', link: '/en/guide/providers' }
               ]
             }
           ]
@@ -105,7 +105,7 @@ export default defineConfig({
             { text: '快速上手', link: '/guide/quick-start' },
             { text: '功能总览', link: '/guide/overview' },
             { text: '视频教程', link: '/guide/video-tutorials' },
-            { text: '免费提供商', link: '/guide/free-providers' },
+            { text: '免费供应商', link: '/guide/free-providers' },
           ]
         },
         {
@@ -123,7 +123,7 @@ export default defineConfig({
         {
           text: '模型与用量',
           items: [
-            { text: 'AI 提供商与模型', link: '/guide/providers' },
+            { text: 'AI 供应商与模型', link: '/guide/providers' },
             { text: '默认与专用模型', link: '/guide/default-models' },
             { text: 'Token 统计与费用', link: '/guide/token-stats' }
           ]

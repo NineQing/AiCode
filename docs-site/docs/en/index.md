@@ -28,7 +28,7 @@ hero:
 
 features:
   - title: AI Agent
-    details: Supports OpenAI / Anthropic / Gemini compatible protocols, with multiple providers switchable anytime. Built-in tools cover file read/write, shell execution, background terminal, web search and image recognition, with streaming output and automatic context compression for long conversations.
+    details: Supports OpenAI / Anthropic / Gemini compatible protocols, with multiple vendors switchable anytime. Built-in tools cover file read/write, shell execution, background terminal, web search and image recognition, with streaming output and automatic context compression for long conversations.
   - title: Built-in Terminal & Linux Container
     details: A local container built on Termux components and PRoot, shipping with an Alpine image. Import custom rootfs, mount host directories, and keep terminals running in the background.
   - title: Remote SSH Mode

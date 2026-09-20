@@ -29,7 +29,7 @@
     </tr>
     <tr>
       <td align="center"><img src="docs/screenshots/container.png" alt="AiCode 容器设置 - 容器镜像管理" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/models.png" alt="AiCode 模型列表 - 多提供商模型管理" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/models.png" alt="AiCode 模型列表 - 多供应商模型管理" width="270"/></td>
     </tr>
     <tr>
       <td align="center">容器 · 镜像管理</td>
@@ -57,7 +57,7 @@ AiCode 是一款在 Android 手机上运行的 AI 编程工具，让你不依赖
 
 ### AI 与 Agent
 
-- **AI Agent** — 兼容 OpenAI / Anthropic / Gemini 三类协议，多提供商切换、同一提供商多 Key 自动轮换、思考强度可调；内置文件读写与编辑、Shell 执行、后台终端、代码与网页搜索、图片识别、待办清单、向用户提问等工具；流式输出并实时渲染 Markdown，长对话自动压缩上下文
+- **AI Agent** — 兼容 OpenAI / Anthropic / Gemini 三类协议，多供应商切换、同一供应商多 Key 自动轮换、思考强度可调；内置文件读写与编辑、Shell 执行、后台终端、代码与网页搜索、图片识别、待办清单、向用户提问等工具；流式输出并实时渲染 Markdown，长对话自动压缩上下文
 - **子代理并行** — 主会话可派生拥有独立上下文的子代理在后台并行调研、审查或对比方案，不阻塞当前对话；内置只读的 Explore 子代理，也可自定义模型、工具集与专属提示词，侧边栏按父子关系展开查看与管理
 - **三种运行模式** — BUILD 正常开发、PLAN 在工具层拦截全部写操作只做只读规划、AUTO 全部放行免授权，按信任程度切换 AI 的权限范围
 - **检查点与撤销** — Agent 修改代码前自动记录文件快照，对话中可一键回滚，支持仅恢复代码、仅恢复对话或两者同时恢复
@@ -78,8 +78,8 @@ AiCode 是一款在 Android 手机上运行的 AI 编程工具，让你不依赖
 - **平板与大屏适配** — 按窗口宽度自动响应：宽屏常驻侧边栏，聊天旁并排开着代码或终端；分屏变窄时自动退回单栏
 - **Token 统计** — 按渠道与模型统计用量、估算费用，可下钻查看调用明细
 - **外观与语言** — 主题明暗、预设配色、莫奈取色、自定义背景图，中英双语界面
-- **网络代理** — 支持全局代理与提供商级代理分别配置
-- **备份与还原** — 加密导出/导入提供商配置、凭据、聊天历史与工作区文件
+- **网络代理** — 支持全局代理与供应商级代理分别配置
+- **备份与还原** — 加密导出/导入供应商配置、凭据、聊天历史与工作区文件
 
 ## 快速开始
 
@@ -87,7 +87,7 @@ AiCode 是一款在 Android 手机上运行的 AI 编程工具，让你不依赖
 |------|------|
 | 系统要求 | Android 8.0+（API 26），arm64-v8a / x86_64 |
 | 下载地址 | [GitHub Releases](https://github.com/jieapi/aicode/releases/latest)：真机选 `armsolo`、模拟器选 `x86solo`、通用选 `universal` 包 |
-| 快速上手 | 「设置 → AI 提供商」配模型 →「容器与镜像」选本地或 SSH → 新建会话开始对话 |
+| 快速上手 | 「设置 → AI 供应商」配模型 →「容器与镜像」选本地或 SSH → 新建会话开始对话 |
 | 更新记录 | [Releases](https://github.com/jieapi/aicode/releases)（历史版本与更新说明） |
 | 使用指南 | [在线文档](https://aicode.murk.top)：快速上手、功能手册与进阶教程（与 App 内置文档同源） |
 

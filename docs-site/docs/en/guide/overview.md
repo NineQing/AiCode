@@ -24,7 +24,7 @@ Entries marked with a version (e.g. "since 1.11.0") were introduced in that vers
 
 | Entry | Description |
 | --- | --- |
-| [AI Providers](/en/guide/providers) | Connect model services, manage model lists, multi-key mode (since 1.11.0), thinking effort |
+| [AI Vendors](/en/guide/providers) | Connect model services, manage model lists, multi-key mode (since 1.11.0), thinking effort |
 | Default & dedicated models | Default model for new sessions, plus dedicated models for image recognition, image generation and title summarization |
 | MCP servers | Connect external tools, global and project-level configuration |
 | Skills | On-demand specialist extension packs |
@@ -37,7 +37,7 @@ Entries marked with a version (e.g. "since 1.11.0") were introduced in that vers
 | Entry | Description |
 | --- | --- |
 | Container & images | Local Linux container, custom images, mounting phone directories, remote SSH backend |
-| Network proxy | Global proxy and provider-level proxy (since 1.11.0) |
+| Network proxy | Global proxy and vendor-level proxy (since 1.11.0) |
 | Connection & sync | SFTP / FTP channels, workspace sync, built-in FTP server |
 
 ### Tools & Permissions

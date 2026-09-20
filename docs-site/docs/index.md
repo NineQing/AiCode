@@ -28,7 +28,7 @@ hero:
 
 features:
   - title: AI Agent
-    details: 支持 OpenAI / Anthropic / Gemini 兼容协议，多提供商随时切换；内置文件读写、Shell 执行、后台终端、搜索与图片识别等工具，流式输出，长对话自动压缩上下文。
+    details: 支持 OpenAI / Anthropic / Gemini 兼容协议，多供应商随时切换；内置文件读写、Shell 执行、后台终端、搜索与图片识别等工具，流式输出，长对话自动压缩上下文。
   - title: 内置终端与 Linux 容器
     details: 基于 Termux 组件与 PRoot 的本地容器，内置 Alpine 镜像，可导入自定义 rootfs、挂载宿主目录，终端支持后台常驻。
   - title: 远程 SSH 模式

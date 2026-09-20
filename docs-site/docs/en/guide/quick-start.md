@@ -27,25 +27,25 @@ Tip: you can also tap "Download APK" on the [homepage](/en/), which fetches the 
 
 Open AiCode and you will land on the chat home with a fresh empty conversation. Grant storage permission on first use — otherwise the AI cannot access files on your phone.
 
-On first launch, the app automatically starts an interactive spotlight onboarding guide, walking you through the complete flow: "Open sidebar → Enter Settings to configure provider and fetch models → Return home to select model → Send first message". In each step, you can tap the highlighted target or the "Next" button on the card to proceed, or tap "Skip" at any time. If you want to review the walkthrough later, you can restart it anytime via "Settings → Re-run onboarding".
+On first launch, the app automatically starts an interactive spotlight onboarding guide, walking you through the complete flow: "Open sidebar → Enter Settings to configure a vendor and fetch models → Return home to select model → Send first message". In each step, you can tap the highlighted target or the "Next" button on the card to proceed, or tap "Skip" at any time. If you want to review the walkthrough later, you can restart it anytime via "Settings → Re-run onboarding".
 
-## 2. Configure an AI Provider
+## 2. Configure an AI Vendor
 
 AiCode does not provide models itself; you need to connect a model service first.
 
 1. Tap the menu button at the top-left of the home page to open the sidebar, then tap "Settings" at the bottom.
-2. Go to "AI Config → AI Providers" and tap the + at the top-right to create one.
+2. Go to "AI Config → AI Vendors" and tap the + at the top-right to create one.
 3. Fill in four fields:
    - **Name**: an alias, e.g. "OpenAI Official".
-   - **Type**: pick one of `OpenAI` / `Anthropic` / `Gemini`. Third-party relay services usually use `OpenAI`.
+   - **Upstream Format**: pick one of `OpenAI` / `Anthropic` / `Gemini`. Third-party relay services usually use `OpenAI`.
    - **API Key**: your key, like `sk-xxx`.
-   - **Base URL**: the API root. The official URL is pre-filled once you pick a type; when using a third-party relay, clear the default and enter the relay's address. Note: **do not include `/v1` or anything after it**.
+   - **Base URL**: the API root. The official URL is pre-filled once you pick an upstream format; when using a third-party relay, clear the default and enter the relay's address. Note: **do not include `/v1` or anything after it**.
 
 The entry saves automatically — no manual save button.
 
 ## 3. Add Models
 
-1. Tap the provider you just created to open its edit page, then switch to the "Models" tab at the bottom.
+1. Tap the vendor you just created to open its edit page, then switch to the "Models" tab at the bottom.
 2. Two ways to add models:
    - Tap "Fetch Models" to sync the available list from the server and check the ones you want.
    - Tap + at the top-right to type a model name manually (e.g. `gpt-4o`). Use this when a relay doesn't return the full model list.
@@ -55,7 +55,7 @@ Models save automatically after being added.
 
 ## 4. Select a Model
 
-Back on the chat home, tap the model button in the toolbar above the input box and pick the model you just added. The search box at the top filters models, and models are grouped by provider.
+Back on the chat home, tap the model button in the toolbar above the input box and pick the model you just added. The search box at the top filters models, and models are grouped by vendor.
 
 ## 5. Prepare the Execution Environment
 

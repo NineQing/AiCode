@@ -5,8 +5,8 @@
     <!-- 设置页菜单标题 -->
     <string name="settings_title">设置</string>
     <string name="settings_select_section_hint">从左侧选择一个设置项</string>
-    <string name="settings_providers">AI 提供商</string>
-    <string name="settings_provider_editor">提供商</string>
+    <string name="settings_providers">AI 供应商</string>
+    <string name="settings_provider_editor">供应商</string>
     <string name="settings_default_models">默认模型</string>
     <string name="settings_general">通用设置</string>
     <string name="settings_general_models">模型</string>
@@ -152,7 +152,7 @@
     <string name="common_scroll_to_bottom">回到底部</string>
     <string name="common_prev">上一页</string>
     <string name="common_next">下一页</string>
-    <string name="settings_add_provider">添加提供商</string>
+    <string name="settings_add_provider">添加供应商</string>
     <string name="settings_reconnect">重新连接</string>
     <string name="settings_add_mcp_server">添加 MCP 服务器</string>
     <string name="settings_refresh_logs">刷新日志</string>    <string name="settings_vision_follow_chat">跟随当前聊天模型</string>
@@ -221,11 +221,11 @@
     <string name="provider_script_param_remove">删除参数</string>
     <string name="provider_script_param_manage">管理</string>
     <string name="provider_script_params_count">已配置 %1$d 个参数</string>
-    <string name="provider_add_sheet_title">添加提供商</string>
-    <string name="provider_custom">自定义提供商</string>
+    <string name="provider_add_sheet_title">添加供应商</string>
+    <string name="provider_custom">自定义供应商</string>
     <string name="provider_add_tab_configured">需配置</string>
     <string name="provider_add_tab_instant">开箱即用</string>
-    <string name="provider_add_instant_placeholder">开箱即用的免费提供商即将开放，敬请期待</string>
+    <string name="provider_add_instant_placeholder">开箱即用的免费供应商即将开放，敬请期待</string>
     <string name="provider_preset_loading">正在加载预设库…</string>
     <string name="provider_preset_empty">未找到匹配的预设</string>
     <string name="provider_balance_interval_30m">每 30 分钟</string>
@@ -269,7 +269,7 @@
 
     <!-- i18n: UI 文案 -->
     <!-- Common -->
-    <string name="common_ai_providers">AI 提供商</string>
+    <string name="common_ai_providers">AI 供应商</string>
     <string name="common_save">保存</string>
     <string name="common_done">完成</string>
     <string name="common_copy">复制</string>
@@ -447,7 +447,7 @@
     <string name="backup_processing">处理中</string>
     <string name="backup_processing_data">正在处理数据…</string>
     <string name="backup_restored_data">已还原数据：</string>
-    <string name="backup_stat_providers">· AI 提供商 %1$s 个</string>
+    <string name="backup_stat_providers">· AI 供应商 %1$s 个</string>
     <string name="backup_stat_remote_connections">· 远程连接 %1$s 个</string>
     <string name="backup_stat_remote_mounts">· 远程挂载 %1$s 个</string>
     <string name="backup_stat_chat_sessions">· 聊天会话 %1$s 个</string>
@@ -967,7 +967,7 @@
     <string name="subagent_editor_none">无</string>
     <string name="subagent_editor_clear">清空</string>
     <string name="subagent_prompt_hint">写清它的角色、工作方式与产出要求</string>
-    <string name="subagent_no_models">暂无可用模型。请先在「AI 提供商」中添加并配置模型。</string>
+    <string name="subagent_no_models">暂无可用模型。请先在「AI 供应商」中添加并配置模型。</string>
     <string name="subagent_editor_error_invalid_name">名称不合法：不能为空，也不能包含路径分隔符等特殊字符</string>
     <string name="subagent_editor_error_empty_prompt">提示词正文不能为空</string>
     <string name="subagent_editor_error_name_conflict">该作用域下已存在同名子代理</string>
@@ -1019,7 +1019,7 @@
 
     <!-- Provider Editor -->
     <string name="provider_section_basic">基本信息</string>
-    <string name="provider_section_type">供应商类型</string>
+    <string name="provider_section_type">上游格式</string>
     <string name="provider_section_options">选项</string>    <string name="provider_show_api_key">显示密钥</string>
     <string name="provider_hide_api_key">隐藏密钥</string>
     <string name="provider_api_key">API Key</string>
@@ -1034,15 +1034,15 @@
     <string name="common_select">选择</string>
     <string name="provider_model_context_input">输入窗口 (Token)</string>
     <string name="provider_model_context_output">输出窗口 (Token)</string>
-    <string name="provider_new">新提供商</string>
-    <string name="provider_add">添加提供商</string>
-    <string name="provider_edit">编辑提供商</string>
+    <string name="provider_new">新供应商</string>
+    <string name="provider_add">添加供应商</string>
+    <string name="provider_edit">编辑供应商</string>
     <string name="provider_add_model">添加模型</string>
     <string name="provider_config">配置</string>
     <string name="provider_full_url">完整 URL</string>
     <string name="provider_full_url_desc">Base URL 即完整请求地址，不自动拼接默认路径</string>
     <string name="provider_headers_title">自定义请求头</string>
-    <string name="provider_headers_desc">完全覆盖该提供商请求的同名默认头</string>
+    <string name="provider_headers_desc">完全覆盖该供应商请求的同名默认头</string>
     <string name="provider_headers_name">Header 名</string>
     <string name="provider_headers_name_hint">例如 Authorization</string>
     <string name="provider_headers_value">值</string>
@@ -1083,7 +1083,7 @@
     <string name="provider_model_icon">模型图标</string>
 
     <!-- Providers & Log -->
-    <string name="providers_empty">还没有提供商，点右上角 + 添加</string>
+    <string name="providers_empty">还没有供应商，点右上角 + 添加</string>
     <string name="provider_sort_long_press">长按拖动排序</string>
     <string name="log_level">日志等级</string>
     <string name="log_level_desc">记录低于该等级的日志将被忽略。开发期建议 VERBOSE（全部记录）；NONE 关闭日志。</string>
@@ -1251,14 +1251,14 @@
     <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d 个文件</string>
 
     <!-- Vision Model -->
-    <string name="vision_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选识图模型。</string>
+    <string name="vision_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后再选识图模型。</string>
 
     <!-- Compaction Model -->
-    <string name="compaction_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选压缩专用模型。</string>
-    <string name="title_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后再选标题总结专用模型。</string>
+    <string name="compaction_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后再选压缩专用模型。</string>
+    <string name="title_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后再选标题总结专用模型。</string>
 
     <!-- Image Generation Model -->
-    <string name="image_gen_no_models">暂无可用模型。请在「AI 提供商」中添加并配置模型后（需支持图像输出，如 gpt-image-1 / dall-e-3），再选生图模型。</string>
+    <string name="image_gen_no_models">暂无可用模型。请在「AI 供应商」中添加并配置模型后（需支持图像输出，如 gpt-image-1 / dall-e-3），再选生图模型。</string>
 
     <!-- Web Search Result -->
     <string name="web_search_title">网络搜索</string>
@@ -1348,7 +1348,7 @@
     <string name="common_open_link_failed">无法打开链接</string>
     <string name="common_copied_with_title">已复制: %1$s</string>
 
-    <!-- 提供商编辑：余额脚本测试 -->
+    <!-- 供应商编辑：余额脚本测试 -->
     <string name="provider_balance_show_raw">查看原始输出</string>
     <string name="provider_balance_hide_raw">隐藏原始输出</string>
     <string name="provider_balance_interval_minutes">%1$d 分钟</string>
@@ -1381,7 +1381,7 @@
     <string name="proxy_test_invalid_config">请先填写有效的服务器地址与端口（1-65535）</string>
     <string name="provider_proxy_off">未启用</string>
     <string name="provider_multi_key_title">多 Key 模式</string>
-    <string name="provider_multi_key_subtitle">同一提供商下配多个 Key，密钥不可用时自动切换并重发</string>
+    <string name="provider_multi_key_subtitle">同一供应商下配多个 Key，密钥不可用时自动切换并重发</string>
     <string name="provider_multi_key_manage">多 Key 管理</string>
     <string name="provider_multi_key_summary">%1$d 个 · %2$s</string>
     <string name="provider_multi_key_list">Key 列表</string>
@@ -1414,10 +1414,10 @@
     <string name="proxy_no_proxy">不走代理的地址</string>
     <string name="proxy_no_proxy_hint">逗号分隔；支持通配符 *、host:port、CIDR 网段</string>
 
-    <!-- 提供商编辑：代理（可选） -->
+    <!-- 供应商编辑：代理（可选） -->
     <string name="provider_proxy_section">代理（可选）</string>
-    <string name="provider_proxy_enable">为该提供商单独配置代理</string>
-    <string name="provider_proxy_enable_desc">开启后该提供商的请求走专属代理；关闭则跟随全局代理</string>
+    <string name="provider_proxy_enable">为该供应商单独配置代理</string>
+    <string name="provider_proxy_enable_desc">开启后该供应商的请求走专属代理；关闭则跟随全局代理</string>
 
     <!-- 首次启动引导 -->
     <string name="settings_rerun_onboarding">重新运行新手引导</string>
@@ -1428,17 +1428,17 @@
     <string name="onboarding_open_sidebar_title">打开侧边栏</string>
     <string name="onboarding_open_sidebar_desc">点击左上角按钮打开侧边栏，前往设置配置你的 AI 模型。</string>
     <string name="onboarding_enter_settings_title">进入设置</string>
-    <string name="onboarding_enter_settings_desc">点击进入系统设置，管理你的 AI 提供商与模型配置。</string>
-    <string name="onboarding_config_provider_title">进入 AI 提供商</string>
-    <string name="onboarding_config_provider_desc">点击进入 AI 提供商管理列表，准备配置模型服务商。</string>
-    <string name="onboarding_provider_add_title">添加提供商</string>
-    <string name="onboarding_provider_add_desc">点击「+」添加提供商，支持 OpenAI、Claude、Gemini、DeepSeek 等官方服务商或自定义中转。</string>
+    <string name="onboarding_enter_settings_desc">点击进入系统设置，管理你的 AI 供应商与模型配置。</string>
+    <string name="onboarding_config_provider_title">进入 AI 供应商</string>
+    <string name="onboarding_config_provider_desc">点击进入 AI 供应商管理列表，准备配置模型供应商。</string>
+    <string name="onboarding_provider_add_title">添加供应商</string>
+    <string name="onboarding_provider_add_desc">点击「+」添加供应商，支持 OpenAI、Claude、Gemini、DeepSeek 等官方供应商或自定义中转。</string>
     <string name="onboarding_provider_config_info_title">填写配置信息</string>
     <string name="onboarding_provider_config_info_desc">输入你的 API 密钥。官方预设已内置根地址，第三方中转可修改 Base URL。</string>
     <string name="onboarding_provider_fetch_models_title">拉取模型</string>
     <string name="onboarding_provider_fetch_models_desc">配置好密钥后，点击「拉取模型」即可自动同步可用模型列表。</string>
     <string name="onboarding_provider_select_fetched_model_title">添加拉取的模型</string>
-    <string name="onboarding_provider_select_fetched_model_desc">已获取到可用模型！点击添加按钮将该模型加入当前提供商。</string>
+    <string name="onboarding_provider_select_fetched_model_desc">已获取到可用模型！点击添加按钮将该模型加入当前供应商。</string>
     <string name="onboarding_open_model_picker_title">打开模型面板</string>
     <string name="onboarding_open_model_picker_desc">回到主页，点击输入框左侧的模型图标打开选择面板。</string>
     <string name="onboarding_choose_model_in_sheet_title">选择会话模型</string>

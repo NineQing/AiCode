@@ -247,9 +247,9 @@ class GenerateImageTool @Inject constructor(
             throw IllegalStateException("未配置生图模型：请到「设置 → 默认模型 → 生图模型」中选择支持图像输出的模型（如 gpt-image-1 / dall-e-3）。")
         }
         val config = aiProviderRepository.getProviderById(providerId)
-            ?: throw IllegalStateException("生图模型配置的提供商不存在或已被删除，请到「设置 → 默认模型 → 生图模型」重新选择。")
-        if (!config.isEnabled) throw IllegalStateException("生图模型配置的提供商「${config.name}」未启用。")
-        if (!config.hasUsableApiKey) throw IllegalStateException("生图模型配置的提供商「${config.name}」未填写 API Key。")
+            ?: throw IllegalStateException("生图模型配置的供应商不存在或已被删除，请到「设置 → 默认模型 → 生图模型」重新选择。")
+        if (!config.isEnabled) throw IllegalStateException("生图模型配置的供应商「${config.name}」未启用。")
+        if (!config.hasUsableApiKey) throw IllegalStateException("生图模型配置的供应商「${config.name}」未填写 API Key。")
         return config.copy(selectedModel = model)
     }
 

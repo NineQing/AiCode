@@ -1,33 +1,33 @@
-# AI Providers & Models
+# AI Vendors & Models
 
 AiCode does not provide models itself — you need to connect at least one model service before you can start chatting. This page covers how to set it up.
 
-The entry point is "Settings → AI Providers".
+The entry point is "Settings → AI Vendors".
 
-## Adding a Provider
+## Adding a Vendor
 
 Tap + at the top-right, and a bottom sheet slides up with two tabs: "Manual Setup" and "Ready to Use".
 
-- **Manual Setup** tab: lists mainstream model services (OpenAI, Anthropic, DeepSeek, Zhipu, Qwen, etc.) in a unified list, with **Custom Provider** as the first entry (configure from scratch). Picking a built-in provider pre-fills the name, type and Base URL — just add your API Key in the edit page and it works. You can also modify any field.
+- **Manual Setup** tab: lists mainstream model services (OpenAI, Anthropic, DeepSeek, Zhipu, Qwen, etc.) in a unified list, with **Custom Vendor** as the first entry (configure from scratch). Picking a built-in vendor pre-fills the name, upstream format and Base URL — just add your API Key in the edit page and it works. You can also modify any field.
 - **Ready to Use** tab: free model services that need no registration are a placeholder for now and will be opened in a future release.
 
-For custom setup, three fields are enough: **Type**, **API Key** and **Base URL**.
+For custom setup, three fields are enough: **Upstream Format**, **API Key** and **Base URL**.
 
-- **Type**: pick one of `OpenAI` / `Anthropic` / `Gemini` — it decides which protocol is used for requests. For third-party relay services, `OpenAI` is almost always the right choice.
+- **Upstream Format**: pick one of `OpenAI` / `Anthropic` / `Gemini` — it decides which protocol is used for requests. For third-party relay services, `OpenAI` is almost always the right choice.
 - **API Key**: your key, like `sk-xxx`. Extra spaces or newlines around it are cleaned automatically on save.
-- **Base URL**: only the API root address, **do not include `/v1` or any path after it**. Leave it empty to use the official address for the type.
+- **Base URL**: only the API root address, **do not include `/v1` or any path after it**. Leave it empty to use the official address for the upstream format.
 - **API path**: the request path right after the Base URL, defaults to `/chat/completions` — usually you don't need to change it.
 - **Name**: a recognizable name for this config, e.g. "My relay". The list auto-matches a brand icon by name (enter DeepSeek and you get DeepSeek's icon).
 
 After setup, switch to the "Models" tab to fetch models, then you can head back to the home page and start chatting.
 
-## Managing the Provider List
+## Managing the Vendor List
 
-Each row shows the name, protocol type, model count and enabled status.
+Each row shows the name, upstream format, model count and enabled status.
 
 - Tap a row to open its edit page.
 - **Swipe a row left** to reveal a red delete button.
-- **Long-press and drag the name or type area** to reorder; the order survives restart.
+- **Long-press and drag the name or upstream format area** to reorder; the order survives restart.
 
 ## Multi-Key Mode
 
@@ -59,17 +59,17 @@ After an app restart, key selection returns to the first key and cooldown record
 
 ## New Protocol Endpoints
 
-The "Options" in the edit page lets you switch to a provider's newer protocol:
+The "Options" in the edit page lets you switch to a vendor's newer protocol:
 
-- **OpenAI type**: optionally enable the "Responses API";
-- **Gemini type**: optionally enable the "Interactions API".
+- **Upstream format OpenAI**: optionally enable the "Responses API";
+- **Upstream format Gemini**: optionally enable the "Interactions API".
 
 Keep them off by default. Enable only when you've confirmed the official direct service or relay you're using supports the corresponding new protocol.
 
 ## Other Options
 
-- **Custom request headers**: append custom headers to all requests of this provider, fully overriding same-named defaults (e.g. setting `User-Agent` replaces the default UA). Values support `{{SESSION_ID}}` (current session id) and `{{API_KEY}}` (the key actually used this time) placeholders, substituted before sending. Only needed when a relay gateway validates specific headers.
-- **Custom dashboard script**: show a balance or usage card above the input box for this provider. Scripts live in `~/.aicode/scripts/`, support Python, Bash and Node, and can be tested with "Run Test" in the edit page.
+- **Custom request headers**: append custom headers to all requests of this vendor, fully overriding same-named defaults (e.g. setting `User-Agent` replaces the default UA). Values support `{{SESSION_ID}}` (current session id) and `{{API_KEY}}` (the key actually used this time) placeholders, substituted before sending. Only needed when a relay gateway validates specific headers.
+- **Custom dashboard script**: show a balance or usage card above the input box for this vendor. Scripts live in `~/.aicode/scripts/`, support Python, Bash and Node, and can be tested with "Run Test" in the edit page.
 - **Script arguments**: inject extra environment variable `AICODE_KEY_<KEY>` into the dashboard script. Values support placeholders like `{{PROVIDER_API_KEY}}` (current key), `{{BASE_URL}}`, `{{MODEL}}`, substituted before the script runs.
 
 ## Model Management
@@ -93,4 +93,4 @@ Your values take priority; unfilled ones fall back to auto-detected results. If 
 
 **Reorder**: long-press and drag the model name area to reorder. Changes take effect immediately (the model picker and default model list both follow this order) and survive restart.
 
-**Delete**: swipe a model row left to delete. If a deleted model is in use (the current provider's selected model, the new-session default, the image recognition / generation / compression / title model, or a model bound to a historical session), related selections fall back to the default model automatically — no more requests go out with the deleted model.
+**Delete**: swipe a model row left to delete. If a deleted model is in use (the current vendor's selected model, the new-session default, the image recognition / generation / compression / title model, or a model bound to a historical session), related selections fall back to the default model automatically — no more requests go out with the deleted model.

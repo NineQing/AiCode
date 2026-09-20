@@ -5,13 +5,13 @@
     <!-- Settings menu titles -->
     <string name="settings_title">Settings</string>
     <string name="settings_select_section_hint">Pick a setting from the list</string>
-    <string name="settings_providers">AI Providers</string>
-    <string name="settings_provider_editor">Provider</string>
+    <string name="settings_providers">AI Vendors</string>
+    <string name="settings_provider_editor">Vendor</string>
     <string name="settings_default_models">Default Models</string>
     <string name="settings_general">General</string>
     <string name="settings_general_models">Models</string>
     <string name="settings_auto_remove_stale_models">Remove stale models after fetching</string>
-    <string name="settings_auto_remove_stale_models_desc">On a successful fetch, drop local models the provider no longer offers</string>
+    <string name="settings_auto_remove_stale_models_desc">On a successful fetch, drop local models the vendor no longer offers</string>
     <string name="settings_general_session">Session</string>
     <string name="settings_startup_session">Session on launch</string>
     <string name="settings_startup_session_new">New session</string>
@@ -78,7 +78,7 @@
     <string name="settings_token_stats_legend_input">Input</string>
     <string name="settings_token_stats_legend_output">Output</string>
     <string name="settings_token_stats_legend_cached">Cached</string>
-    <string name="settings_token_stats_provider">By provider</string>
+    <string name="settings_token_stats_provider">By vendor</string>
     <string name="settings_token_stats_model">By model</string>
     <string name="settings_token_stats_success_rate">Success rate %1$s</string>
     <string name="settings_token_stats_recent_calls">Call records</string>
@@ -88,7 +88,7 @@
     <string name="settings_token_stats_calls_suffix2">%1$d calls</string>
     <string name="settings_token_stats_col_model">Model</string>
     <string name="settings_token_stats_col_reasoning_effort">Effort</string>
-    <string name="settings_token_stats_col_provider">Provider</string>
+    <string name="settings_token_stats_col_provider">Vendor</string>
     <string name="settings_token_stats_col_input">Input</string>
     <string name="settings_token_stats_col_output">Output</string>
     <string name="settings_token_stats_col_cached">Cached</string>
@@ -152,7 +152,7 @@
     <string name="common_scroll_to_bottom">Back to bottom</string>
     <string name="common_prev">Previous</string>
     <string name="common_next">Next</string>
-    <string name="settings_add_provider">Add provider</string>
+    <string name="settings_add_provider">Add vendor</string>
     <string name="settings_reconnect">Reconnect</string>
     <string name="settings_add_mcp_server">Add MCP server</string>
     <string name="settings_refresh_logs">Refresh logs</string>    <string name="settings_vision_follow_chat">Follow current chat model</string>
@@ -221,11 +221,11 @@
     <string name="provider_script_param_remove">Remove parameter</string>
     <string name="provider_script_param_manage">Manage</string>
     <string name="provider_script_params_count">%1$d parameters configured</string>
-    <string name="provider_add_sheet_title">Add Provider</string>
-    <string name="provider_custom">Custom Provider</string>
+    <string name="provider_add_sheet_title">Add Vendor</string>
+    <string name="provider_custom">Custom Vendor</string>
     <string name="provider_add_tab_configured">Configured</string>
     <string name="provider_add_tab_instant">Instant</string>
-    <string name="provider_add_instant_placeholder">Instant free providers coming soon</string>
+    <string name="provider_add_instant_placeholder">Instant free vendors coming soon</string>
     <string name="provider_preset_loading">Loading presets…</string>
     <string name="provider_preset_empty">No matching presets</string>
     <string name="provider_balance_interval_30m">Every 30 mins</string>
@@ -269,7 +269,7 @@
 
     <!-- i18n: UI strings -->
     <!-- Common -->
-    <string name="common_ai_providers">AI Providers</string>
+    <string name="common_ai_providers">AI Vendors</string>
     <string name="common_save">Save</string>
     <string name="common_done">Done</string>
     <string name="common_copy">Copy</string>
@@ -447,7 +447,7 @@
     <string name="backup_processing">Processing</string>
     <string name="backup_processing_data">Processing data…</string>
     <string name="backup_restored_data">Restored data:</string>
-    <string name="backup_stat_providers">· AI Providers: %1$s</string>
+    <string name="backup_stat_providers">· AI Vendors: %1$s</string>
     <string name="backup_stat_remote_connections">· Remote Connections: %1$s</string>
     <string name="backup_stat_remote_mounts">· Remote Mounts: %1$s</string>
     <string name="backup_stat_chat_sessions">· Chat Sessions: %1$s</string>
@@ -967,7 +967,7 @@
     <string name="subagent_editor_none">None</string>
     <string name="subagent_editor_clear">Clear</string>
     <string name="subagent_prompt_hint">Describe its role, how it should work and what to deliver</string>
-    <string name="subagent_no_models">No models available. Add and configure a model under AI Providers first.</string>
+    <string name="subagent_no_models">No models available. Add and configure a model under AI Vendors first.</string>
     <string name="subagent_editor_error_invalid_name">Invalid name: it cannot be empty or contain path separators and other special characters</string>
     <string name="subagent_editor_error_empty_prompt">The agent prompt cannot be empty</string>
     <string name="subagent_editor_error_name_conflict">A subagent with this name already exists in this scope</string>
@@ -1019,7 +1019,7 @@
 
     <!-- Provider Editor -->
     <string name="provider_section_basic">General</string>
-    <string name="provider_section_type">Provider Type</string>
+    <string name="provider_section_type">Upstream Format</string>
     <string name="provider_section_options">Options</string>    <string name="provider_show_api_key">Show API Key</string>
     <string name="provider_hide_api_key">Hide API Key</string>
     <string name="provider_api_key">API Key</string>
@@ -1034,15 +1034,15 @@
     <string name="common_select">Select</string>
     <string name="provider_model_context_input">Input Window (tokens)</string>
     <string name="provider_model_context_output">Output Window (tokens)</string>
-    <string name="provider_new">New Provider</string>
-    <string name="provider_add">Add Provider</string>
-    <string name="provider_edit">Edit Provider</string>
+    <string name="provider_new">New Vendor</string>
+    <string name="provider_add">Add Vendor</string>
+    <string name="provider_edit">Edit Vendor</string>
     <string name="provider_add_model">Add Model</string>
     <string name="provider_config">Config</string>
     <string name="provider_full_url">Full URL</string>
     <string name="provider_full_url_desc">Base URL is the full request address, no default path appended</string>
     <string name="provider_headers_title">Custom Headers</string>
-    <string name="provider_headers_desc">Completely override the same-name default header for this provider</string>
+    <string name="provider_headers_desc">Completely override the same-name default header for this vendor</string>
     <string name="provider_headers_name">Header Name</string>
     <string name="provider_headers_name_hint">e.g. Authorization</string>
     <string name="provider_headers_value">Value</string>
@@ -1071,7 +1071,7 @@
     <string name="provider_filter_models_hint">Filter models by name</string>
     <string name="provider_fetch_failed">Fetch failed: %1$s</string>
     <string name="provider_no_matching_models">No matching models</string>
-    <string name="provider_models_aligned_removed">Removed %1$d model(s) no longer offered by the provider</string>
+    <string name="provider_models_aligned_removed">Removed %1$d model(s) no longer offered by the vendor</string>
     <string name="provider_please_wait">Please wait…</string>
     <string name="provider_test">Test</string>
 
@@ -1083,7 +1083,7 @@
     <string name="provider_model_icon">Model icon</string>
 
     <!-- Providers & Log -->
-    <string name="providers_empty">No providers yet, tap + to add one</string>
+    <string name="providers_empty">No vendors yet, tap + to add one</string>
     <string name="provider_sort_long_press">Long press to reorder</string>
     <string name="log_level">Log Level</string>
     <string name="log_level_desc">Logs below this level will be ignored. Use VERBOSE during development (log all); NONE to disable logging.</string>
@@ -1252,14 +1252,14 @@
     <string name="tool_changed_files_summary">+%1$d −%2$d · %3$d files</string>
 
     <!-- Vision Model -->
-    <string name="vision_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a vision model.</string>
+    <string name="vision_no_models">No models available. Please add and configure a model in "AI Vendors" before selecting a vision model.</string>
 
     <!-- Compaction Model -->
-    <string name="compaction_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a dedicated compaction model.</string>
-    <string name="title_no_models">No models available. Please add and configure a model in "AI Providers" before selecting a dedicated title model.</string>
+    <string name="compaction_no_models">No models available. Please add and configure a model in "AI Vendors" before selecting a dedicated compaction model.</string>
+    <string name="title_no_models">No models available. Please add and configure a model in "AI Vendors" before selecting a dedicated title model.</string>
 
     <!-- Image Generation Model -->
-    <string name="image_gen_no_models">No models available. Please add and configure a model in "AI Providers" (must support image output, e.g. gpt-image-1 / dall-e-3) before selecting an image generation model.</string>
+    <string name="image_gen_no_models">No models available. Please add and configure a model in "AI Vendors" (must support image output, e.g. gpt-image-1 / dall-e-3) before selecting an image generation model.</string>
 
     <!-- Web Search Result -->
     <string name="web_search_title">Web Search</string>
@@ -1382,7 +1382,7 @@
     <string name="proxy_test_invalid_config">Enter a valid server address and port (1-65535) first</string>
     <string name="provider_proxy_off">Off</string>
     <string name="provider_multi_key_title">Multi-Key Mode</string>
-    <string name="provider_multi_key_subtitle">Use several keys for one provider and switch automatically when a key stops working</string>
+    <string name="provider_multi_key_subtitle">Use several keys for one vendor and switch automatically when a key stops working</string>
     <string name="provider_multi_key_manage">Manage Keys</string>
     <string name="provider_multi_key_summary">%1$d keys · %2$s</string>
     <string name="provider_multi_key_list">Key List</string>
@@ -1417,8 +1417,8 @@
 
     <!-- Provider editor: proxy (optional) -->
     <string name="provider_proxy_section">Proxy (optional)</string>
-    <string name="provider_proxy_enable">Configure a dedicated proxy for this provider</string>
-    <string name="provider_proxy_enable_desc">When enabled, requests to this provider use its own proxy; otherwise the global proxy applies</string>
+    <string name="provider_proxy_enable">Configure a dedicated proxy for this vendor</string>
+    <string name="provider_proxy_enable_desc">When enabled, requests to this vendor use its own proxy; otherwise the global proxy applies</string>
 
     <!-- First-run onboarding -->
     <string name="settings_rerun_onboarding">Re-run onboarding</string>
@@ -1429,17 +1429,17 @@
     <string name="onboarding_open_sidebar_title">Open Sidebar</string>
     <string name="onboarding_open_sidebar_desc">Tap the top-left button to open sidebar and navigate to settings to configure models.</string>
     <string name="onboarding_enter_settings_title">Go to Settings</string>
-    <string name="onboarding_enter_settings_desc">Tap to open system settings to manage AI providers and API keys.</string>
-    <string name="onboarding_config_provider_title">AI Providers</string>
-    <string name="onboarding_config_provider_desc">Tap to open AI providers list and start setting up your model providers.</string>
-    <string name="onboarding_provider_add_title">Add Provider</string>
-    <string name="onboarding_provider_add_desc">Tap “+” to add a provider, supporting official providers like OpenAI, Claude, Gemini, DeepSeek, or custom relays.</string>
+    <string name="onboarding_enter_settings_desc">Tap to open system settings to manage AI vendors and API keys.</string>
+    <string name="onboarding_config_provider_title">AI Vendors</string>
+    <string name="onboarding_config_provider_desc">Tap to open the AI vendors list and start setting up your model vendors.</string>
+    <string name="onboarding_provider_add_title">Add Vendor</string>
+    <string name="onboarding_provider_add_desc">Tap “+” to add a vendor, supporting official vendors like OpenAI, Claude, Gemini, DeepSeek, or custom relays.</string>
     <string name="onboarding_provider_config_info_title">Configuration Info</string>
     <string name="onboarding_provider_config_info_desc">Enter your API key. Official presets come with base URLs prefilled; custom relays can set a custom Base URL.</string>
     <string name="onboarding_provider_fetch_models_title">Fetch Models</string>
     <string name="onboarding_provider_fetch_models_desc">Once the key is configured, tap “Fetch models” to sync available models.</string>
     <string name="onboarding_provider_select_fetched_model_title">Add Fetched Model</string>
-    <string name="onboarding_provider_select_fetched_model_desc">Models retrieved! Tap the add button to add this model to the provider.</string>
+    <string name="onboarding_provider_select_fetched_model_desc">Models retrieved! Tap the add button to add this model to the vendor.</string>
     <string name="onboarding_open_model_picker_title">Open Model Panel</string>
     <string name="onboarding_open_model_picker_desc">Back on home, tap the model icon next to the input box to open the selection panel.</string>
     <string name="onboarding_choose_model_in_sheet_title">Choose Model</string>

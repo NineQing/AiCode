@@ -1,4 +1,4 @@
-# Free Providers
+# Free Vendors
 
 Want to try AI coding on a budget? The platforms below offer free quotas or promotional tokens — register and connect them in AiCode. Free quotas are usually time-limited; once exhausted or expired you may need to top up, per each platform's rules.
 
@@ -54,10 +54,10 @@ Text, image and video model APIs are all free, with basic rate limits and fair-u
 
 ## Connecting in AiCode
 
-Once you have a platform's API Key and Base URL, follow [AI Providers & Models](/en/guide/providers) to configure it:
+Once you have a platform's API Key and Base URL, follow [AI Vendors & Models](/en/guide/providers) to configure it:
 
-1. Open "Settings → AI Providers" and tap + at the top-right.
-2. Fill in the type, API Key and Base URL (the address should not include `/v1`).
+1. Open "Settings → AI Vendors" and tap + at the top-right.
+2. Fill in the upstream format, API Key and Base URL (the address should not include `/v1`).
 3. Switch to the "Models" tab to fetch models, then head back to the home page to start chatting.
 
-If a platform has special requirements for protocol type or Base URL (e.g. OpenAI-compatible or Anthropic-compatible endpoints), follow the platform's documentation.
+If a platform has special requirements for the upstream format or Base URL (e.g. OpenAI-compatible or Anthropic-compatible endpoints), follow the platform's documentation.

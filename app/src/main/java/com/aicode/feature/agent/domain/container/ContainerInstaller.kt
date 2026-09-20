@@ -111,7 +111,7 @@ class ContainerInstaller @Inject constructor(
         }
 
         /**
-         * 从 assets 提取内置脚本（如套餐余量 demo_balance.py）到 ~/.aicode/scripts/。
+         * 从 assets 提取内置脚本（如面板 demo_balance.py）到 ~/.aicode/scripts/。
          * 若文件已存在则不覆盖，以保留用户的修改。
          */
         fun extractScripts(context: Context) {

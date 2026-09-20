@@ -3,6 +3,7 @@ package com.aicode.feature.backup.domain
 import com.aicode.feature.agent.domain.mcp.McpServerConfig
 import com.aicode.feature.agent.domain.permission.PermissionRule
 import com.aicode.feature.settings.data.repository.SyncSettingsSnapshot
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -134,10 +135,12 @@ data class ProviderDto(
     /** 提供商级缓存开关；null 表示旧备份无此字段，导入时回退默认值。 */
     val anthropicCacheBreakpoints: Boolean? = null,
     val openaiChatCacheKey: Boolean? = null,
-    /** 套餐余量脚本路径；null 表示旧备份无此字段，导入时回退默认值 ""。 */
-    val balanceScriptPath: String? = null,
-    /** 套餐余量刷新间隔（分钟）；null 表示旧备份无此字段，导入时回退默认值 5。 */
-    val balanceRefreshInterval: Int? = null,
+    /** 自定义面板脚本路径；null 表示旧备份无此字段，导入时回退默认值 ""。序列化名沿用历史命名以兼容旧备份。 */
+    @SerialName("balanceScriptPath")
+    val dashboardScriptPath: String? = null,
+    /** 自定义面板刷新间隔（分钟）；null 表示旧备份无此字段，导入时回退默认值 5。序列化名沿用历史命名以兼容旧备份。 */
+    @SerialName("balanceRefreshInterval")
+    val dashboardRefreshInterval: Int? = null,
     /** 提供商列表排序序号；null 表示旧备份无此字段，导入时回退默认 0。 */
     val sortOrder: Int? = null,
     /** 多 Key 模式相关字段；null 表示旧备份无此字段，导入时回退默认值。 */

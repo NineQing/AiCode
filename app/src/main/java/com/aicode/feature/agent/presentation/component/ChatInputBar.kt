@@ -97,7 +97,7 @@ import com.aicode.feature.agent.presentation.QueuedRequest
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.domain.model.modelMetadataKey
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
 import com.aicode.feature.workspace.presentation.component.WorkspaceIconButton
 import compose.icons.FeatherIcons
@@ -157,11 +157,11 @@ internal fun ChatInputBar(
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
     tokenProgress: Float = 0f,
-    balanceState: ProviderBalanceState = ProviderBalanceState.Idle,
-    onRefreshBalance: () -> Unit = {},
-    onRefreshBalanceByButton: () -> Unit = {},
-    onBalanceExpandedChange: (Boolean) -> Unit = {},
-    forceCollapseBalance: Boolean = false,
+    dashboardState: ProviderDashboardState = ProviderDashboardState.Idle,
+    onRefreshDashboard: () -> Unit = {},
+    onRefreshDashboardByButton: () -> Unit = {},
+    onDashboardExpandedChange: (Boolean) -> Unit = {},
+    forceCollapseDashboard: Boolean = false,
     /** 消息列表正在滚动时内容区淡出到 40%，停止滚动恢复；用于长列表阅读时降低底部干扰（同 git 页 tab 栏）。 */
     isScrolling: Boolean = false,
     forceOpenModelSheet: Boolean = false,
@@ -297,14 +297,14 @@ internal fun ChatInputBar(
                 )
             }
 
-            if (activeProvider != null && activeProvider.balanceScriptPath.isNotBlank()) {
-                ProviderBalanceBar(
+            if (activeProvider != null && activeProvider.dashboardScriptPath.isNotBlank()) {
+                ProviderDashboardBar(
                     provider = activeProvider,
-                    state = balanceState,
-                    onRefresh = onRefreshBalance,
-                    onRefreshByButton = onRefreshBalanceByButton,
-                    onExpandedChange = onBalanceExpandedChange,
-                    forceCollapse = forceCollapseBalance
+                    state = dashboardState,
+                    onRefresh = onRefreshDashboard,
+                    onRefreshByButton = onRefreshDashboardByButton,
+                    onExpandedChange = onDashboardExpandedChange,
+                    forceCollapse = forceCollapseDashboard
                 )
             }
 

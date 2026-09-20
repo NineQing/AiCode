@@ -179,14 +179,14 @@
     <string name="provider_cache_anthropic_subtitle">Mark system/tools/messages prefixes with explicit cache breakpoints to cut repeated input cost</string>
     <string name="provider_cache_openai_chat_title">OpenAI-compatible cache key</string>
     <string name="provider_cache_openai_chat_subtitle">Send prompt_cache_key with requests</string>
-    <string name="provider_section_balance">Custom Dashboard</string>
-    <string name="provider_balance_script">Dashboard Script</string>
-    <string name="provider_balance_script_placeholder">e.g. demo_balance.py</string>
-    <string name="provider_balance_select_script">Select Script</string>
-    <string name="provider_balance_script_desc">Execute and preview dashboard output</string>
-    <string name="provider_balance_test_btn">Run Test</string>
-    <string name="provider_balance_run_test">Run Test</string>
-    <string name="provider_balance_preview_title">Dashboard Preview</string>
+    <string name="provider_section_dashboard">Custom Dashboard</string>
+    <string name="provider_dashboard_script">Dashboard Script</string>
+    <string name="provider_dashboard_script_placeholder">e.g. demo_balance.py</string>
+    <string name="provider_dashboard_select_script">Select Script</string>
+    <string name="provider_dashboard_script_desc">Execute and preview dashboard output</string>
+    <string name="provider_dashboard_test_btn">Run Test</string>
+    <string name="provider_dashboard_run_test">Run Test</string>
+    <string name="provider_dashboard_preview_title">Dashboard Preview</string>
     <string name="provider_test_detail_title">Test Debug Details</string>
     <string name="provider_test_req_url">Request URL</string>
     <string name="provider_test_req_headers">Request Headers</string>
@@ -194,22 +194,12 @@
     <string name="provider_test_resp_headers">Response Headers</string>
     <string name="provider_test_resp_body">Response Body</string>
     <string name="provider_test_error_detail">Error Stack</string>
-    <string name="provider_balance_test_success">Executed successfully, parsed %1$d components</string>
-    <string name="provider_balance_test_failed">Execution Failed</string>
-    <string name="provider_balance_no_scripts">No scripts found in ~/.aicode/scripts/</string>
-    <string name="provider_balance_select_title">Select Dashboard Script</string>
-    <string name="provider_balance_clear_script">None (Clear script)</string>
-    <string name="provider_balance_refresh">Refresh Dashboard</string>
-    <string name="provider_balance_loading">Loading dashboard...</string>
-    <string name="provider_balance_error">Failed to load dashboard</string>
-    <string name="provider_balance_raw_output">Raw Output</string>
-    <string name="provider_balance_interval_title">Refresh Interval</string>
-    <string name="provider_balance_interval_manual">Manual Refresh</string>
-    <string name="provider_balance_interval_1m">Every 1 min</string>
-    <string name="provider_balance_interval_3m">Every 3 mins</string>
-    <string name="provider_balance_interval_5m">Every 5 mins (Default)</string>
-    <string name="provider_balance_interval_10m">Every 10 mins</string>
-    <string name="provider_balance_interval_15m">Every 15 mins</string>
+    <string name="provider_dashboard_test_failed">Execution Failed</string>
+    <string name="provider_dashboard_no_scripts">No scripts found in ~/.aicode/scripts/</string>
+    <string name="provider_dashboard_select_title">Select Dashboard Script</string>
+    <string name="provider_dashboard_clear_script">None (Clear script)</string>
+    <string name="provider_dashboard_loading">Loading dashboard...</string>
+    <string name="provider_dashboard_raw_output">Raw Output</string>
     <string name="provider_script_params_title">Script Parameters</string>
     <string name="provider_script_params_desc">Injected into the panel script as AICODE_KEY_&lt;KEY&gt; environment variables</string>
     <string name="provider_script_params_empty">No parameters yet. Tap below to add</string>
@@ -228,7 +218,6 @@
     <string name="provider_add_instant_placeholder">Instant free vendors coming soon</string>
     <string name="provider_preset_loading">Loading presets…</string>
     <string name="provider_preset_empty">No matching presets</string>
-    <string name="provider_balance_interval_30m">Every 30 mins</string>
     <string name="settings_keepalive_title">Background keepalive</string>
     <string name="settings_keepalive_subtitle">Foreground notification prevents background kill</string>
     <string name="settings_screen_on_title">Keep screen on</string>
@@ -1343,21 +1332,17 @@
     <string name="crash_field_thread">Thread</string>
     <string name="crash_field_time">Time</string>
 
-    <!-- Provider balance bar -->
-    <string name="balance_fetching">Fetching balance…</string>
-    <string name="balance_fetch_failed_retry">Fetch failed, tap to retry</string>
-    <string name="balance_tap_to_query">Tap to check balance</string>
+    <!-- Custom dashboard bar -->
+    <string name="dashboard_fetching">Loading dashboard…</string>
+    <string name="dashboard_fetch_failed_retry">Load failed, tap to retry</string>
+    <string name="dashboard_tap_to_query">Tap to refresh</string>
 
     <!-- Common -->
     <string name="common_open_link_failed">Cannot open link</string>
     <string name="common_copied_with_title">Copied: %1$s</string>
 
-    <!-- Provider editor: balance script test -->
-    <string name="provider_balance_show_raw">View raw output</string>
-    <string name="provider_balance_hide_raw">Hide raw output</string>
-    <string name="provider_balance_interval_minutes">%1$d min</string>
-    <string name="balance_exec_failed">Execution failed</string>
-    <string name="balance_query_failed">Query failed</string>
+    <string name="dashboard_exec_failed">Execution failed</string>
+    <string name="dashboard_query_failed">Query failed</string>
 
     <!-- Token stats -->
     <string name="token_stats_hour_suffix">h</string>

@@ -179,14 +179,14 @@
     <string name="provider_cache_anthropic_subtitle">为 system/工具/消息前缀打显式缓存断点，降低重复输入成本</string>
     <string name="provider_cache_openai_chat_title">OpenAI 兼容缓存键</string>
     <string name="provider_cache_openai_chat_subtitle">为请求携带 prompt_cache_key 缓存键</string>
-    <string name="provider_section_balance">自定义面板</string>
-    <string name="provider_balance_script">面板脚本</string>
-    <string name="provider_balance_script_placeholder">例如 demo_balance.py</string>
-    <string name="provider_balance_select_script">选择脚本</string>
-    <string name="provider_balance_script_desc">执行并预览面板</string>
-    <string name="provider_balance_test_btn">运行测试</string>
-    <string name="provider_balance_run_test">运行测试</string>
-    <string name="provider_balance_preview_title">面板预览</string>
+    <string name="provider_section_dashboard">自定义面板</string>
+    <string name="provider_dashboard_script">面板脚本</string>
+    <string name="provider_dashboard_script_placeholder">例如 demo_balance.py</string>
+    <string name="provider_dashboard_select_script">选择脚本</string>
+    <string name="provider_dashboard_script_desc">执行并预览面板</string>
+    <string name="provider_dashboard_test_btn">运行测试</string>
+    <string name="provider_dashboard_run_test">运行测试</string>
+    <string name="provider_dashboard_preview_title">面板预览</string>
     <string name="provider_test_detail_title">测试调试信息</string>
     <string name="provider_test_req_url">请求 URL</string>
     <string name="provider_test_req_headers">请求头</string>
@@ -194,22 +194,12 @@
     <string name="provider_test_resp_headers">响应头</string>
     <string name="provider_test_resp_body">响应体</string>
     <string name="provider_test_error_detail">错误堆栈</string>
-    <string name="provider_balance_test_success">执行成功，解析到 %1$d 个组件</string>
-    <string name="provider_balance_test_failed">执行失败</string>
-    <string name="provider_balance_no_scripts">~/.aicode/scripts 目录下暂无脚本</string>
-    <string name="provider_balance_select_title">选择面板脚本</string>
-    <string name="provider_balance_clear_script">不使用面板脚本 (清空)</string>
-    <string name="provider_balance_refresh">刷新面板</string>
-    <string name="provider_balance_loading">正在加载面板…</string>
-    <string name="provider_balance_error">面板加载失败</string>
-    <string name="provider_balance_raw_output">原始输出</string>
-    <string name="provider_balance_interval_title">刷新周期</string>
-    <string name="provider_balance_interval_manual">手动刷新</string>
-    <string name="provider_balance_interval_1m">每 1 分钟</string>
-    <string name="provider_balance_interval_3m">每 3 分钟</string>
-    <string name="provider_balance_interval_5m">每 5 分钟（默认）</string>
-    <string name="provider_balance_interval_10m">每 10 分钟</string>
-    <string name="provider_balance_interval_15m">每 15 分钟</string>
+    <string name="provider_dashboard_test_failed">执行失败</string>
+    <string name="provider_dashboard_no_scripts">~/.aicode/scripts 目录下暂无脚本</string>
+    <string name="provider_dashboard_select_title">选择面板脚本</string>
+    <string name="provider_dashboard_clear_script">不使用面板脚本 (清空)</string>
+    <string name="provider_dashboard_loading">正在加载面板…</string>
+    <string name="provider_dashboard_raw_output">原始输出</string>
     <string name="provider_script_params_title">脚本参数</string>
     <string name="provider_script_params_desc">以 AICODE_KEY_&lt;KEY&gt; 注入面板脚本环境变量</string>
     <string name="provider_script_params_empty">暂无参数，点击下方添加</string>
@@ -228,7 +218,6 @@
     <string name="provider_add_instant_placeholder">开箱即用的免费供应商即将开放</string>
     <string name="provider_preset_loading">正在加载预设库…</string>
     <string name="provider_preset_empty">未找到匹配的预设</string>
-    <string name="provider_balance_interval_30m">每 30 分钟</string>
     <string name="settings_keepalive_title">后台运行保活</string>
     <string name="settings_keepalive_subtitle">显示前台通知，防止后台被杀</string>
     <string name="settings_screen_on_title">屏幕常亮</string>
@@ -1342,21 +1331,17 @@
     <string name="crash_field_thread">异常线程</string>
     <string name="crash_field_time">发生时间</string>
 
-    <!-- 余额面板（ProviderBalanceBar） -->
-    <string name="balance_fetching">正在获取余量…</string>
-    <string name="balance_fetch_failed_retry">获取失败，点击重试</string>
-    <string name="balance_tap_to_query">点击查询余量</string>
+    <!-- 自定义面板（ProviderDashboardBar） -->
+    <string name="dashboard_fetching">正在加载面板…</string>
+    <string name="dashboard_fetch_failed_retry">加载失败，点击重试</string>
+    <string name="dashboard_tap_to_query">点击刷新面板</string>
 
     <!-- 通用 -->
     <string name="common_open_link_failed">无法打开链接</string>
     <string name="common_copied_with_title">已复制：%1$s</string>
 
-    <!-- 供应商编辑：余额脚本测试 -->
-    <string name="provider_balance_show_raw">查看原始输出</string>
-    <string name="provider_balance_hide_raw">隐藏原始输出</string>
-    <string name="provider_balance_interval_minutes">%1$d 分钟</string>
-    <string name="balance_exec_failed">执行失败</string>
-    <string name="balance_query_failed">查询失败</string>
+    <string name="dashboard_exec_failed">执行失败</string>
+    <string name="dashboard_query_failed">查询失败</string>
 
     <!-- Token 统计 -->
     <string name="token_stats_hour_suffix">时</string>

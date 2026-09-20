@@ -77,7 +77,7 @@ import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.presentation.SettingsViewModel
 import com.aicode.feature.settings.domain.model.DashboardContext
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
@@ -544,21 +544,21 @@ fun AIChatPanel(
     val canUploadImages = projectRoot.isNotBlank()
     val reasoningEffort by viewModel.currentSessionReasoningEffort.collectAsStateWithLifecycle()
 
-    val providerBalances by (settingsViewModel?.providerBalances?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyMap()) })
-    val currentBalanceState = activeProvider?.let { providerBalances[it.id] } ?: ProviderBalanceState.Idle
+    val providerDashboards by (settingsViewModel?.providerDashboards?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyMap()) })
+    val currentDashboardState = activeProvider?.let { providerDashboards[it.id] } ?: ProviderDashboardState.Idle
 
     // 键盘弹出时收起面板，避免输入框被挤压
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     val imeVisible = imeBottomPx > 0
 
     // 余额面板展开状态：展开时叠加面板联动折叠，避免输入框被双重顶开
-    var balanceExpanded by rememberSaveable { mutableStateOf(false) }
-    // ProviderBalanceBar 仅在有余额脚本的 provider 下渲染（见 ChatInputBar）。无该栏时
-    // balanceExpanded 可能残留 true：面板曾展开后随 provider 切换/脚本移除而卸载，LaunchedEffect
+    var dashboardExpanded by rememberSaveable { mutableStateOf(false) }
+    // ProviderDashboardBar 仅在有面板脚本的 provider 下渲染（见 ChatInputBar）。无该栏时
+    // dashboardExpanded 可能残留 true：面板曾展开后随 provider 切换/脚本移除而卸载，LaunchedEffect
     // 上报链路中断无法复位，直接拿它做 forceCollapse 会把授权/询问/计划面板永久压成收起态。
     // 故叠加可见性，只在余额面板当前可见且展开时才折叠叠加面板。
-    val balanceBarVisible = activeProvider?.balanceScriptPath?.isNotBlank() == true
-    val balanceCollapseActive = balanceExpanded && balanceBarVisible
+    val dashboardBarVisible = activeProvider?.dashboardScriptPath?.isNotBlank() == true
+    val dashboardCollapseActive = dashboardExpanded && dashboardBarVisible
 
     fun buildDashboardContext(
         lastInput: Int = 0,
@@ -614,12 +614,12 @@ fun AIChatPanel(
     // 会话切换时等 currentSession / messages 都落到新会话（sessionReady）再刷新：
     // 否则 buildDashboardContext 读到的是切换瞬间的旧会话快照，面板会显示旧数据或空 token。
     val sessionReady = currentSession?.id == currentSessionId && messagesReady
-    LaunchedEffect(activeProvider?.id, activeProvider?.balanceScriptPath, currentSessionId, sessionReady) {
+    LaunchedEffect(activeProvider?.id, activeProvider?.dashboardScriptPath, currentSessionId, sessionReady) {
         val provider = activeProvider ?: return@LaunchedEffect
-        if (provider.balanceScriptPath.isBlank()) return@LaunchedEffect
+        if (provider.dashboardScriptPath.isBlank()) return@LaunchedEffect
         if (!sessionReady) return@LaunchedEffect
         val context = buildDashboardContext(refreshReason = "session")
-        settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+        settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
     }
 
     // 每次单次 LLM 请求返回时，立即带上最新 Token 与上下文实时刷新面板
@@ -634,14 +634,14 @@ fun AIChatPanel(
     LaunchedEffect(Unit) {
         viewModel.llmCallEvents.collect { callEvent ->
             val provider = latestActiveProvider ?: return@collect
-            if (provider.balanceScriptPath.isBlank()) return@collect
+            if (provider.dashboardScriptPath.isBlank()) return@collect
             val context = latestBuildDashboardContext(
                 callEvent.inputTokens,
                 callEvent.outputTokens,
                 callEvent.cachedTokens,
                 "llm"
             )
-            settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+            settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
         }
     }
 
@@ -656,9 +656,9 @@ fun AIChatPanel(
         val nowDone = agentState !is AgentUIState.Loading && agentState !is AgentUIState.Streaming
         if (wasBusy && nowDone) {
             val provider = latestActiveProvider ?: return@LaunchedEffect
-            if (provider.balanceScriptPath.isBlank()) return@LaunchedEffect
+            if (provider.dashboardScriptPath.isBlank()) return@LaunchedEffect
             val context = latestBuildDashboardContext(0, 0, 0, "done")
-            settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+            settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
         }
     }
 
@@ -1271,7 +1271,7 @@ fun AIChatPanel(
                         request = request,
                         onChoice = { choice -> viewModel.resolveToolPermission(request.id, choice) },
                         sessionTitle = pendingPermissionSessionTitle,
-                        forceCollapse = balanceCollapseActive
+                        forceCollapse = dashboardCollapseActive
                     )
                 }
             }
@@ -1287,7 +1287,7 @@ fun AIChatPanel(
                         question = question,
                         onConfirm = { answer -> viewModel.resolveUserQuestion(question.id, answer) },
                         onSkip = { viewModel.resolveUserQuestion(question.id, UserQuestionAnswer(emptyList())) },
-                        forceCollapse = balanceCollapseActive
+                        forceCollapse = dashboardCollapseActive
                     )
                 }
             }
@@ -1304,7 +1304,7 @@ fun AIChatPanel(
                         state = state,
                         onApprove = { viewModel.approvePlanAndBuild() },
                         onRefine = { viewModel.refinePlan() },
-                        forceCollapse = balanceCollapseActive
+                        forceCollapse = dashboardCollapseActive
                     )
                 }
             }
@@ -1343,19 +1343,19 @@ fun AIChatPanel(
                 slashCommands = viewModel.slashCommands,
                 queuedRequests = queuedRequests,
                 onRemoveQueued = { viewModel.removeQueuedRequest(it) },
-                balanceState = currentBalanceState,
-                forceCollapseBalance = pendingPermission != null || pendingQuestion != null || planApproval != null || imeVisible,
-                onBalanceExpandedChange = { balanceExpanded = it },
-                onRefreshBalance = {
+                dashboardState = currentDashboardState,
+                forceCollapseDashboard = pendingPermission != null || pendingQuestion != null || planApproval != null || imeVisible,
+                onDashboardExpandedChange = { dashboardExpanded = it },
+                onRefreshDashboard = {
                     activeProvider?.let {
                         val context = buildDashboardContext(refreshReason = "manual")
-                        settingsViewModel?.refreshProviderBalance(it, context = context, force = true)
+                        settingsViewModel?.refreshProviderDashboard(it, context = context, force = true)
                     }
                 },
-                onRefreshBalanceByButton = {
+                onRefreshDashboardByButton = {
                     activeProvider?.let {
                         val context = buildDashboardContext(refreshReason = "button")
-                        settingsViewModel?.refreshProviderBalance(it, context = context, force = true)
+                        settingsViewModel?.refreshProviderDashboard(it, context = context, force = true)
                     }
                 },
                 tokenProgress = run {

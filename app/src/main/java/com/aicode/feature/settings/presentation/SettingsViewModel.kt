@@ -81,9 +81,9 @@ import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.DashboardContext
 import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.domain.model.modelMetadataKey
-import com.aicode.feature.settings.domain.model.ProviderBalanceResult
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
-import com.aicode.feature.settings.domain.service.ProviderBalanceRunner
+import com.aicode.feature.settings.domain.model.ProviderDashboardResult
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
+import com.aicode.feature.settings.domain.service.ProviderDashboardRunner
 import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.domain.model.ProxyType
 import com.aicode.R
@@ -321,7 +321,7 @@ class SettingsViewModel @Inject constructor(
     private val llmCallRecordDao: LlmCallRecordDao,
     private val updateCheckSettingsRepository: UpdateCheckSettingsRepository,
     private val updateCheckService: UpdateCheckService,
-    private val providerBalanceRunner: ProviderBalanceRunner,
+    private val providerDashboardRunner: ProviderDashboardRunner,
     private val terminalSettingsRepository: TerminalSettingsRepository,
     private val proxySettingsRepository: ProxySettingsRepository
 ) : ViewModel() {
@@ -545,11 +545,11 @@ class SettingsViewModel @Inject constructor(
     private val _testing = MutableStateFlow<Set<String>>(emptySet())
     val testing: StateFlow<Set<String>> = _testing.asStateFlow()
 
-    private val _balanceTestState = MutableStateFlow<ProviderBalanceState>(ProviderBalanceState.Idle)
-    val balanceTestState: StateFlow<ProviderBalanceState> = _balanceTestState.asStateFlow()
+    private val _dashboardTestState = MutableStateFlow<ProviderDashboardState>(ProviderDashboardState.Idle)
+    val dashboardTestState: StateFlow<ProviderDashboardState> = _dashboardTestState.asStateFlow()
 
-    private val _providerBalances = MutableStateFlow<Map<String, ProviderBalanceState>>(emptyMap())
-    val providerBalances: StateFlow<Map<String, ProviderBalanceState>> = _providerBalances.asStateFlow()
+    private val _providerDashboards = MutableStateFlow<Map<String, ProviderDashboardState>>(emptyMap())
+    val providerDashboards: StateFlow<Map<String, ProviderDashboardState>> = _providerDashboards.asStateFlow()
 
     private val _globalRules = MutableStateFlow<List<PermissionRule>>(emptyList())
     val globalRules: StateFlow<List<PermissionRule>> = _globalRules.asStateFlow()
@@ -1866,7 +1866,7 @@ class SettingsViewModel @Inject constructor(
             repository.saveProvider(provider)
             if (removedModels.isNotEmpty()) cleanupRemovedModels(provider, removedModels)
             // 保存后重置该提供商在内存中的面板状态，以便主页即时以最新脚本与配置重新加载
-            _providerBalances.update { it - provider.id }
+            _providerDashboards.update { it - provider.id }
         }
     }
 
@@ -2000,57 +2000,57 @@ class SettingsViewModel @Inject constructor(
         _testing.value = emptySet()
     }
 
-    fun listAvailableBalanceScripts(): List<String> {
-        return providerBalanceRunner.listAvailableScripts()
+    fun listAvailableDashboardScripts(): List<String> {
+        return providerDashboardRunner.listAvailableScripts()
     }
 
-    fun testBalanceScript(provider: AIProviderConfig, scriptPath: String) {
+    fun testDashboardScript(provider: AIProviderConfig, scriptPath: String) {
         viewModelScope.launch {
-            _balanceTestState.value = ProviderBalanceState.Loading
-            providerBalanceRunner.runScript(provider, scriptPath)
+            _dashboardTestState.value = ProviderDashboardState.Loading
+            providerDashboardRunner.runScript(provider, scriptPath)
                 .onSuccess { result ->
-                    _balanceTestState.value = ProviderBalanceState.Success(result)
+                    _dashboardTestState.value = ProviderDashboardState.Success(result)
                 }
                 .onFailure { error ->
-                    _balanceTestState.value = ProviderBalanceState.Error(
-                        error.message ?: context.getString(R.string.balance_exec_failed),
+                    _dashboardTestState.value = ProviderDashboardState.Error(
+                        error.message ?: context.getString(R.string.dashboard_exec_failed),
                         error.localizedMessage ?: ""
                     )
                 }
         }
     }
 
-    fun clearBalanceTestState() {
-        _balanceTestState.value = ProviderBalanceState.Idle
+    fun clearDashboardTestState() {
+        _dashboardTestState.value = ProviderDashboardState.Idle
     }
 
-    fun refreshProviderBalance(
+    fun refreshProviderDashboard(
         provider: AIProviderConfig,
         context: DashboardContext? = null,
         force: Boolean = false
     ) {
-        if (provider.balanceScriptPath.isBlank()) {
-            _providerBalances.update { it - provider.id }
+        if (provider.dashboardScriptPath.isBlank()) {
+            _providerDashboards.update { it - provider.id }
             return
         }
-        val current = _providerBalances.value[provider.id]
-        if (!force && current is ProviderBalanceState.Success) return
-        if (current is ProviderBalanceState.Loading) return
+        val current = _providerDashboards.value[provider.id]
+        if (!force && current is ProviderDashboardState.Success) return
+        if (current is ProviderDashboardState.Loading) return
 
         // 已有 Success 时不切 Loading，避免 UI 高度塌缩再恢复（收起→展开闪烁）
-        val showLoading = current !is ProviderBalanceState.Success
+        val showLoading = current !is ProviderDashboardState.Success
         viewModelScope.launch {
             if (showLoading) {
-                _providerBalances.update { it + (provider.id to ProviderBalanceState.Loading) }
+                _providerDashboards.update { it + (provider.id to ProviderDashboardState.Loading) }
             }
-            providerBalanceRunner.runScript(provider, context = context)
+            providerDashboardRunner.runScript(provider, context = context)
                 .onSuccess { result ->
-                    _providerBalances.update { it + (provider.id to ProviderBalanceState.Success(result)) }
+                    _providerDashboards.update { it + (provider.id to ProviderDashboardState.Success(result)) }
                 }
                 .onFailure { error ->
                     // 函数参数 context: DashboardContext 遮蔽了类的 ApplicationContext；
                     // 且此处位于 launch{} 内，this 已变为 CoroutineScope，必须用类标签限定
-                    _providerBalances.update { it + (provider.id to ProviderBalanceState.Error(error.message ?: this@SettingsViewModel.context.getString(R.string.balance_query_failed))) }
+                    _providerDashboards.update { it + (provider.id to ProviderDashboardState.Error(error.message ?: this@SettingsViewModel.context.getString(R.string.dashboard_query_failed))) }
                 }
         }
     }

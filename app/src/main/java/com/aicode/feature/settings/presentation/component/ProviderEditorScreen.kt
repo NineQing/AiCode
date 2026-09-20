@@ -155,8 +155,8 @@ import compose.icons.feathericons.Sliders
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
 import com.aicode.feature.agent.presentation.component.AdaptiveCardView
-import com.aicode.feature.settings.domain.model.ProviderBalanceResult
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.ProviderDashboardResult
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import androidx.compose.ui.res.stringResource
 import com.aicode.R
 import sh.calvin.reorderable.ReorderableItem
@@ -200,13 +200,12 @@ fun ProviderEditorScreen(
     var useResponseApi by remember { mutableStateOf(initialProvider?.useResponseApi ?: false) }
     var anthropicCacheBreakpoints by remember { mutableStateOf(initialProvider?.anthropicCacheBreakpoints ?: true) }
     var openaiChatCacheKey by remember { mutableStateOf(initialProvider?.openaiChatCacheKey ?: false) }
-    var balanceScriptPath by remember { mutableStateOf(initialProvider?.balanceScriptPath ?: "") }
+    var dashboardScriptPath by remember { mutableStateOf(initialProvider?.dashboardScriptPath ?: "") }
     val scriptParams = remember {
         mutableStateListOf<Pair<String, String>>().apply {
             addAll(initialProvider?.scriptParams?.toList() ?: emptyList())
         }
     }
-    var balanceRefreshInterval by remember { mutableIntStateOf(initialProvider?.balanceRefreshInterval ?: 5) }
     val customHeaders = remember {
         mutableStateListOf<Pair<String, String>>().apply {
             addAll(initialProvider?.customHeaders?.toList() ?: emptyList())
@@ -240,7 +239,6 @@ fun ProviderEditorScreen(
     var showAddModelSheet by remember { mutableStateOf(false) }
     var showFetchDialog by remember { mutableStateOf(false) }
     var showScriptPickerSheet by remember { mutableStateOf(false) }
-    var showIntervalSheet by remember { mutableStateOf(false) }
     var showProxyPage by remember { mutableStateOf(false) }
     var showKeysPage by remember { mutableStateOf(false) }
     var showHeadersSheet by remember { mutableStateOf(false) }
@@ -262,7 +260,7 @@ fun ProviderEditorScreen(
     val testResults by viewModel.testResults.collectAsStateWithLifecycle()
     val testing by viewModel.testing.collectAsStateWithLifecycle()
     val proxyTestState by viewModel.proxyTestState.collectAsStateWithLifecycle()
-    val balanceTestState by viewModel.balanceTestState.collectAsStateWithLifecycle()
+    val dashboardTestState by viewModel.dashboardTestState.collectAsStateWithLifecycle()
     val modelMetadata by viewModel.modelMetadata.collectAsStateWithLifecycle()
     val modelIdSet by remember {
         derivedStateOf { models.toSet() }
@@ -271,11 +269,11 @@ fun ProviderEditorScreen(
     DisposableEffect(Unit) {
         viewModel.resetFetchState()
         viewModel.clearTestResults()
-        viewModel.clearBalanceTestState()
+        viewModel.clearDashboardTestState()
         onDispose {
             viewModel.resetFetchState()
             viewModel.clearTestResults()
-            viewModel.clearBalanceTestState()
+            viewModel.clearDashboardTestState()
         }
     }
 
@@ -313,8 +311,8 @@ fun ProviderEditorScreen(
         useResponseApi = useResponseApi,
         anthropicCacheBreakpoints = anthropicCacheBreakpoints,
         openaiChatCacheKey = openaiChatCacheKey,
-        balanceScriptPath = balanceScriptPath,
-        balanceRefreshInterval = balanceRefreshInterval,
+        dashboardScriptPath = dashboardScriptPath,
+        dashboardRefreshInterval = initialProvider?.dashboardRefreshInterval ?: 5,
         customHeaders = customHeaders.filter { it.first.isNotBlank() }.toMap(),
         sortOrder = initialProvider?.sortOrder ?: -1,
         proxyEnabled = proxyEnabled,
@@ -334,7 +332,7 @@ fun ProviderEditorScreen(
             apiKey.isNotBlank() ||
             apiKeys.any { it.isNotBlank() } ||
             baseUrl.isNotBlank() ||
-            balanceScriptPath.isNotBlank() ||
+            dashboardScriptPath.isNotBlank() ||
             scriptParams.any { it.first.isNotBlank() } ||
             customHeaders.any { it.first.isNotBlank() } ||
             models.isNotEmpty()
@@ -601,23 +599,23 @@ fun ProviderEditorScreen(
                     }
 
                     // ── 自定义面板 (DIY) ──
-                    SettingsGroupHeader(text = stringResource(R.string.provider_section_balance))
+                    SettingsGroupHeader(text = stringResource(R.string.provider_section_dashboard))
                     SettingsGroup {
                         ProviderTextFieldRow(
-                            label = stringResource(R.string.provider_balance_script),
-                            value = balanceScriptPath,
-                            onValueChange = { balanceScriptPath = it },
-                            placeholder = stringResource(R.string.provider_balance_script_placeholder),
+                            label = stringResource(R.string.provider_dashboard_script),
+                            value = dashboardScriptPath,
+                            onValueChange = { dashboardScriptPath = it },
+                            placeholder = stringResource(R.string.provider_dashboard_script_placeholder),
                             trailing = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (balanceScriptPath.isNotBlank()) {
+                                    if (dashboardScriptPath.isNotBlank()) {
                                         IconButton(
-                                            onClick = { balanceScriptPath = "" },
+                                            onClick = { dashboardScriptPath = "" },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Icon(
                                                 imageVector = FeatherIcons.X,
-                                                contentDescription = stringResource(R.string.provider_balance_clear_script),
+                                                contentDescription = stringResource(R.string.provider_dashboard_clear_script),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -629,7 +627,7 @@ fun ProviderEditorScreen(
                                     ) {
                                         Icon(
                                             imageVector = FeatherIcons.Folder,
-                                            contentDescription = stringResource(R.string.provider_balance_select_script),
+                                            contentDescription = stringResource(R.string.provider_dashboard_select_script),
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -647,12 +645,12 @@ fun ProviderEditorScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = stringResource(R.string.provider_balance_test_btn),
+                                    text = stringResource(R.string.provider_dashboard_test_btn),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = stringResource(R.string.provider_balance_script_desc),
+                                    text = stringResource(R.string.provider_dashboard_script_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -661,12 +659,12 @@ fun ProviderEditorScreen(
                             IconButton(
                                 onClick = {
                                     focusManager.clearFocus()
-                                    viewModel.testBalanceScript(currentConfig(), balanceScriptPath)
+                                    viewModel.testDashboardScript(currentConfig(), dashboardScriptPath)
                                 },
-                                enabled = balanceScriptPath.isNotBlank() && balanceTestState !is ProviderBalanceState.Loading,
+                                enabled = dashboardScriptPath.isNotBlank() && dashboardTestState !is ProviderDashboardState.Loading,
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                if (balanceTestState is ProviderBalanceState.Loading) {
+                                if (dashboardTestState is ProviderDashboardState.Loading) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(18.dp),
                                         strokeWidth = 2.dp,
@@ -675,8 +673,8 @@ fun ProviderEditorScreen(
                                 } else {
                                     Icon(
                                         imageVector = FeatherIcons.Play,
-                                        contentDescription = stringResource(R.string.provider_balance_run_test),
-                                        tint = if (balanceScriptPath.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        contentDescription = stringResource(R.string.provider_dashboard_run_test),
+                                        tint = if (dashboardScriptPath.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -704,11 +702,11 @@ fun ProviderEditorScreen(
                                 )
                             }
                         )
-                        if (balanceTestState !is ProviderBalanceState.Idle) {
+                        if (dashboardTestState !is ProviderDashboardState.Idle) {
                             SettingsDivider()
-                            BalanceTestResultBox(
-                                state = balanceTestState,
-                                providerName = name.ifBlank { stringResource(R.string.provider_balance_preview_title) }
+                            DashboardTestResultBox(
+                                state = dashboardTestState,
+                                providerName = name.ifBlank { stringResource(R.string.provider_dashboard_preview_title) }
                             )
                         }
                     }
@@ -929,9 +927,9 @@ fun ProviderEditorScreen(
 
     if (showScriptPickerSheet) {
         ScriptPickerBottomSheet(
-            scripts = viewModel.listAvailableBalanceScripts(),
+            scripts = viewModel.listAvailableDashboardScripts(),
             onSelect = { selectedScript ->
-                balanceScriptPath = selectedScript
+                dashboardScriptPath = selectedScript
                 showScriptPickerSheet = false
             },
             onDismiss = { showScriptPickerSheet = false }
@@ -949,17 +947,6 @@ fun ProviderEditorScreen(
         ProviderScriptParamsSheet(
             params = scriptParams,
             onDismiss = { showScriptParamsSheet = false }
-        )
-    }
-
-    if (showIntervalSheet) {
-        IntervalSelectionSheet(
-            selected = balanceRefreshInterval,
-            onSelected = {
-                balanceRefreshInterval = it
-                showIntervalSheet = false
-            },
-            onDismiss = { showIntervalSheet = false }
         )
     }
 
@@ -1995,7 +1982,7 @@ private fun ScriptPickerBottomSheet(
                 .padding(bottom = Spacing.xl)
         ) {
             Text(
-                text = stringResource(R.string.provider_balance_select_title),
+                text = stringResource(R.string.provider_dashboard_select_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -2004,7 +1991,7 @@ private fun ScriptPickerBottomSheet(
                     .padding(bottom = Spacing.sm)
             )
             Text(
-                text = stringResource(R.string.provider_balance_script_desc),
+                text = stringResource(R.string.provider_dashboard_script_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -2020,7 +2007,7 @@ private fun ScriptPickerBottomSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.provider_balance_no_scripts),
+                        text = stringResource(R.string.provider_dashboard_no_scripts),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2090,7 +2077,7 @@ private fun RawOutputBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.provider_balance_raw_output),
+                    text = stringResource(R.string.provider_dashboard_raw_output),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -2143,11 +2130,11 @@ private fun RawOutputBottomSheet(
 }
 
 @Composable
-private fun BalanceTestResultBox(
-    state: ProviderBalanceState,
+private fun DashboardTestResultBox(
+    state: ProviderDashboardState,
     providerName: String = ""
 ) {
-    var lastSuccessResult by remember { mutableStateOf<ProviderBalanceResult?>(null) }
+    var lastSuccessResult by remember { mutableStateOf<ProviderDashboardResult?>(null) }
     var lastError by remember { mutableStateOf<String?>(null) }
     var lastRawOutput by remember { mutableStateOf("") }
     var isExpanded by remember { mutableStateOf(false) }
@@ -2156,20 +2143,20 @@ private fun BalanceTestResultBox(
 
     LaunchedEffect(state) {
         when (state) {
-            is ProviderBalanceState.Success -> {
+            is ProviderDashboardState.Success -> {
                 lastSuccessResult = state.result
                 lastRawOutput = state.result.rawOutput
                 lastError = null
             }
-            is ProviderBalanceState.Error -> {
+            is ProviderDashboardState.Error -> {
                 lastError = state.message
                 lastRawOutput = state.rawOutput
                 lastSuccessResult = null
             }
-            is ProviderBalanceState.Loading -> {
+            is ProviderDashboardState.Loading -> {
                 // 保持已有的 lastSuccessResult，不清除，防止高度塌陷
             }
-            ProviderBalanceState.Idle -> {
+            ProviderDashboardState.Idle -> {
                 lastSuccessResult = null
                 lastError = null
                 lastRawOutput = ""
@@ -2177,7 +2164,7 @@ private fun BalanceTestResultBox(
         }
     }
 
-    val isRunning = state is ProviderBalanceState.Loading
+    val isRunning = state is ProviderDashboardState.Loading
 
     Column(
         modifier = Modifier
@@ -2226,7 +2213,7 @@ private fun BalanceTestResultBox(
                             ) {
                                 Icon(
                                     imageVector = FeatherIcons.Terminal,
-                                    contentDescription = stringResource(R.string.provider_balance_raw_output),
+                                    contentDescription = stringResource(R.string.provider_dashboard_raw_output),
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2258,7 +2245,7 @@ private fun BalanceTestResultBox(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = providerName.ifBlank { stringResource(R.string.provider_balance_preview_title) },
+                                text = providerName.ifBlank { stringResource(R.string.provider_dashboard_preview_title) },
                                 style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -2271,7 +2258,7 @@ private fun BalanceTestResultBox(
                                     ) {
                                         Icon(
                                             imageVector = FeatherIcons.Terminal,
-                                            contentDescription = stringResource(R.string.provider_balance_raw_output),
+                                            contentDescription = stringResource(R.string.provider_dashboard_raw_output),
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2323,7 +2310,7 @@ private fun BalanceTestResultBox(
                             )
                             Column {
                                 Text(
-                                    text = stringResource(R.string.provider_balance_test_failed),
+                                    text = stringResource(R.string.provider_dashboard_test_failed),
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -2344,7 +2331,7 @@ private fun BalanceTestResultBox(
                             ) {
                                 Icon(
                                     imageVector = FeatherIcons.Terminal,
-                                    contentDescription = stringResource(R.string.provider_balance_raw_output),
+                                    contentDescription = stringResource(R.string.provider_dashboard_raw_output),
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.error
                                 )
@@ -2363,7 +2350,7 @@ private fun BalanceTestResultBox(
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Text(
-                    text = stringResource(R.string.provider_balance_loading),
+                    text = stringResource(R.string.provider_dashboard_loading),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2376,84 +2363,6 @@ private fun BalanceTestResultBox(
             rawOutput = lastRawOutput,
             onDismiss = { showRawOutputSheet = false }
         )
-    }
-}
-
-private val INTERVAL_OPTIONS = listOf(0, 1, 3, 5, 10, 15, 30)
-
-@Composable
-private fun formatIntervalLabel(minutes: Int): String = when (minutes) {
-    0 -> stringResource(R.string.provider_balance_interval_manual)
-    1 -> stringResource(R.string.provider_balance_interval_1m)
-    3 -> stringResource(R.string.provider_balance_interval_3m)
-    5 -> stringResource(R.string.provider_balance_interval_5m)
-    10 -> stringResource(R.string.provider_balance_interval_10m)
-    15 -> stringResource(R.string.provider_balance_interval_15m)
-    30 -> stringResource(R.string.provider_balance_interval_30m)
-    else -> stringResource(R.string.provider_balance_interval_minutes, minutes)
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun IntervalSelectionSheet(
-    selected: Int,
-    onSelected: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AdaptiveModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(),
-        containerColor = MaterialTheme.colorScheme.surface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = Spacing.xl)
-        ) {
-            Text(
-                text = stringResource(R.string.provider_balance_interval_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .padding(horizontal = Spacing.lg)
-                    .padding(bottom = Spacing.md)
-            )
-
-            INTERVAL_OPTIONS.forEach { interval ->
-                val isSelected = interval == selected
-                Surface(
-                    onClick = {
-                        onSelected(interval)
-                        onDismiss()
-                    },
-                    color = Color.Transparent
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = formatIntervalLabel(interval),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (isSelected) {
-                            Icon(
-                                imageVector = FeatherIcons.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -45,20 +45,20 @@ import com.aicode.core.theme.Spacing
 import com.aicode.R
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.AdaptiveCardAction
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 
 /**
- * 位于聊天输入框上方的套餐余量/卡片栏。
+ * 位于聊天输入框上方的自定义面板栏。
  * 基于 Adaptive Cards 声明式规范，支持任意自定义排版与交互。
  */
 @Composable
-fun ProviderBalanceBar(
+fun ProviderDashboardBar(
     provider: AIProviderConfig,
-    state: ProviderBalanceState,
+    state: ProviderDashboardState,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     forceCollapse: Boolean = false,
@@ -94,7 +94,7 @@ fun ProviderBalanceBar(
                 .padding(horizontal = Spacing.md, vertical = 10.dp)
         ) {
             when (state) {
-                is ProviderBalanceState.Loading -> {
+                is ProviderDashboardState.Loading -> {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -116,14 +116,14 @@ fun ProviderBalanceBar(
                             )
                             Spacer(Modifier.width(Spacing.xs))
                             Text(
-                                text = stringResource(R.string.balance_fetching),
+                                text = stringResource(R.string.dashboard_fetching),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
-                is ProviderBalanceState.Error -> {
+                is ProviderDashboardState.Error -> {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -152,14 +152,14 @@ fun ProviderBalanceBar(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                text = stringResource(R.string.balance_fetch_failed_retry),
+                                text = stringResource(R.string.dashboard_fetch_failed_retry),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 }
-                is ProviderBalanceState.Success -> {
+                is ProviderDashboardState.Success -> {
                     val card = state.result.card
                     val onCardAction: (AdaptiveCardAction) -> Unit = { action ->
                         when (action) {
@@ -262,7 +262,7 @@ fun ProviderBalanceBar(
                         }
                     }
                 }
-                ProviderBalanceState.Idle -> {
+                ProviderDashboardState.Idle -> {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -278,7 +278,7 @@ fun ProviderBalanceBar(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = stringResource(R.string.balance_tap_to_query),
+                            text = stringResource(R.string.dashboard_tap_to_query),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )

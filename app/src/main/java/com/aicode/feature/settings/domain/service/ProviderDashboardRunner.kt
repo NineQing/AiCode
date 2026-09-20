@@ -25,7 +25,7 @@ import com.aicode.feature.settings.domain.model.FlowRowElement
 import com.aicode.feature.settings.domain.model.ImageElement
 import com.aicode.feature.settings.domain.model.MetricElement
 import com.aicode.feature.settings.domain.model.ProgressBarElement
-import com.aicode.feature.settings.domain.model.ProviderBalanceResult
+import com.aicode.feature.settings.domain.model.ProviderDashboardResult
 import com.aicode.feature.settings.domain.model.RowElement
 import com.aicode.feature.settings.domain.model.ScrollRowElement
 import com.aicode.feature.settings.domain.model.SpacerElement
@@ -50,27 +50,25 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class ProviderBalanceRunner @Inject constructor(
+class ProviderDashboardRunner @Inject constructor(
     private val commandEngine: CommandEngine,
     private val containerInstaller: ContainerInstaller,
     private val keyRotator: ProviderKeyRotator,
     private val workspaceRepository: WorkspaceRepository
 ) {
     companion object {
-        private const val TAG = "ProviderBalanceRunner"
+        private const val TAG = "ProviderDashboardRunner"
         /** 自定义脚本参数写入环境变量的固定前缀，如 AICODE_KEY_ACCOUNT_ID。 */
         private const val PREFIX_SCRIPT_PARAM = "AICODE_KEY_"
-        const val DEFAULT_BALANCE_SCRIPT = "demo_balance.py"
-        const val DEFAULT_SUBSCRIPTION_SCRIPT = "demo_subscription.py"
         private const val SCRIPT_TIMEOUT_MS = 15_000L
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
         /**
-         * 解析标准 Adaptive Card JSON 输出为 [ProviderBalanceResult]。
+         * 解析标准 Adaptive Card JSON 输出为 [ProviderDashboardResult]。
          */
-        fun parseBalanceJson(rawOutput: String): ProviderBalanceResult {
+        fun parseDashboardJson(rawOutput: String): ProviderDashboardResult {
             if (rawOutput.isBlank()) {
-                return ProviderBalanceResult(AdaptiveCardRoot(), rawOutput)
+                return ProviderDashboardResult(AdaptiveCardRoot(), rawOutput)
             }
 
             val jsonSnippet = extractJsonSnippet(rawOutput)
@@ -78,14 +76,12 @@ class ProviderBalanceRunner @Inject constructor(
 
             val parsedElement = json.parseToJsonElement(jsonSnippet)
             val card = parseCardRoot(parsedElement)
-            return ProviderBalanceResult(card = card, rawOutput = rawOutput)
+            return ProviderDashboardResult(card = card, rawOutput = rawOutput)
         }
 
         private fun parseCardRoot(element: JsonElement): AdaptiveCardRoot {
             if (element is JsonObject) {
                 val version = element["version"]?.primitiveStringOrNull() ?: "1.5"
-                val refreshInterval = element["refreshInterval"]?.primitiveIntOrNull()
-                    ?: element["interval"]?.primitiveIntOrNull()
 
                 val compactElement = element["compact"]?.let { parseElement(it) }
 
@@ -104,7 +100,6 @@ class ProviderBalanceRunner @Inject constructor(
 
                 return AdaptiveCardRoot(
                     version = version,
-                    refreshInterval = refreshInterval,
                     compact = compactElement,
                     body = bodyList
                 )
@@ -660,16 +655,16 @@ class ProviderBalanceRunner @Inject constructor(
     }
 
     /**
-     * 执行提供商的套餐余量脚本并解析返回结果。
+     * 执行提供商的自定义面板脚本并解析返回结果。
      */
     suspend fun runScript(
         provider: AIProviderConfig,
         scriptPathOverride: String? = null,
         context: DashboardContext? = null
-    ): Result<ProviderBalanceResult> = runCatching {
-        val rawPath = (scriptPathOverride ?: provider.balanceScriptPath).trim()
+    ): Result<ProviderDashboardResult> = runCatching {
+        val rawPath = (scriptPathOverride ?: provider.dashboardScriptPath).trim()
         if (rawPath.isBlank()) {
-            return@runCatching ProviderBalanceResult()
+            return@runCatching ProviderDashboardResult()
         }
 
         // 解析容器内路径
@@ -691,11 +686,11 @@ class ProviderBalanceRunner @Inject constructor(
         val output = result.output.trim()
 
         if (result.exitCode != null && result.exitCode != 0) {
-            FileLogger.w(TAG, "套餐余量脚本执行非零退出 code=${result.exitCode} output=$output")
+            FileLogger.w(TAG, "自定义面板脚本执行非零退出 code=${result.exitCode} output=$output")
             throw IllegalStateException("脚本退出码: ${result.exitCode}\n$output")
         }
 
-        parseBalanceJson(output)
+        parseDashboardJson(output)
     }
 
     private fun resolveContainerScriptPath(path: String): String {

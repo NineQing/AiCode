@@ -173,7 +173,7 @@ interface AIProvider {
     var temperature: Float?
 
     /**
-     * 流式请求等待首个内容块的上限（毫秒），调用前由工作流按「通用设置 → 网络」写入。
+     * 流式请求等待首个内容块的上限（毫秒），调用前由工作流按「偏好设置 → 网络」写入。
      * 默认 5 分钟；0 表示不限制，此时仅靠连接超时与手动取消兜底。
      */
     var firstByteTimeoutMs: Long
@@ -185,7 +185,7 @@ interface AIProvider {
     var streamIdleTimeoutMs: Long
 
     /**
-     * 网络请求（含流式）的最大重试次数，不含首次请求；调用前由工作流按「通用设置 → 网络」写入。
+     * 网络请求（含流式）的最大重试次数，不含首次请求；调用前由工作流按「偏好设置 → 网络」写入。
      * 默认 6；0 表示失败即抛出、不重试。
      */
     var maxNetworkRetries: Int

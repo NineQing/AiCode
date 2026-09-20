@@ -155,6 +155,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Log(R.string.settings_log),
     Permissions(R.string.settings_permissions),
     AppPermissions(R.string.settings_app_permissions),
+    BackgroundRun(R.string.settings_category_background),
     RemoteServers(R.string.settings_remote_servers),
     Storage(R.string.settings_storage),
     TokenStats(R.string.settings_token_stats_title),
@@ -915,18 +916,20 @@ fun SettingsScreen(
                         androidx.hilt.navigation.compose.hiltViewModel()
                     val shizukuState by shizukuViewModel.state.collectAsStateWithLifecycle()
                     AppPermissionsSection(
-                        keepaliveEnabled = keepaliveEnabled,
-                        onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
-                        screenOnEnabled = screenOnEnabled,
-                        onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
-                        agentSoundEnabled = agentSoundEnabled,
-                        onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) },
                         shizukuState = shizukuState,
                         onRequestShizukuPermission = { shizukuViewModel.requestPermission() },
                         onOpenShizuku = { shizukuViewModel.openShizukuApp() },
                         onRefreshShizuku = { shizukuViewModel.refresh() }
                     )
                 }
+                SettingsSection.BackgroundRun -> BackgroundRunSection(
+                    keepaliveEnabled = keepaliveEnabled,
+                    onToggleKeepalive = { viewModel.setKeepaliveEnabled(it) },
+                    screenOnEnabled = screenOnEnabled,
+                    onToggleScreenOn = { viewModel.setScreenOnEnabled(it) },
+                    agentSoundEnabled = agentSoundEnabled,
+                    onToggleAgentSound = { viewModel.setAgentSoundEnabled(it) }
+                )
                 SettingsSection.Backup -> {
                     val backupViewModel: com.aicode.feature.backup.presentation.BackupViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()
@@ -1235,88 +1238,15 @@ internal fun SettingsMenu(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        // ── AI 配置 ──
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_ai))
+        // ── 通用设置 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_general))
         SettingsGroup {
             SettingsRow(
-                icon = FeatherIcons.Cloud,
-                title = stringResource(SettingsSection.Providers.titleRes),
-                onClick = { onOpen(SettingsSection.Providers) },
-                modifier = Modifier.onboardingTarget(OnboardingStep.CONFIG_PROVIDER)
+                icon = FeatherIcons.Sliders,
+                title = stringResource(SettingsSection.General.titleRes),
+                onClick = { onOpen(SettingsSection.General) }
             )
             SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Cpu,
-                title = stringResource(SettingsSection.DefaultModels.titleRes),
-                onClick = { onOpen(SettingsSection.DefaultModels) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Box,
-                title = stringResource(SettingsSection.Mcp.titleRes),
-                onClick = { onOpen(SettingsSection.Mcp) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Book,
-                title = stringResource(SettingsSection.Skills.titleRes),
-                onClick = { onOpen(SettingsSection.Skills) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Users,
-                title = stringResource(SettingsSection.SubAgents.titleRes),
-                onClick = { onOpen(SettingsSection.SubAgents) }
-            )
-        }
-
-        // ── 运行环境 ──
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_environment))
-        SettingsGroup {
-            SettingsRow(
-                icon = FeatherIcons.HardDrive,
-                title = stringResource(SettingsSection.Container.titleRes),
-                onClick = { onOpen(SettingsSection.Container) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Globe,
-                title = stringResource(SettingsSection.Proxy.titleRes),
-                onClick = { onOpen(SettingsSection.Proxy) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Server,
-                title = stringResource(SettingsSection.RemoteServers.titleRes),
-                onClick = { onOpen(SettingsSection.RemoteServers) }
-            )
-        }
-
-        // ── 工具与权限 ──
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_tools))
-        SettingsGroup {
-            SettingsRow(
-                icon = FeatherIcons.Lock,
-                title = stringResource(SettingsSection.Permissions.titleRes),
-                onClick = { onOpen(SettingsSection.Permissions) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Shield,
-                title = stringResource(SettingsSection.AppPermissions.titleRes),
-                onClick = { onOpen(SettingsSection.AppPermissions) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.FileText,
-                title = stringResource(SettingsSection.Log.titleRes),
-                onClick = { onOpen(SettingsSection.Log) }
-            )
-        }
-
-        // ── 外观与语言 ──
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_appearance))
-        SettingsGroup {
             SettingsRow(
                 icon = FeatherIcons.Moon,
                 title = stringResource(R.string.settings_theme_title),
@@ -1376,15 +1306,88 @@ internal fun SettingsMenu(
             )
         }
 
-        // ── 系统 ──
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_system))
+        // ── AI 配置 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_ai))
         SettingsGroup {
             SettingsRow(
-                icon = FeatherIcons.Sliders,
-                title = stringResource(SettingsSection.General.titleRes),
-                onClick = { onOpen(SettingsSection.General) }
+                icon = FeatherIcons.Cloud,
+                title = stringResource(SettingsSection.Providers.titleRes),
+                onClick = { onOpen(SettingsSection.Providers) },
+                modifier = Modifier.onboardingTarget(OnboardingStep.CONFIG_PROVIDER)
             )
             SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Cpu,
+                title = stringResource(SettingsSection.DefaultModels.titleRes),
+                onClick = { onOpen(SettingsSection.DefaultModels) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Box,
+                title = stringResource(SettingsSection.Mcp.titleRes),
+                onClick = { onOpen(SettingsSection.Mcp) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Book,
+                title = stringResource(SettingsSection.Skills.titleRes),
+                onClick = { onOpen(SettingsSection.Skills) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Users,
+                title = stringResource(SettingsSection.SubAgents.titleRes),
+                onClick = { onOpen(SettingsSection.SubAgents) }
+            )
+        }
+
+        // ── 运行环境 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_environment))
+        SettingsGroup {
+            SettingsRow(
+                icon = FeatherIcons.HardDrive,
+                title = stringResource(SettingsSection.Container.titleRes),
+                onClick = { onOpen(SettingsSection.Container) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Globe,
+                title = stringResource(SettingsSection.Proxy.titleRes),
+                onClick = { onOpen(SettingsSection.Proxy) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Server,
+                title = stringResource(SettingsSection.RemoteServers.titleRes),
+                onClick = { onOpen(SettingsSection.RemoteServers) }
+            )
+        }
+
+        // ── 权限与后台 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_permissions))
+        SettingsGroup {
+            SettingsRow(
+                icon = FeatherIcons.Lock,
+                title = stringResource(SettingsSection.Permissions.titleRes),
+                onClick = { onOpen(SettingsSection.Permissions) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Shield,
+                title = stringResource(SettingsSection.AppPermissions.titleRes),
+                onClick = { onOpen(SettingsSection.AppPermissions) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.RefreshCw,
+                title = stringResource(SettingsSection.BackgroundRun.titleRes),
+                onClick = { onOpen(SettingsSection.BackgroundRun) }
+            )
+        }
+
+        // ── 数据与诊断 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_data))
+        SettingsGroup {
             SettingsRow(
                 icon = FeatherIcons.BarChart2,
                 title = stringResource(SettingsSection.TokenStats.titleRes),
@@ -1403,6 +1406,16 @@ internal fun SettingsMenu(
                 onClick = { onOpen(SettingsSection.Backup) }
             )
             SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.FileText,
+                title = stringResource(SettingsSection.Log.titleRes),
+                onClick = { onOpen(SettingsSection.Log) }
+            )
+        }
+
+        // ── 帮助与关于 ──
+        SettingsGroupHeader(text = stringResource(R.string.settings_category_help))
+        SettingsGroup {
             SettingsRow(
                 icon = FeatherIcons.BookOpen,
                 title = stringResource(R.string.settings_user_guide),

@@ -8,7 +8,7 @@
     <string name="settings_providers">AI 供应商</string>
     <string name="settings_provider_editor">供应商</string>
     <string name="settings_default_models">默认模型</string>
-    <string name="settings_general">通用设置</string>
+    <string name="settings_general">偏好设置</string>
     <string name="settings_general_models">模型</string>
     <string name="settings_auto_remove_stale_models">拉取模型后自动移除无效模型</string>
     <string name="settings_auto_remove_stale_models_desc">拉取成功后，移除远端已不存在的本地模型</string>
@@ -260,9 +260,10 @@
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI 配置</string>
     <string name="settings_category_environment">运行环境</string>
-    <string name="settings_category_tools">工具与权限</string>
-    <string name="settings_category_appearance">外观与语言</string>
-    <string name="settings_category_system">系统</string>
+    <string name="settings_category_permissions">权限与后台</string>
+    <string name="settings_category_general">通用设置</string>
+    <string name="settings_category_data">数据与诊断</string>
+    <string name="settings_category_help">帮助与关于</string>
     <string name="settings_category_background">后台运行</string>
     <string name="settings_category_system_permissions">系统权限</string>
     <string name="settings_user_guide">使用手册</string>

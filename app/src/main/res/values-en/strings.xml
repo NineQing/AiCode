@@ -8,7 +8,7 @@
     <string name="settings_providers">AI Vendors</string>
     <string name="settings_provider_editor">Vendor</string>
     <string name="settings_default_models">Default Models</string>
-    <string name="settings_general">General</string>
+    <string name="settings_general">Preferences</string>
     <string name="settings_general_models">Models</string>
     <string name="settings_auto_remove_stale_models">Remove stale models after fetching</string>
     <string name="settings_auto_remove_stale_models_desc">On a successful fetch, drop local models the vendor no longer offers</string>
@@ -260,9 +260,10 @@
     <!-- Settings category titles -->
     <string name="settings_category_ai">AI Configuration</string>
     <string name="settings_category_environment">Environment</string>
-    <string name="settings_category_tools">Tools  &amp; Permissions</string>
-    <string name="settings_category_appearance">Appearance  &amp; Language</string>
-    <string name="settings_category_system">System</string>
+    <string name="settings_category_permissions">Permissions &amp; Background</string>
+    <string name="settings_category_general">General</string>
+    <string name="settings_category_data">Data &amp; Diagnostics</string>
+    <string name="settings_category_help">Help &amp; About</string>
     <string name="settings_category_background">Background</string>
     <string name="settings_category_system_permissions">System permissions</string>
     <string name="settings_user_guide">User Guide</string>

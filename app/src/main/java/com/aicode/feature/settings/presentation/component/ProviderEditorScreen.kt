@@ -344,7 +344,7 @@ fun ProviderEditorScreen(
         onSave(currentConfig())
     }
 
-    // 拉取成功后自动对齐：远端已不存在的本地模型直接移除（可在「通用设置」关掉）。拉取失败或返回空列表时不动列表。
+    // 拉取成功后自动对齐：远端已不存在的本地模型直接移除（可在「偏好设置」关掉）。拉取失败或返回空列表时不动列表。
     LaunchedEffect(fetchState, showFetchDialog, autoRemoveStaleModels) {
         if (!autoRemoveStaleModels) return@LaunchedEffect
         val state = fetchState

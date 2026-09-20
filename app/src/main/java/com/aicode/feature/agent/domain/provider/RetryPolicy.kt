@@ -306,7 +306,7 @@ private const val MAX_RETRY_AFTER_MILLIS = 60_000L
  *        返回 false 则抛出原异常。网络类失败（408/5xx/超时等）不会触发该回调。
  * @param onRetry 重试前回调，参数为 (当前重试次数, 最大重试次数)；用于通知上层"正在重试"。
  *                置于 [block] 之前以保证 `retryStaircase { ... }` 的 trailing lambda 仍绑定到 [block]。
- * @param maxRetries 最大重试次数（不含首次请求），由调用方按「通用设置 → 网络」传入；0 表示不重试。
+ * @param maxRetries 最大重试次数（不含首次请求），由调用方按「偏好设置 → 网络」传入；0 表示不重试。
  */
 suspend fun <T> retryStaircase(
     maxRetries: Int = MAX_NETWORK_RETRIES,
@@ -351,7 +351,7 @@ suspend fun <T> retryStaircase(
  * @param onContent 流式读取中成功收到内容块时调用（通常在 emit TextDelta/ReasoningDelta 处）。
  *                  一旦收到过内容说明连接已恢复、请求已成功，此后若再断流应重置重试计数，
  *                  否则同一次请求内多次抖动会显示 1,2,3,4,5… 持续累加而不重新计数。
- * @param maxRetries 最大重试次数（不含首次请求），由调用方按「通用设置 → 网络」传入；0 表示不重试。
+ * @param maxRetries 最大重试次数（不含首次请求），由调用方按「偏好设置 → 网络」传入；0 表示不重试。
  */
 suspend fun streamWithStaircaseRetry(
     maxRetries: Int = MAX_NETWORK_RETRIES,

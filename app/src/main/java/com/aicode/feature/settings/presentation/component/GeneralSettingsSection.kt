@@ -40,7 +40,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
 
 /**
- * 通用设置：集中放置不属于单个提供商配置、也不针对某个专用模型的全局偏好。
+ * 偏好设置：集中放置不属于单个提供商配置、也不针对某个专用模型的全局偏好。
  */
 @Composable
 internal fun GeneralSettingsSection(

@@ -46,9 +46,6 @@ import compose.icons.feathericons.Zap
 
 /**
  * 「软件权限」二级页：集中展示并管理系统级权限。
- * - 后台运行保活 / Agent 完成通知：内联开关，开启前检测通知权限（Android 13+），
- *   未授予则申请；申请不了（系统不再弹授权框）时弹窗引导去系统设置手动开启。
- * - 屏幕常亮：内联开关，纯窗口标志，不需系统权限。
  * - 安装未知应用：展示授权状态，未授权点击跳转系统设置开启。
  * - 访问存储空间：展示授权状态，未授权点击申请运行时权限；已被永久拒绝时同样引导去系统设置。
  * - 忽略电池优化 / 自启动管理：跳转系统设置。
@@ -57,12 +54,6 @@ import compose.icons.feathericons.Zap
  */
 @Composable
 internal fun AppPermissionsSection(
-    keepaliveEnabled: Boolean,
-    onToggleKeepalive: (Boolean) -> Unit,
-    screenOnEnabled: Boolean,
-    onToggleScreenOn: (Boolean) -> Unit,
-    agentSoundEnabled: Boolean,
-    onToggleAgentSound: (Boolean) -> Unit,
     shizukuState: ShizukuState,
     onRequestShizukuPermission: () -> Unit,
     onOpenShizuku: () -> Unit,
@@ -75,9 +66,6 @@ internal fun AppPermissionsSection(
     var batteryExempt by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
 
     var showStorageDeniedDialog by remember { mutableStateOf(false) }
-    var showNotificationDeniedDialog by remember { mutableStateOf(false) }
-    // 通知权限申请成功后要打开的目标开关回调。
-    var pendingNotificationToggle by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
 
     // 从系统权限设置页返回时刷新状态。
     LifecycleResumeEffect(Unit) {
@@ -99,29 +87,6 @@ internal fun AppPermissionsSection(
         if (!storageGranted && permanentlyDenied) showStorageDeniedDialog = true
     }
 
-    // targetSdk 28 在 Android 13+ 上申请通知权限系统不弹框、直接回调 denied，
-    // 此时只能引导用户去系统设置手动开启。
-    val notificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        val pending = pendingNotificationToggle
-        pendingNotificationToggle = null
-        if (granted) {
-            pending?.invoke(true)
-        } else {
-            showNotificationDeniedDialog = true
-        }
-    }
-
-    fun toggleWithNotificationPermission(onToggle: (Boolean) -> Unit, enabled: Boolean) {
-        if (!enabled || notificationsGranted(context)) {
-            onToggle(enabled)
-            return
-        }
-        pendingNotificationToggle = onToggle
-        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -130,49 +95,6 @@ internal fun AppPermissionsSection(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        SettingsGroupHeader(text = stringResource(R.string.settings_category_background))
-        SettingsGroup {
-            SettingsRow(
-                icon = FeatherIcons.RefreshCw,
-                title = stringResource(R.string.settings_keepalive_title),
-                subtitle = stringResource(R.string.settings_keepalive_subtitle),
-                trailing = {
-                    AppSwitch(
-                        checked = keepaliveEnabled,
-                        onCheckedChange = { enabled ->
-                            toggleWithNotificationPermission(onToggleKeepalive, enabled)
-                        }
-                    )
-                }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Sun,
-                title = stringResource(R.string.settings_screen_on_title),
-                subtitle = stringResource(R.string.settings_screen_on_subtitle),
-                trailing = {
-                    AppSwitch(
-                        checked = screenOnEnabled,
-                        onCheckedChange = onToggleScreenOn
-                    )
-                }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Bell,
-                title = stringResource(R.string.settings_agent_sound_title),
-                subtitle = stringResource(R.string.settings_agent_sound_subtitle),
-                trailing = {
-                    AppSwitch(
-                        checked = agentSoundEnabled,
-                        onCheckedChange = { enabled ->
-                            toggleWithNotificationPermission(onToggleAgentSound, enabled)
-                        }
-                    )
-                }
-            )
-        }
-
         SettingsGroupHeader(text = stringResource(R.string.settings_category_system_permissions))
         SettingsGroup {
             SettingsRow(
@@ -266,6 +188,101 @@ internal fun AppPermissionsSection(
             onDismiss = { showStorageDeniedDialog = false }
         )
     }
+}
+
+/**
+ * 「后台运行」二级页：保活、屏幕常亮、Agent 完成通知三个开关。
+ * 两个需要通知权限的开关（保活、提示音）开启前先检测并申请通知权限（Android 13+），
+ * 系统不再弹授权框时弹窗引导去系统设置手动开启。
+ */
+@Composable
+internal fun BackgroundRunSection(
+    keepaliveEnabled: Boolean,
+    onToggleKeepalive: (Boolean) -> Unit,
+    screenOnEnabled: Boolean,
+    onToggleScreenOn: (Boolean) -> Unit,
+    agentSoundEnabled: Boolean,
+    onToggleAgentSound: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    var showNotificationDeniedDialog by remember { mutableStateOf(false) }
+    // 通知权限申请成功后要打开的目标开关回调。
+    var pendingNotificationToggle by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
+
+    // targetSdk 28 在 Android 13+ 上申请通知权限系统不弹框、直接回调 denied，
+    // 此时只能引导用户去系统设置手动开启。
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingNotificationToggle
+        pendingNotificationToggle = null
+        if (granted) {
+            pending?.invoke(true)
+        } else {
+            showNotificationDeniedDialog = true
+        }
+    }
+
+    fun toggleWithNotificationPermission(onToggle: (Boolean) -> Unit, enabled: Boolean) {
+        if (!enabled || notificationsGranted(context)) {
+            onToggle(enabled)
+            return
+        }
+        pendingNotificationToggle = onToggle
+        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Spacing.lg)
+            .padding(bottom = Spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        SettingsGroup {
+            SettingsRow(
+                icon = FeatherIcons.RefreshCw,
+                title = stringResource(R.string.settings_keepalive_title),
+                subtitle = stringResource(R.string.settings_keepalive_subtitle),
+                trailing = {
+                    AppSwitch(
+                        checked = keepaliveEnabled,
+                        onCheckedChange = { enabled ->
+                            toggleWithNotificationPermission(onToggleKeepalive, enabled)
+                        }
+                    )
+                }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Sun,
+                title = stringResource(R.string.settings_screen_on_title),
+                subtitle = stringResource(R.string.settings_screen_on_subtitle),
+                trailing = {
+                    AppSwitch(
+                        checked = screenOnEnabled,
+                        onCheckedChange = onToggleScreenOn
+                    )
+                }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Bell,
+                title = stringResource(R.string.settings_agent_sound_title),
+                subtitle = stringResource(R.string.settings_agent_sound_subtitle),
+                trailing = {
+                    AppSwitch(
+                        checked = agentSoundEnabled,
+                        onCheckedChange = { enabled ->
+                            toggleWithNotificationPermission(onToggleAgentSound, enabled)
+                        }
+                    )
+                }
+            )
+        }
+    }
+
     if (showNotificationDeniedDialog) {
         PermissionDeniedDialog(
             title = stringResource(R.string.settings_permission_notification_title),

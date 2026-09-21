@@ -764,9 +764,12 @@ class StatefulAgentWorkflow @Inject constructor(
                                         // 切换不重建 systemPrompt，避免 system 前缀变化打断缓存；模式状态通过工具结果与下轮消息提醒告知。
                                         rawResult += buildModeSwitchNotice(AgentMode.BUILD)
                                     } else {
-                                        // 用户选择继续反馈，回滚到 PLAN 模式，修正工具结果让 AI 知道切换被取消
+                                        // 用户选择继续反馈，回滚到 PLAN 模式，修正工具结果让 AI 知道切换被取消并等待用户反馈
                                         currentContext = currentContext.copy(mode = AgentMode.PLAN)
-                                        rawResult = ToolResult.Error("用户拒绝了模式切换请求，请继续在 PLAN 模式下完善方案，待用户认可后再次申请切换。", "MODE_SWITCH_REJECTED").toTransportString()
+                                        rawResult = ToolResult.Error(
+                                            "用户希望补充说明或调整方案，当前保持在 PLAN 模式。请等待用户输入具体的补充或修改意见，不要自行臆测修改，待用户明确反馈后再继续。",
+                                            "MODE_SWITCH_REJECTED"
+                                        ).toTransportString()
                                         isError = true
                                     }
                                 } else {

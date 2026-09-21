@@ -173,17 +173,24 @@ class AskUserQuestionTool @Inject constructor(
 
         FileLogger.d(TAG, "ask_user_question 用户已回答: ${answer.answers.size} 条")
 
-        // 将用户回答序列化为 JSON 字符串，喂回给模型
+        // 将用户回答序列化为文本，喂回给模型
         val resultText = buildString {
             if (answer.answers.isEmpty()) {
                 append("用户未在预设选项中做出选择，想补充说明。请根据用户后续补充的内容继续，或换一种方式提问。")
             } else {
                 for (a in answer.answers) {
                     append("「${a.question}」= ")
+                    val parts = mutableListOf<String>()
+                    if (a.selected.isNotEmpty()) {
+                        parts.addAll(a.selected)
+                    }
                     if (a.customText != null) {
-                        append("其他：${a.customText}")
+                        parts.add("其他：${a.customText}")
+                    }
+                    if (parts.isEmpty()) {
+                        append("（未选择）")
                     } else {
-                        append(a.selected.joinToString("、"))
+                        append(parts.joinToString("、"))
                     }
                     append("\n")
                 }

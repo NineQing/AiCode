@@ -60,7 +60,7 @@ class BrowserTool @Inject constructor(
         "action" to ToolParameter("action", ParameterType.STRING, "操作类型，见 enum列表", true),
         "tabId" to ToolParameter("tabId", ParameterType.STRING, "目标标签页 ID（如 tab-1），缺省时作用于当前激活的标签页", false),
         "path" to ToolParameter("path", ParameterType.STRING, "screenshot: 截图保存路径（可选，缺省默认保存在 ~/workspace/.aicode/browser-screenshots/）", false),
-        "url" to ToolParameter("url", ParameterType.STRING, "navigate/newTab: URL（不带协议自动加 https://）", false),
+        "url" to ToolParameter("url", ParameterType.STRING, "navigate/newTab: URL（无协议头时优先 https，失败回退 http）", false),
         "script" to ToolParameter("script", ParameterType.STRING, "evaluate: JS 代码（支持 Promise/async）", false),
         "selector" to ToolParameter("selector", ParameterType.STRING,
             "click/fill/hover/getText/getHtml/scroll/wait: 选择器。支持 ref=e22（getBackbone 返回的引用）/ text=登录 / text*=登录 / role=button[name=\"登录\"] / xpath=//a / CSS", false),

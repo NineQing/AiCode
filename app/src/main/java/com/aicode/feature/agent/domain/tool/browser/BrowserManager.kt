@@ -165,7 +165,32 @@ class BrowserManager @Inject constructor(
                     var tag=els[i].tagName;
                     if(tag==='HTML'||tag==='BODY'||tag==='HEAD'||tag==='SCRIPT'||tag==='STYLE')continue;
                     var text=els[i].textContent||'';
-                    if(text.includes(t)&&text.length<bestLen){\n                        best=els[i];bestLen=text.length;\n                    }\n                }\n                return best;\n            }\n            if(selector.startsWith('role=')){\n                var m=selector.match(/^role=(\\w+)(?:\\[name=\"(.+)\"\\])?${'$'}/);\n                if(!m)return null;\n                var role=m[1],name=m[2];\n                var els=document.querySelectorAll('[role=\"'+role+'\"]');\n                if(name){\n                    for(var i=0;i<els.length;i++){\n                        if(els[i].textContent.includes(name))return els[i];\n                    }\n                    return null;\n                }\n                return els[0]||null;\n            }\n            if(selector.startsWith('xpath=')){\n                var x=selector.substring(6);\n                return document.evaluate(x,document,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue;\n            }\n            return document.querySelector(selector);\n        }\n    """.trimIndent()
+                    if(text.includes(t)&&text.length<bestLen){
+                        best=els[i];bestLen=text.length;
+                    }
+                }
+                return best;
+            }
+            if(selector.startsWith('role=')){
+                var m=selector.match(/^role=(\w+)(?:\[name="(.+)"\])?$/);
+                if(!m)return null;
+                var role=m[1],name=m[2];
+                var els=document.querySelectorAll('[role="'+role+'"]');
+                if(name){
+                    for(var i=0;i<els.length;i++){
+                        if(els[i].textContent.includes(name))return els[i];
+                    }
+                    return null;
+                }
+                return els[0]||null;
+            }
+            if(selector.startsWith('xpath=')){
+                var x=selector.substring(6);
+                return document.evaluate(x,document,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue;
+            }
+            return document.querySelector(selector);
+        }
+    """.trimIndent()
 
     inner class BrowserJsBridge(private val tabId: String) {
         @JavascriptInterface
@@ -529,15 +554,12 @@ class BrowserManager @Inject constructor(
         tab.pendingJsCalls[callId] = deferred
 
         // 彻底废除 eval，改用 async IIFE 包装并直接 await。
-        // 若传入的是简单表达式则自动补 return，支持 Promise 自动展开等待且完全不受 CSP unsafe-eval 限制
+        // 单表达式自动补 return（支持 Promise 自动展开等待，且不受 CSP unsafe-eval 限制）；
+        // 语句体（顶层含 ; / 换行或以语句关键字开头）原样放入函数体，值由脚本自行 return。
         val trimmed = script.trim()
-        val body = if (!trimmed.contains("\n") && !trimmed.contains(";") &&
-            !trimmed.startsWith("return ") && !trimmed.startsWith("var ") &&
-            !trimmed.startsWith("let ") && !trimmed.startsWith("const ") &&
-            !trimmed.startsWith("if ") && !trimmed.startsWith("for ") &&
-            !trimmed.startsWith("while ") && !trimmed.startsWith("function")
-        ) {
-            "return ($trimmed);"
+        val body = if (isExpressionScript(trimmed)) {
+            val expr = trimmed.trimEnd().removeSuffix(";").trimEnd()
+            "return ($expr);"
         } else {
             trimmed
         }
@@ -1118,7 +1140,7 @@ class BrowserManager @Inject constructor(
         }
 
     suspend fun screenshot(tabId: String? = null): AgentImage? = withContext(Dispatchers.Main) {
-        val tab = findTab(tabId ?: activeTabId) ?: return@withContext null
+        val tab = resolveTab(tabId)
         val wv = tab.webView
 
         // 离屏兜底尺寸：若未被系统布局过（w/h <= 0），手动测量布局
@@ -1140,19 +1162,14 @@ class BrowserManager @Inject constructor(
         val bitmap = Bitmap.createBitmap(wv.width, wv.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        // 关键：离屏/后台状态下，硬件层无法通过 software Canvas 回读 GPU 帧缓冲（会导致白屏）；
-        // 临时切为 LAYER_TYPE_SOFTWARE 遍历 display list 真实绘制到 Bitmap，画完还原。
-        val isDetached = !wv.isAttachedToWindow
+        // 关键：WebView 处于硬件层时，software Canvas 回读不到 GPU 帧缓冲——离屏未挂载、或挂载到窗口（打开过浏览器面板）都会白屏；
+        // 因此截图期间一律临时切为 LAYER_TYPE_SOFTWARE 遍历 display list 真实绘制到 Bitmap，画完还原。
         val oldLayerType = wv.layerType
-        if (isDetached) {
-            wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        }
+        wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         try {
             wv.draw(canvas)
         } finally {
-            if (isDetached) {
-                wv.setLayerType(oldLayerType, null)
-            }
+            wv.setLayerType(oldLayerType, null)
         }
 
         val baos = ByteArrayOutputStream()
@@ -1269,6 +1286,38 @@ class BrowserManager @Inject constructor(
         val deferred = CompletableDeferred<String?>()
         evaluateJavascript(script) { result -> deferred.complete(result) }
         return deferred.await()
+    }
+
+    /**
+     * 判断脚本是否为单个表达式（可直接 `return (script)` 取值）。
+     * 仅看顶层（括号/花括号深度 0）是否出现 `;` 或换行——IIFE 内部语句的 `;` 不受影响。
+     */
+    private fun isExpressionScript(script: String): Boolean {
+        val s = script.trimEnd().removeSuffix(";").trimEnd()
+        if (s.isEmpty()) return false
+        val statementStarts = listOf(
+            "return", "var", "let", "const", "if", "for", "while", "function",
+            "switch", "throw", "try", "do", "class", "import", "export"
+        )
+        if (statementStarts.any { s == it || s.startsWith("$it ") || s.startsWith("$it(") || s.startsWith("$it{") }) return false
+        var depth = 0
+        var quote: Char? = null
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            when {
+                quote != null -> {
+                    if (c == '\\') i++ else if (c == quote) quote = null
+                }
+                c == '\'' || c == '"' || c == '`' -> quote = c
+                c == '(' || c == '[' || c == '{' -> depth++
+                c == ')' || c == ']' || c == '}' -> depth--
+                c == ';' && depth == 0 -> return false
+                c == '\n' && depth == 0 -> return false
+            }
+            i++
+        }
+        return true
     }
 
     private fun jsStringLiteral(s: String): String {

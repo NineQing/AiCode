@@ -57,13 +57,16 @@ internal fun GeneralSettingsSection(
     enterToSend: Boolean,
     onToggleEnterToSend: (Boolean) -> Unit,
     compactionThresholdPercent: Int,
-    onSetCompactionThresholdPercent: (Int) -> Unit
+    onSetCompactionThresholdPercent: (Int) -> Unit,
+    sendFileMaxSizeMb: Int,
+    onSetSendFileMaxSizeMb: (Int) -> Unit
 ) {
     var showStartupSessionSheet by remember { mutableStateOf(false) }
     var editingFirstByteTimeout by remember { mutableStateOf(false) }
     var editingStreamIdleTimeout by remember { mutableStateOf(false) }
     var editingMaxNetworkRetries by remember { mutableStateOf(false) }
     var editingCompactionThreshold by remember { mutableStateOf(false) }
+    var editingSendFileMaxSize by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -177,6 +180,23 @@ internal fun GeneralSettingsSection(
                 }
             )
         }
+
+        SettingsGroupHeader(text = stringResource(R.string.settings_general_tools))
+        SettingsGroup {
+            SettingsRow(
+                icon = null,
+                title = stringResource(R.string.settings_sendfile_max_size),
+                subtitle = stringResource(R.string.settings_sendfile_max_size_desc),
+                onClick = { editingSendFileMaxSize = true },
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.settings_mb_value, sendFileMaxSizeMb),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
+        }
     }
 
     if (showStartupSessionSheet) {
@@ -241,6 +261,20 @@ internal fun GeneralSettingsSection(
                 editingCompactionThreshold = false
             },
             onDismiss = { editingCompactionThreshold = false }
+        )
+    }
+
+    if (editingSendFileMaxSize) {
+        NumberInputDialog(
+            title = stringResource(R.string.settings_sendfile_max_size),
+            initialValue = sendFileMaxSizeMb,
+            hint = stringResource(R.string.settings_sendfile_max_size_input_hint),
+            minValue = 1,
+            onConfirm = {
+                onSetSendFileMaxSizeMb(it)
+                editingSendFileMaxSize = false
+            },
+            onDismiss = { editingSendFileMaxSize = false }
         )
     }
 }

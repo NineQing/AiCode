@@ -7,6 +7,11 @@ import com.aicode.feature.agent.domain.tool.ToolCapability
 import com.aicode.feature.agent.domain.tool.ToolParameter
 import com.aicode.feature.agent.domain.tool.ToolResult
 import com.aicode.feature.workspace.domain.FileAccessProvider
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -26,16 +31,37 @@ import javax.inject.Inject
  * 文件数据（内容/base64）不会进入模型上下文，模型只收到文件元数据文本。
  */
 class SendFileTool @Inject constructor(
-    private val fileAccess: FileAccessProvider
+    private val fileAccess: FileAccessProvider,
+    private val generalSettingsRepository: GeneralSettingsRepository
 ) : AgentTool() {
     override val name = "sendFile"
-    override val description = "把工作区文件发送到聊天区展示给用户，聊天区每个文件占一行（缩略图/类型图标 + 文件名 + 大小·路径），点击查看：图片在应用内全屏预览，其它类型用系统对应 app 打开。支持一次发送多个文件。所有文件必须全部存在，任一文件不存在/不是文件/过大则整体失败，需修正后重新调用。仅用于把已有文件展示给用户，不读取文件内容。"
+
+    /**
+     * 单个文件大小上限可在偏好设置调整（默认 100MB）。工具定义（[description] / [parameters]）由模型侧
+     * 读取、且为非挂起属性，故用 [cachedMaxFileSizeMb] 缓存最近一次设置值；实际校验以 [execute] 内挂起
+     * 读取的权威值为准。
+     */
+    private val settingsScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @Volatile
+    private var cachedMaxFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB
+
+    init {
+        settingsScope.launch {
+            generalSettingsRepository.sendFileMaxSizeMbFlow.collect { cachedMaxFileSizeMb = it }
+        }
+    }
+
+    override val description get() =
+        "把工作区文件发送到聊天区展示给用户，聊天区每个文件占一行（缩略图/类型图标 + 文件名 + 大小·路径），点击查看：图片在应用内全屏预览，其它类型用系统对应 app 打开。支持一次发送多个文件。所有文件必须全部存在，任一文件不存在/不是文件/过大则整体失败，需修正后重新调用。仅用于把已有文件展示给用户，不读取文件内容。"
+
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
-    override val parameters = mapOf(
+
+    override val parameters get() = mapOf(
         "paths" to ToolParameter(
             name = "paths",
             type = ParameterType.ARRAY,
-            description = "要发送的文件路径列表，支持 ~/workspace/... 项目文件或容器绝对路径；一次最多 $MAX_FILES 个，单个文件不超过 ${MAX_FILE_SIZE_MB}MB。",
+            description = "要发送的文件路径列表，支持 ~/workspace/... 项目文件或容器绝对路径；一次最多 $MAX_FILES 个，单个文件不超过 ${cachedMaxFileSizeMb}MB。",
             required = true,
             itemsSchema = mapOf("type" to "string")
         ),
@@ -68,14 +94,16 @@ class SendFileTool @Inject constructor(
             }
 
             // 原子校验：全部通过才成功，任一失败整体失败并列出所有失败项。
+            val maxSizeMb = generalSettingsRepository.sendFileMaxSizeMb()
+            val maxSizeBytes = maxSizeMb * 1024L * 1024L
             val failures = mutableListOf<String>()
             paths.forEachIndexed { index, path ->
                 when {
                     !fileAccess.exists(path) -> failures.add("文件不存在: $path")
                     !fileAccess.isFile(path) -> failures.add("路径不是文件: $path")
-                    fileAccess.fileSize(path) > MAX_FILE_SIZE_BYTES -> {
+                    fileAccess.fileSize(path) > maxSizeBytes -> {
                         val sizeMb = fileAccess.fileSize(path) / (1024 * 1024)
-                        failures.add("文件超过 ${MAX_FILE_SIZE_MB}MB 限制: $path（${sizeMb}MB）")
+                        failures.add("文件超过 ${maxSizeMb}MB 限制: $path（${sizeMb}MB）")
                     }
                 }
             }
@@ -146,7 +174,7 @@ class SendFileTool @Inject constructor(
     private companion object {
         const val TAG = "SendFileTool"
         const val MAX_FILES = 10
-        const val MAX_FILE_SIZE_MB = 100
-        const val MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024L * 1024L
+        /** 设置未就绪前的回退值，与偏好设置里的默认值一致。 */
+        const val DEFAULT_MAX_FILE_SIZE_MB = 100
     }
 }

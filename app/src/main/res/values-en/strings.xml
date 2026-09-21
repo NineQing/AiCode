@@ -37,6 +37,11 @@
     <string name="settings_compaction_threshold_desc">Compact context once it reaches this share of the window</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_compaction_threshold_input_hint">Integer percentage between 1 and 100</string>
+    <string name="settings_general_tools">Tools</string>
+    <string name="settings_sendfile_max_size">sendFile max file size</string>
+    <string name="settings_sendfile_max_size_desc">Per-file size cap; exceeding it fails the whole batch</string>
+    <string name="settings_mb_value">%1$d MB</string>
+    <string name="settings_sendfile_max_size_input_hint">MB, an integer greater than 0</string>
     <string name="settings_vision_model">Vision Model</string>
     <string name="settings_compaction_model">Compaction Model</string>
     <string name="settings_title_model">Title Model</string>

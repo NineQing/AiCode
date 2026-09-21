@@ -6,7 +6,9 @@
   "outputDirectory": ".vitepress/dist",
   "cleanUrls": true,
   "trailingSlash": false,
-  "ignoreCommand": "bash ignore-step.sh",
+  "git": {
+    "deploymentEnabled": false
+  },
   "rewrites": [
     {
       "source": "/download",

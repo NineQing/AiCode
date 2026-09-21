@@ -1927,6 +1927,49 @@ class AIAgentViewModel @Inject constructor(
         _currentSessionId.value = id
     }
 
+    fun deleteSessions(ids: Set<String>) = viewModelScope.launch {
+        if (ids.isEmpty()) return@launch
+        val allDeletedIds = mutableSetOf<String>()
+        ids.forEach { id ->
+            val deletedSession = sessionUseCase.getSessionById(id)
+            if (deletedSession?.parentId != null) {
+                subAgentEventBus.release(id)
+            }
+            checkpointManager.clearSessionCheckpoints(id)
+            val deleted = sessionUseCase.deleteSession(id)
+            allDeletedIds.addAll(deleted)
+        }
+
+        allDeletedIds.forEach { sid ->
+            subAgentEventBus.release(sid)
+            sessionJobs[sid]?.cancel()
+            sessionJobs.remove(sid)
+            _agentStates.value = _agentStates.value - sid
+            _streamingTexts.value = _streamingTexts.value - sid
+            _streamingReasonings.value = _streamingReasonings.value - sid
+            _runningTools.value = _runningTools.value - sid
+            _retryStates.value = _retryStates.value - sid
+            _queuedRequests.value = _queuedRequests.value - sid
+            _inputDrafts.value = _inputDrafts.value - sid
+            draftPrefs.edit().remove(sid).apply()
+            agentNotificationCenter.clear(sid)
+        }
+
+        if (_currentSessionId.value in allDeletedIds) {
+            val ws = _currentWorkspace.value
+            if (ws.isBlank()) {
+                _currentSessionId.value = null
+            } else {
+                val remaining = sessionUseCase.getFirstSessionOfWorkspace(ws)
+                if (remaining != null) {
+                    _currentSessionId.value = remaining.id
+                } else {
+                    _currentSessionId.value = createAndUpsertSession(ws)
+                }
+            }
+        }
+    }
+
     fun deleteSession(id: String) = viewModelScope.launch {
         // 删掉运行中的子代理时先取它的父会话与标题（删库后就取不到了），稍后告知父代理。
         // 删的是父会话时无需通知（父会话本身也没了），但级联删掉的子会话仍要交回并发槽位。

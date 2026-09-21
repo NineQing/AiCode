@@ -478,6 +478,10 @@
     <string name="chat_unpin_session">取消置顶</string>
     <string name="chat_delete_session">删除会话</string>
     <string name="chat_delete_session_confirm">确定删除「%1$s」？该会话的所有消息都将被清除，且无法恢复。</string>
+    <string name="chat_batch_select">批量选择</string>
+    <string name="chat_batch_delete_title">删除所选会话</string>
+    <string name="chat_batch_delete_confirm">确定删除选中的 %1$d 个会话？包含的所有消息都将被清除，且无法恢复。</string>
+    <string name="chat_sessions_selected_count">已选 %1$d 个会话</string>
 
     <!-- Subagent -->
     <string name="subagent_tab_sessions">会话</string>
@@ -1051,6 +1055,17 @@
     <string name="provider_models_count">模型（%1$s）</string>
     <string name="provider_models_count_tag">%1$d 个模型</string>
     <string name="provider_fetch_models">拉取模型</string>
+    <string name="provider_add_all_models">全部添加</string>
+    <string name="provider_add_all_models_title">添加全部模型</string>
+    <string name="provider_add_all_models_confirm">确定将拉取到的 %1$d 个模型全部添加至当前提供商？</string>
+    <string name="provider_models_select">多选</string>
+    <string name="provider_models_select_all">全选</string>
+    <string name="provider_models_deselect_all">取消全选</string>
+    <string name="provider_models_selected_count">已选 %1$d 项</string>
+    <string name="provider_models_batch_test">测试</string>
+    <string name="provider_models_batch_delete">删除</string>
+    <string name="provider_models_batch_delete_title">删除模型</string>
+    <string name="provider_models_batch_delete_confirm">确定删除选中的 %1$d 个模型吗？</string>
     <string name="provider_model_name">模型名称</string>    <string name="provider_model_already_added">该模型已添加</string>
     <string name="provider_edit_model">编辑模型</string>
     <string name="provider_model_section_price">价格</string>

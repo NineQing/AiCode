@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,7 +50,10 @@ fun ChatSessionRow(
     pinned: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    selectionMode: Boolean = false,
+    checked: Boolean = false,
+    onCheckedChange: ((Boolean) -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -62,6 +67,17 @@ fun ChatSessionRow(
             .padding(horizontal = Spacing.lg, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (selectionMode) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                    uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            )
+            Spacer(Modifier.width(Spacing.xs))
+        }
         if (awaitingPermission) {
             // 等待用户授权：橙色常亮圆点，优先级高于执行中的绿色脉冲，提示该会话已挂起待处理。
             Box(

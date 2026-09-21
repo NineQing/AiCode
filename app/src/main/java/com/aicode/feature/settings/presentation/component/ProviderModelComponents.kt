@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -138,15 +140,15 @@ internal fun ProviderModelRow(
     onRemove: () -> Unit,
     onEdit: () -> Unit = {},
     showDivider: Boolean = false,
-    dragModifier: Modifier = Modifier
+    dragModifier: Modifier = Modifier,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelect: () -> Unit = {}
 ) {
     var showDetail by remember { mutableStateOf(false) }
     val sortDescription = stringResource(R.string.provider_sort_long_press)
 
-    SwipeToDeleteRow(
-        onDelete = onRemove,
-        onClick = onEdit
-    ) {
+    val rowContent: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
@@ -175,7 +177,7 @@ internal fun ProviderModelRow(
                         modifier = Modifier
                             .matchParentSize()
                             .padding(end = ModelTestAreaWidth)
-                            .then(dragModifier)
+                            .then(if (selectionMode) Modifier else dragModifier)
                             .semantics {
                                 contentDescription = sortDescription
                             },
@@ -204,7 +206,16 @@ internal fun ProviderModelRow(
                                 .height(36.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (testing) {
+                            if (selectionMode) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = { onToggleSelect() },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.primary,
+                                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                            } else if (testing) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             } else {
                                 TextButton(
@@ -266,6 +277,23 @@ internal fun ProviderModelRow(
             if (showDivider) {
                 SettingsDivider()
             }
+        }
+    }
+
+    if (selectionMode) {
+        Surface(
+            onClick = onToggleSelect,
+            color = MaterialTheme.semanticColors.cardSurface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            rowContent()
+        }
+    } else {
+        SwipeToDeleteRow(
+            onDelete = onRemove,
+            onClick = onEdit
+        ) {
+            rowContent()
         }
     }
 

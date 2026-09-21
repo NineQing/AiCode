@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,6 +81,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.delay
@@ -134,6 +136,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
+import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
@@ -368,6 +371,17 @@ fun ProviderEditorScreen(
     }
     val hapticFeedback = LocalHapticFeedback.current
 
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
+    val selectedModels = remember { mutableStateListOf<String>() }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage == 0 && isSelectionMode) {
+            isSelectionMode = false
+            selectedModels.clear()
+        }
+    }
+
     fun saveAndNavigateBack() {
         modelsOrderDirty = false
         saveCurrent()
@@ -378,6 +392,11 @@ fun ProviderEditorScreen(
         BackHandler {
             showProxyPage = false
             showKeysPage = false
+        }
+    } else if (isSelectionMode) {
+        BackHandler {
+            isSelectionMode = false
+            selectedModels.clear()
         }
     } else {
         BackHandler { saveAndNavigateBack() }
@@ -393,11 +412,30 @@ fun ProviderEditorScreen(
                     titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 navigationIcon = {
-                    IconButton(onClick = { saveAndNavigateBack() }) {
+                    IconButton(onClick = {
+                        if (isSelectionMode) {
+                            isSelectionMode = false
+                            selectedModels.clear()
+                        } else {
+                            saveAndNavigateBack()
+                        }
+                    }) {
                         Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
+                    if (pagerState.currentPage == 1 && models.isNotEmpty()) {
+                        IconButton(onClick = {
+                            isSelectionMode = !isSelectionMode
+                            if (!isSelectionMode) selectedModels.clear()
+                        }) {
+                            Icon(
+                                FeatherIcons.CheckSquare,
+                                contentDescription = stringResource(R.string.provider_models_select),
+                                tint = if (isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     IconButton(onClick = {
                         scope.launch { pagerState.animateScrollToPage(1) }
                         showAddModelSheet = true
@@ -723,25 +761,97 @@ fun ProviderEditorScreen(
                             .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            stringResource(R.string.provider_models_count, models.size),
-                            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(
-                            onClick = {
-                                fetchDialogKey++
-                                showFetchDialog = true
-                            },
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            modifier = Modifier.onboardingTarget(OnboardingStep.PROVIDER_FETCH_MODELS)
-                        ) {
-                            Icon(FeatherIcons.DownloadCloud, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(Spacing.xs))
-                            Text(stringResource(R.string.provider_fetch_models))
+                        if (isSelectionMode) {
+                            Text(
+                                stringResource(R.string.provider_models_selected_count, selectedModels.size),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            val allSelected = models.isNotEmpty() && selectedModels.size == models.size
+                            TextButton(
+                                onClick = {
+                                    if (allSelected) {
+                                        selectedModels.clear()
+                                    } else {
+                                        selectedModels.clear()
+                                        selectedModels.addAll(models)
+                                    }
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                Text(stringResource(if (allSelected) R.string.provider_models_deselect_all else R.string.provider_models_select_all))
+                            }
+                            TextButton(
+                                onClick = {
+                                    selectedModels.forEach { m -> viewModel.testModel(currentConfig(), m) }
+                                },
+                                enabled = selectedModels.isNotEmpty(),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(FeatherIcons.Play, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(Spacing.xs))
+                                Text(stringResource(R.string.provider_models_batch_test))
+                            }
+                            TextButton(
+                                onClick = { showBatchDeleteConfirm = true },
+                                enabled = selectedModels.isNotEmpty(),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Icon(FeatherIcons.Trash2, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(Spacing.xs))
+                                Text(stringResource(R.string.provider_models_batch_delete))
+                            }
+                            TextButton(
+                                onClick = {
+                                    isSelectionMode = false
+                                    selectedModels.clear()
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                Text(stringResource(R.string.common_cancel))
+                            }
+                        } else {
+                            Text(
+                                stringResource(R.string.provider_models_count, models.size),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (models.isNotEmpty()) {
+                                TextButton(
+                                    onClick = { isSelectionMode = true },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                ) {
+                                    Icon(FeatherIcons.CheckSquare, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(Spacing.xs))
+                                    Text(stringResource(R.string.provider_models_select))
+                                }
+                            }
+                            TextButton(
+                                onClick = {
+                                    fetchDialogKey++
+                                    showFetchDialog = true
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.onboardingTarget(OnboardingStep.PROVIDER_FETCH_MODELS)
+                            ) {
+                                Icon(FeatherIcons.DownloadCloud, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(Spacing.xs))
+                                Text(stringResource(R.string.provider_fetch_models))
+                            }
                         }
                     }
                     if (models.isEmpty()) {
@@ -828,6 +938,7 @@ fun ProviderEditorScreen(
                                             },
                                             onRemove = {
                                                 models.remove(model)
+                                                selectedModels.remove(model)
                                                 scope.launch {
                                                     customMetadataStore.remove(providerId, model)
                                                     customMetadata = customMetadataStore.all()
@@ -835,7 +946,16 @@ fun ProviderEditorScreen(
                                                 saveCurrent()
                                             },
                                             showDivider = !isLast && !isDragging,
-                                            dragModifier = Modifier.longPressDraggableHandle(
+                                            selectionMode = isSelectionMode,
+                                            selected = model in selectedModels,
+                                            onToggleSelect = {
+                                                if (model in selectedModels) {
+                                                    selectedModels.remove(model)
+                                                } else {
+                                                    selectedModels.add(model)
+                                                }
+                                            },
+                                            dragModifier = if (isSelectionMode) Modifier else Modifier.longPressDraggableHandle(
                                                 onDragStarted = {
                                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                                                 },
@@ -992,6 +1112,39 @@ fun ProviderEditorScreen(
         }
     }
 
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = { Text(stringResource(R.string.provider_models_batch_delete_title)) },
+            text = {
+                Text(stringResource(R.string.provider_models_batch_delete_confirm, selectedModels.size))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchDeleteConfirm = false
+                        val toDelete = selectedModels.toList()
+                        models.removeAll(toDelete.toSet())
+                        selectedModels.clear()
+                        isSelectionMode = false
+                        scope.launch {
+                            toDelete.forEach { m -> customMetadataStore.remove(providerId, m) }
+                            customMetadata = customMetadataStore.all()
+                        }
+                        saveCurrent()
+                    }
+                ) {
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
     // 模型拉取结果弹窗
     if (showFetchDialog) {
         key(fetchDialogKey) {
@@ -1005,6 +1158,13 @@ fun ProviderEditorScreen(
                 onAddModel = { m ->
                     if (m !in models) {
                         models.add(m)
+                        saveCurrent()
+                    }
+                },
+                onAddModels = { list ->
+                    val toAdd = list.filter { it !in models }
+                    if (toAdd.isNotEmpty()) {
+                        models.addAll(toAdd)
                         saveCurrent()
                     }
                 },
@@ -1282,6 +1442,7 @@ private fun FetchModelsDialog(
     existingModels: List<String>,
     onFetchModels: () -> Unit,
     onAddModel: (String) -> Unit,
+    onAddModels: (List<String>) -> Unit = { list -> list.forEach(onAddModel) },
     onDismiss: () -> Unit,
     isOnboarding: Boolean = false,
     onOnboardingModelAdded: (() -> Unit)? = null,
@@ -1291,6 +1452,15 @@ private fun FetchModelsDialog(
     val sheetState = rememberModalBottomSheetState()
     var searchQuery by remember { mutableStateOf("") }
     var showDebugSheet by remember { mutableStateOf(false) }
+    var showAddAllConfirm by remember { mutableStateOf(false) }
+
+    val availableNewModels = remember(fetchState, existingModels, isOnboarding) {
+        when (fetchState) {
+            is FetchState.Success -> fetchState.models.filter { it !in existingModels }
+            is FetchState.Error -> if (isOnboarding) listOf("deepseek-v4-flash").filter { it !in existingModels } else emptyList()
+            else -> emptyList()
+        }
+    }
 
     val debugInfo = when (fetchState) {
         is FetchState.Success -> fetchState.debugInfo
@@ -1321,12 +1491,36 @@ private fun FetchModelsDialog(
                 .padding(bottom = Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            Text(
-                text = stringResource(R.string.provider_fetch_models),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.provider_fetch_models),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (availableNewModels.isNotEmpty()) {
+                    TextButton(
+                        onClick = { showAddAllConfirm = true },
+                        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            imageVector = FeatherIcons.Plus,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(
+                            text = stringResource(R.string.provider_add_all_models),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
 
             ModelSearchField(
                 query = searchQuery,
@@ -1508,6 +1702,35 @@ private fun FetchModelsDialog(
             model = stringResource(R.string.provider_fetch_models),
             result = debugInfo,
             onDismiss = { showDebugSheet = false }
+        )
+    }
+
+    if (showAddAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showAddAllConfirm = false },
+            title = { Text(stringResource(R.string.provider_add_all_models_title)) },
+            text = {
+                Text(stringResource(R.string.provider_add_all_models_confirm, availableNewModels.size))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAddAllConfirm = false
+                        onAddModels(availableNewModels)
+                        onDismiss()
+                        if (isOnboarding) {
+                            onOnboardingModelAdded?.invoke()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.provider_add_all_models))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddAllConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
         )
     }
 }

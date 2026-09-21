@@ -478,6 +478,10 @@
     <string name="chat_unpin_session">Unpin</string>
     <string name="chat_delete_session">Delete Session</string>
     <string name="chat_delete_session_confirm">Delete "%1$s"? All messages in this session will be cleared and cannot be undone.</string>
+    <string name="chat_batch_select">Select Multiple</string>
+    <string name="chat_batch_delete_title">Delete Selected Sessions</string>
+    <string name="chat_batch_delete_confirm">Delete the selected %1$d sessions? All messages in these sessions will be cleared and cannot be undone.</string>
+    <string name="chat_sessions_selected_count">%1$d sessions selected</string>
     <string name="chat_rename_session">Rename Session</string>
     <string name="chat_session_name">Session name</string>
     <string name="chat_export_session">Export Session</string>
@@ -1051,6 +1055,17 @@
     <string name="provider_models_count">Models (%1$s)</string>
     <string name="provider_models_count_tag">%1$d models</string>
     <string name="provider_fetch_models">Fetch Models</string>
+    <string name="provider_add_all_models">Add All</string>
+    <string name="provider_add_all_models_title">Add All Models</string>
+    <string name="provider_add_all_models_confirm">Add all %1$d fetched models to this provider?</string>
+    <string name="provider_models_select">Select</string>
+    <string name="provider_models_select_all">Select All</string>
+    <string name="provider_models_deselect_all">Deselect All</string>
+    <string name="provider_models_selected_count">%1$d selected</string>
+    <string name="provider_models_batch_test">Test</string>
+    <string name="provider_models_batch_delete">Delete</string>
+    <string name="provider_models_batch_delete_title">Delete Models</string>
+    <string name="provider_models_batch_delete_confirm">Are you sure you want to delete the selected %1$d models?</string>
     <string name="provider_model_name">Model Name</string>    <string name="provider_model_already_added">This model has already been added</string>
     <string name="provider_edit_model">Edit Model</string>
     <string name="provider_model_section_price">Pricing</string>

@@ -533,6 +533,7 @@ fun AppNavigation(
                 if (!permanentDrawer) scope.launch { drawerState.close() }
             },
             onDelete = { agentViewModel.deleteSession(it.id) },
+            onDeleteSessions = { agentViewModel.deleteSessions(it) },
             onRename = { session, title -> agentViewModel.renameSession(session.id, title) },
             onTogglePin = { agentViewModel.togglePinSession(it.id) },
             onExport = { session ->

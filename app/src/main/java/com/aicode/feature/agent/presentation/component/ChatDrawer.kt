@@ -1,5 +1,6 @@
 package com.aicode.feature.agent.presentation.component
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -52,11 +53,13 @@ import com.aicode.feature.onboarding.presentation.onboardingTarget
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +77,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
+import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.SegmentedTabs
 import com.aicode.core.ui.rememberImeBottomInset
 import com.aicode.feature.settings.presentation.component.ModelSearchField
@@ -93,6 +97,7 @@ import com.aicode.feature.workspace.domain.isValidFileEntryName
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.Clipboard
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Download
@@ -127,6 +132,7 @@ fun ChatDrawerContent(
     awaitingPermissionSessionIds: Set<String> = emptySet(),
     onSelect: (ChatSession) -> Unit,
     onDelete: (ChatSession) -> Unit,
+    onDeleteSessions: ((Set<String>) -> Unit)? = null,
     onRename: (ChatSession, String) -> Unit,
     onTogglePin: (ChatSession) -> Unit,
     onExport: (ChatSession) -> Unit,
@@ -159,10 +165,18 @@ fun ChatDrawerContent(
     // tab 与展开状态进 saveable：大屏下侧栏收起后整棵子树会离开组合（见 MainActivity 的
     // SaveableStateProvider），用 remember 存会让每次回到聊天页都重置回「会话」页。
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
+    val selectedSessionIds = remember { mutableStateListOf<String>() }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
     var pendingRename by remember { mutableStateOf<ChatSession?>(null) }
     var menuSession by remember { mutableStateOf<ChatSession?>(null) }
     val listState = rememberLazyListState()
+
+    BackHandler(enabled = isSelectionMode) {
+        isSelectionMode = false
+        selectedSessionIds.clear()
+    }
 
     // 点击会话/重开侧边栏保持原滚动位置；仅当同一会话的最后回复时间变化（发消息/收到回复）时滚回顶部。
     var lastTouched by remember { mutableStateOf<Pair<String?, Long?>?>(null) }
@@ -201,7 +215,73 @@ fun ChatDrawerContent(
         )
 
         // 聊天记录搜索框放在 Tab 栏正下方，仅「会话」Tab 可见。
-        if (selectedTab == 0) {
+        if (selectedTab == 0 && isSelectionMode) {
+            Surface(
+                color = MaterialTheme.semanticColors.cardSurface,
+                shape = RoundedCornerShape(Radius.mdLarge),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            isSelectionMode = false
+                            selectedSessionIds.clear()
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = FeatherIcons.X,
+                            contentDescription = stringResource(R.string.common_cancel),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(
+                        text = stringResource(R.string.chat_sessions_selected_count, selectedSessionIds.size),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val allSessionIds: List<String> = remember(sessions, subSessionsByParent) {
+                        val ids = mutableListOf<String>()
+                        sessions.forEach { s ->
+                            ids.add(s.id)
+                            subSessionsByParent[s.id]?.forEach { sub -> ids.add(sub.id) }
+                        }
+                        ids
+                    }
+                    val allSelected = allSessionIds.isNotEmpty() && selectedSessionIds.size == allSessionIds.size
+                    TextButton(onClick = {
+                        if (allSelected) {
+                            selectedSessionIds.clear()
+                        } else {
+                            selectedSessionIds.clear()
+                            selectedSessionIds.addAll(allSessionIds)
+                        }
+                    }) {
+                        Text(stringResource(if (allSelected) R.string.provider_models_deselect_all else R.string.provider_models_select_all))
+                    }
+                    IconButton(
+                        onClick = { showBatchDeleteConfirm = true },
+                        enabled = selectedSessionIds.isNotEmpty(),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = FeatherIcons.Trash2,
+                            contentDescription = stringResource(R.string.chat_batch_delete_title),
+                            modifier = Modifier.size(18.dp),
+                            tint = if (selectedSessionIds.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        )
+                    }
+                }
+            }
+        } else if (selectedTab == 0) {
             ChatSearchField(
                 query = searchQuery,
                 onQueryChange = onSearchQueryChange,
@@ -220,6 +300,15 @@ fun ChatDrawerContent(
                     listState = listState,
                     searchQuery = searchQuery,
                     searchState = searchState,
+                    selectionMode = isSelectionMode,
+                    selectedSessionIds = selectedSessionIds,
+                    onToggleSelectSession = { s ->
+                        if (s.id in selectedSessionIds) {
+                            selectedSessionIds.remove(s.id)
+                        } else {
+                            selectedSessionIds.add(s.id)
+                        }
+                    },
                     onSelect = onSelect,
                     onLongClick = { menuSession = it },
                     onOpenSearchHit = onOpenSearchHit
@@ -306,11 +395,49 @@ fun ChatDrawerContent(
                 menuSession = null
                 onExport(session)
             },
+            onBatchSelect = {
+                menuSession = null
+                isSelectionMode = true
+                selectedSessionIds.clear()
+                selectedSessionIds.add(session.id)
+            },
             onDelete = {
                 menuSession = null
                 pendingDelete = session
             },
             onDismiss = { menuSession = null }
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = { Text(stringResource(R.string.chat_batch_delete_title)) },
+            text = {
+                Text(stringResource(R.string.chat_batch_delete_confirm, selectedSessionIds.size))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBatchDeleteConfirm = false
+                    val toDelete = selectedSessionIds.toSet()
+                    selectedSessionIds.clear()
+                    isSelectionMode = false
+                    if (onDeleteSessions != null) {
+                        onDeleteSessions(toDelete)
+                    } else {
+                        toDelete.forEach { sid: String ->
+                            sessions.firstOrNull { it.id == sid }?.let { onDelete(it) }
+                        }
+                    }
+                }) {
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
         )
     }
 
@@ -358,6 +485,9 @@ private fun SessionListTab(
     listState: LazyListState,
     searchQuery: String,
     searchState: ChatSearchState,
+    selectionMode: Boolean = false,
+    selectedSessionIds: List<String> = emptyList(),
+    onToggleSelectSession: (ChatSession) -> Unit = {},
     onSelect: (ChatSession) -> Unit,
     onLongClick: (ChatSession) -> Unit,
     onOpenSearchHit: (ChatSearchHit) -> Unit
@@ -370,6 +500,9 @@ private fun SessionListTab(
             awaitingPermissionSessionIds = awaitingPermissionSessionIds,
             subSessionsByParent = subSessionsByParent,
             listState = listState,
+            selectionMode = selectionMode,
+            selectedSessionIds = selectedSessionIds,
+            onToggleSelectSession = onToggleSelectSession,
             onSelect = onSelect,
             onLongClick = onLongClick
         )
@@ -387,6 +520,9 @@ private fun SessionListContent(
     awaitingPermissionSessionIds: Set<String>,
     subSessionsByParent: Map<String, List<ChatSession>>,
     listState: LazyListState,
+    selectionMode: Boolean = false,
+    selectedSessionIds: List<String> = emptyList(),
+    onToggleSelectSession: (ChatSession) -> Unit = {},
     onSelect: (ChatSession) -> Unit,
     onLongClick: (ChatSession) -> Unit
 ) {
@@ -446,12 +582,27 @@ private fun SessionListContent(
                     val expanded = session.id in expandedIds
                     ChatSessionRow(
                         session = session,
-                        selected = session.id == currentSessionId,
+                        selected = if (selectionMode) false else session.id == currentSessionId,
                         isExecuting = isExecuting,
                         awaitingPermission = session.id in awaitingPermissionSessionIds,
                         pinned = session.isPinned,
-                        onClick = { onSelect(session) },
-                        onLongClick = { onLongClick(session) },
+                        selectionMode = selectionMode,
+                        checked = session.id in selectedSessionIds,
+                        onCheckedChange = { onToggleSelectSession(session) },
+                        onClick = {
+                            if (selectionMode) {
+                                onToggleSelectSession(session)
+                            } else {
+                                onSelect(session)
+                            }
+                        },
+                        onLongClick = {
+                            if (selectionMode) {
+                                onToggleSelectSession(session)
+                            } else {
+                                onLongClick(session)
+                            }
+                        },
                         trailing = if (subSessions.isEmpty()) null else {
                             {
                                 SubAgentExpandToggle(
@@ -474,13 +625,28 @@ private fun SessionListContent(
                             Row(modifier = Modifier.padding(start = Spacing.lg)) {
                                 ChatSessionRow(
                                     session = sub,
-                                    selected = sub.id == currentSessionId,
+                                    selected = if (selectionMode) false else sub.id == currentSessionId,
                                     isExecuting = subState is AgentUIState.Loading ||
                                         subState is AgentUIState.Streaming,
                                     awaitingPermission = sub.id in awaitingPermissionSessionIds,
                                     pinned = false,
-                                    onClick = { onSelect(sub) },
-                                    onLongClick = { onLongClick(sub) }
+                                    selectionMode = selectionMode,
+                                    checked = sub.id in selectedSessionIds,
+                                    onCheckedChange = { onToggleSelectSession(sub) },
+                                    onClick = {
+                                        if (selectionMode) {
+                                            onToggleSelectSession(sub)
+                                        } else {
+                                            onSelect(sub)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (selectionMode) {
+                                            onToggleSelectSession(sub)
+                                        } else {
+                                            onLongClick(sub)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -1116,6 +1282,7 @@ private fun SessionActionSheet(
     onTogglePin: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
+    onBatchSelect: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1165,6 +1332,15 @@ private fun SessionActionSheet(
                 onClick = {
                     onDismiss()
                     onExport()
+                }
+            )
+            SheetActionRow(
+                icon = FeatherIcons.CheckSquare,
+                label = stringResource(R.string.chat_batch_select),
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = {
+                    onDismiss()
+                    onBatchSelect()
                 }
             )
             SheetActionRow(

@@ -67,23 +67,27 @@
 ## 网络与搜索工具
 - `websearch`：通过互联网搜索引擎获取实时信息，突破知识库时间截断。回答时效性问题或寻找最新资料时，必须优先调用。
 - `webfetch`：抓取并读取指定 HTTP/HTTPS 网页内容。支持提取为纯文本（读正文）或原始 HTML（解析页面结构）。
-- `browser`：控制内置浏览器（WebView）执行自动化操作。支持后台运行（无需先打开面板），但截图需面板可见。navigate/click/fill/hover/press/scroll/back/forward/reload 后自动附加截图（面板可见时）。所有操作返回统一格式 `{ok,action,url,title,detail,error}`，每次都带当前 url 和 title。用 `action` 参数选操作：
-  - `navigate`：导航到 URL（`url`），等待加载完成，返回 finalUrl+title。
-  - `evaluate`：执行 JS（`script`），支持 Promise/async，返回**原生 JSON**（保留 number/boolean/null 类型，不再字符串化）。
-  - `click`：点击元素（`selector`），完整事件链，返回 {matched,tag,text,href,navigatedTo}。
-  - `fill`：填充表单（`selector`+`value`），native setter + React valueTracker hack，返回 {matched,tag,type,value}。
-  - `select`：选原生下拉框（`selector`+`value`，按 value 或可见文本匹配 option），返回 {matched,tag,value,text}。
-  - `hover`：悬停元素（`selector`），派发 mouseenter/over/move，展开下拉菜单等。返回 {matched,tag,text}。
-  - `press`：按键（`key`），支持 Enter/Escape/Tab/ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Backspace/Delete/空格/普通字符。
-  - `getText`：提取文本（可选 `selector`），已过滤 script/style。
-  - `getHtml`：提取 HTML（可选 `selector`）。
-  - `getBackbone`：提取无障碍树（可选 `maxDepth`，默认 8），节点形如 `{role,name,ref,url,value,children}`；ref 只给可交互元素，可直接传给 click/fill 等的 selector（`selector=ref=e22`）；超深度节点标 `truncated:true`，超节点预算标 `budgetExceeded:true`。
-  - `screenshot`：截图（需面板可见），返回 viewport 信息 + 图片。
-  - `console`：取页面控制台日志（可选 `level` 过滤 log/warning/error/debug、`clear` 清空）。
-  - `wait`：等待条件满足（`condition`：text=登录 / text*=登录 / selector=#result / domStable，可选 `timeout` 默认 10000）。
-  - `dialog`：处理挂起的 confirm/prompt（`accept` 默认 true，`text` 为 prompt 输入）；响应里出现 pendingDialog 时调用。
-  - `scroll`：滚动（`selector` 滚到元素 / 不传滚到底部），返回 {from,to,atTop,atBottom}。
-  - `back`/`forward`/`reload`：导航控制。back/forward 会等待导航完成并确认 url 真的变化，未生效时返回 success:false。
+- `browser`：控制内置浏览器（WebView）执行自动化操作。支持多标签页（Multi-tab）与后台运行。所有操作支持可选参数 `tabId`（缺省时作用于当前激活的标签页）。常规操作不自动截图，需查看页面视觉内容时请显式调用 `action="screenshot"`。所有操作返回统一格式 `{ok,action,tabId,url,title,detail,error}`，每次都带当前 tabId、url 和 title。用 `action` 参数选操作：
+  - `newTab`：新建标签页（可选 `url`），返回 `{tabId,url,title}`。
+  - `closeTab`：关闭标签页（可选 `tabId`，缺省关闭当前激活标签页），返回 `{closedTabId,success,activeTabId,tabs}`。
+  - `selectTab`：切换激活标签页（必填 `tabId`），返回 `{activeTabId,success,url,title}`。
+  - `listTabs`：列出所有标签页，返回 `{tabs:[{id,url,title,loading,active}],activeTabId}`。
+  - `navigate`：导航到 URL（`url`，可选 `tabId`），等待加载完成，返回 finalUrl+title。
+  - `evaluate`：执行 JS（`script`，可选 `tabId`），支持 Promise/async，返回**原生 JSON**（保留 number/boolean/null 类型，不再字符串化）。
+  - `click`：点击元素（`selector`，可选 `tabId`），完整事件链，返回 {matched,tag,text,href,navigatedTo}。
+  - `fill`：填充表单（`selector`+`value`，可选 `tabId`），native setter + React valueTracker hack，返回 {matched,tag,type,value}。
+  - `select`：选原生下拉框（`selector`+`value`，可选 `tabId`，按 value 或可见文本匹配 option），返回 {matched,tag,value,text}。
+  - `hover`：悬停元素（`selector`，可选 `tabId`），派发 mouseenter/over/move，展开下拉菜单等。返回 {matched,tag,text}。
+  - `press`：按键（`key`，可选 `tabId`），支持 Enter/Escape/Tab/ArrowUp/ArrowDown/ArrowLeft/ArrowRight/Backspace/Delete/空格/普通字符。
+  - `getText`：提取文本（可选 `selector`，可选 `tabId`），已过滤 script/style。
+  - `getHtml`：提取 HTML（可选 `selector`，可选 `tabId`）。
+  - `getBackbone`：提取无障碍树（可选 `maxDepth` 默认 15，可选 `tabId`），节点形如 `{role,name,ref,url,value,children}`；ref 只给可交互元素，可直接传给 click/fill 等的 selector（`selector=ref=e22`）；超深度节点标 `truncated:true`，超节点预算标 `budgetExceeded:true`。
+  - `screenshot`：截图（支持后台离屏截图，可选 `tabId`，可选 `path`），截图文件自动保存到项目 `~/workspace/.aicode/browser-screenshots/`（或自定义 `path`），返回 `{status,filePath,viewport}` + 图片。
+  - `console`：取页面控制台日志（可选 `level` 过滤 log/warning/error/debug、`clear` 清空，可选 `tabId`）。
+  - `wait`：等待条件满足（`condition`：text=登录 / text*=登录 / selector=#result / domStable，可选 `timeout` 默认 10000，可选 `tabId`）。
+  - `dialog`：处理挂起的 confirm/prompt（`accept` 默认 true，`text` 为 prompt 输入，可选 `tabId`）；响应里出现 pendingDialog 时调用。
+  - `scroll`：滚动（`selector` 滚到元素 / 不传滚到底部，可选 `tabId`），返回 {from,to,atTop,atBottom}。
+  - `back`/`forward`/`reload`：导航控制（可选 `tabId`）。back/forward 会等待导航完成并确认 url 真的变化，未生效时返回 success:false。
   - selector 支持多种格式：`ref=e22`（getBackbone 返回的引用）、CSS（`#id`/`.class`/`a[href=...]`）、`text=登录`（精确匹配文本）、`text*=登录`（包含匹配）、`role=button[name="登录"]`、`xpath=//a[@href]`。
 
 ## 子代理工具

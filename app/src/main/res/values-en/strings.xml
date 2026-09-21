@@ -278,6 +278,7 @@
     <string name="common_paste">Paste</string>
     <string name="common_allow">Allow</string>
     <string name="common_close">Close</string>
+    <string name="common_clear">Clear</string>
     <string name="workbench_split_handle">Drag to resize panes</string>
     <string name="common_other">Other</string>
     <string name="common_switch">Switch</string>
@@ -1457,4 +1458,11 @@
     <string name="browser_forward">Forward</string>
     <string name="browser_reload">Reload</string>
     <string name="browser_not_ready">Browser not ready. Enter a URL in the address bar to start browsing.</string>
+    <string name="browser_new_tab">New tab</string>
+    <string name="browser_close_tab">Close tab</string>
+    <string name="browser_tab_default_title">New Tab</string>
+    <string name="browser_tabs_count">Tabs (%1$d)</string>
+    <string name="browser_empty_hint">Enter a URL in the address bar above to start browsing</string>
+    <string name="browser_tabs_manage">Manage Tabs</string>
+    <string name="browser_empty_click_hint">Tap above to enter a URL and start browsing</string>
 </resources>

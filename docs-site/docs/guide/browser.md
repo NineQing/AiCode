@@ -1,6 +1,6 @@
 # 内置浏览器
 
-App 内置了一个 WebView 浏览器，支持 AI 自动化操作网页。AI 可在后台操作浏览器（不需要先打开面板），但截图需面板可见。
+App 内置了一个 WebView 浏览器，支持 AI 自动化操作网页。AI 可在后台操作浏览器，截图也能在后台完成（不需要先打开面板）。
 
 ## 打开浏览器
 
@@ -29,14 +29,14 @@ AI 可通过 `browser` 工具控制浏览器执行以下操作：
 | `getText` | 提取页面文本（可指定选择器），已过滤 script/style |
 | `getHtml` | 提取页面 HTML（可指定选择器） |
 | `getBackbone` | 提取无障碍树（role/name/ref，可指定 `maxDepth`），ref 可直接用于后续操作 |
-| `screenshot` | 截取当前页面，返回图片供视觉模型分析（需面板可见） |
+| `screenshot` | 截取当前页面，返回图片供视觉模型分析（支持后台离屏截图） |
 | `console` | 取页面控制台日志（可过滤级别、可清空） |
 | `wait` | 等待条件满足（`text=` / `text*=` / `selector=` / `domStable`，可设 `timeout`） |
 | `scroll` | 滚动页面（滚动到指定元素或滚到底部） |
 | `dialog` | 处理挂起的 `confirm`/`prompt` 对话框（接受或取消） |
 | `back` / `forward` / `reload` | 浏览器导航控制，back/forward 会等待导航完成 |
 
-navigate/click/fill/hover/press/scroll/back/forward/reload 后自动附加截图（面板可见时）。
+常规操作不会自动附加截图；需要查看页面视觉内容时，请显式调用 `screenshot`。
 
 页面弹出 `confirm`/`prompt` 时会被挂起，工具响应里会出现 `pendingDialog` 字段，用 `dialog` action 接受或取消（30 秒未处理会自动取消）。
 
@@ -55,7 +55,7 @@ navigate/click/fill/hover/press/scroll/back/forward/reload 后自动附加截图
 
 ## 后台运行
 
-AI 可在后台操作浏览器（不需要先打开面板）。WebView 由 BrowserManager 管理，独立于 UI 生命周期。但截图需 WebView 已 attach 到窗口（面板可见），面板未打开时 screenshot 返回错误，视觉动作不附带截图。
+AI 可在后台操作浏览器，无需先打开面板。WebView 由 BrowserManager 管理，独立于 UI 生命周期；截图同样可在后台完成。
 
 ## 与 websearch / webfetch 的区别
 

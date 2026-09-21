@@ -53,7 +53,7 @@ class BrowserTool @Inject constructor(
     private val actionSchema: Map<String, Any> = mapOf(
         "type" to "string",
         "enum" to actionEnum,
-        "description" to "navigate=导航URL; evaluate=执行JS(支持Promise,返回原生JSON); click=点击(完整事件链); fill=填充表单(React兼容); select=下拉选择; hover=悬停; press=按键; getText=提取文本; getHtml=提取HTML; getBackbone=无障碍树(role/name/ref); screenshot=截图(需面板可见); console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt对话框; back=后退; forward=前进; reload=刷新; newTab=新建标签页; closeTab=关闭标签页; selectTab=切换激活标签页; listTabs=列出所有标签页"
+        "description" to "navigate=导航URL; evaluate=执行JS(支持Promise,返回原生JSON); click=点击(完整事件链); fill=填充表单(React兼容); select=下拉选择; hover=悬停; press=按键; getText=提取文本; getHtml=提取HTML; getBackbone=无障碍树(role/name/ref); screenshot=截图; console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt对话框; back=后退; forward=前进; reload=刷新; newTab=新建标签页; closeTab=关闭标签页; selectTab=切换激活标签页; listTabs=列出所有标签页"
     )
 
     override val parameters = mapOf(

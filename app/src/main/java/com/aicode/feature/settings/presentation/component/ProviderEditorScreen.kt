@@ -1057,6 +1057,7 @@ private fun AddModelSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = screenHeight * 0.88f)
+                .imePadding()
         ) {
             // ── 顶部标题栏：居中标题（仿 MCP 编辑对话框）──
             Row(
@@ -2386,6 +2387,7 @@ private fun ProviderHeadersSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = screenHeight * 0.88f)
+                .imePadding()
         ) {
             // 顶部标题栏：居中标题 + 右侧关闭。
             Row(
@@ -2564,6 +2566,7 @@ private fun ProviderScriptParamsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = screenHeight * 0.88f)
+                .imePadding()
         ) {
             // 顶部标题栏：居中标题 + 右侧关闭。
             Row(

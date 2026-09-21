@@ -90,10 +90,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.aicode.R
 
-internal val DiffAddBg = Color(0x2622C55E)
-internal val DiffAddText = Color(0xFF22C55E)
-internal val DiffRemoveBg = Color(0x26EF4444)
-internal val DiffRemoveText = Color(0xFFEF4444)
+internal val DiffAddBg: Color
+    @Composable get() = MaterialTheme.semanticColors.diffAddBg
+
+internal val DiffAddText: Color
+    @Composable get() = MaterialTheme.semanticColors.diffAdd
+
+internal val DiffRemoveBg: Color
+    @Composable get() = MaterialTheme.semanticColors.diffRemoveBg
+
+internal val DiffRemoveText: Color
+    @Composable get() = MaterialTheme.semanticColors.diffRemove
 
 internal const val DIFF_COLLAPSE_THRESHOLD = 20
 internal const val TOOL_SECTION_LINE_LIMIT = 20

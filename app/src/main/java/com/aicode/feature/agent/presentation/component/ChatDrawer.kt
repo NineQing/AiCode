@@ -105,6 +105,7 @@ import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.FilePlus
 import compose.icons.feathericons.Folder
 import compose.icons.feathericons.FolderPlus
+import compose.icons.feathericons.Globe
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Trash2
@@ -154,6 +155,7 @@ fun ChatDrawerContent(
     onPasteOverwrite: () -> Unit,
     onCancelPasteOverwrite: () -> Unit,
     onClearClipboard: () -> Unit,
+    onNavigateToBrowser: (() -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     searchQuery: String,
     searchState: ChatSearchState,
@@ -333,6 +335,14 @@ fun ChatDrawerContent(
         }
 
         SettingsGroup {
+            if (onNavigateToBrowser != null) {
+                SettingsRow(
+                    icon = FeatherIcons.Globe,
+                    title = stringResource(R.string.browser_title),
+                    onClick = onNavigateToBrowser
+                )
+                SettingsDivider()
+            }
             SettingsRow(
                 icon = FeatherIcons.Settings,
                 title = stringResource(R.string.chat_settings),

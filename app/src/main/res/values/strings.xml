@@ -1467,4 +1467,5 @@
     <string name="browser_empty_click_hint">点击上方输入网址开始浏览</string>
     <string name="browser_night_mode_on">关闭夜间模式</string>
     <string name="browser_night_mode_off">开启夜间模式</string>
+    <string name="browser_devtools">开发者工具</string>
 </resources>

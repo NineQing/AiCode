@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">AiCode</h1>
   <p align="center">
-    AI-powered coding assistant for Android · Built-in Linux terminal · AI Agent & subagents · Code editor · MCP · Git integration
+    Universal AI Coding Agent for Android · Linux dev environment · Local & remote SSH
     <br />
     <a href="README.md">中文</a> · <a href="README.en.md">English</a>
   </p>
@@ -42,9 +42,9 @@
 
 ## Overview
 
-AiCode is an AI-powered coding tool that runs on Android, letting you code entirely on your phone without a computer. It bundles an Alpine Linux container and terminal, packing a full Linux development environment into your phone: the AI agent can read and write files, run shell commands, and run build tools, so writing code, debugging and building all happen right on the phone.
+AiCode is a universal AI coding agent that runs on Android, packing a full Linux development environment into your phone: it bundles an Alpine Linux container and terminal, and the AI agent can read and write files, run shell commands and run build tools, so writing, debugging and building all happen on-device. A remote SSH server can also serve as the execution backend, turning your phone into a mobile workstation for remote projects.
 
-Terminal, AI agent, file tree with a code editor, visual Git panel and background subagents are all built in, giving you a complete development workflow on mobile. When needed, a remote SSH server can act as the execution backend, turning your phone into a mobile workstation for remote projects; on large screens it automatically switches to a side-by-side two-pane workbench.
+There is nothing to set up beforehand: install the app, configure a model under AI Providers, and you can start coding — no computer, no environment to build yourself. AiCode ships no models and locks you into no vendor: it supports the OpenAI / Anthropic / Gemini protocols plus custom providers, with models, keys and endpoints all configured by you.
 
 ## Advertisement
 
@@ -55,27 +55,33 @@ Terminal, AI agent, file tree with a code editor, visual Git panel and backgroun
 
 ## Features
 
-### AI & Agent
+### AI Agent
 
-- **AI Agent** — Compatible with OpenAI / Anthropic / Gemini protocols; switch between providers, rotate multiple keys of one provider automatically, and tune reasoning effort; built-in tools for file read/write/edit, shell execution, background terminal, code & web search, image recognition, todo lists, asking the user, and more; streaming output with live Markdown rendering and automatic context compression for long conversations
-- **Parallel subagents** — The main session can spawn subagents with their own isolated context to research, review or compare approaches in the background without blocking your current chat; a read-only **Explore** subagent is built in, and you can define your own with a custom model, tool set and prompt — all listed under their parent session in the sidebar
-- **Three run modes** — BUILD for normal development, PLAN to block every write operation at the tool layer for read-only planning, AUTO to approve everything without prompts — pick the permission scope you trust
-- **Checkpoints & Undo** — File snapshots are recorded before the agent modifies code; one-tap rollback from the conversation, restoring code, chat history, or both
+- **AI Agent** — Built-in tools for file read/write/edit, shell execution, background terminal, code & web search, image recognition, todo lists, and more; streaming output with live Markdown rendering and automatic context compression
+- **Parallel subagents** — Spawn subagents with their own isolated context to research, review or compare approaches in the background without blocking the current chat; a read-only **Explore** subagent is built in, and you can define your own with a custom model, tool set and prompt
+- **Three run modes** — BUILD for normal development, PLAN for read-only planning (writes blocked at the tool layer), AUTO to approve everything without prompts — pick the permission scope you trust
+- **Checkpoints & Undo** — Snapshots are recorded before the agent edits code; one-tap rollback of code, chat history, or both
 - **Skills & Auto Memory** — Global/project-level skills and long-term memory let the AI reuse experience and project conventions across sessions
 - **MCP Protocol** — Connect to local (stdio) or remote (HTTP) MCP servers to dynamically extend AI tool capabilities
 - **Tool permissions & custom prompts** — Per-tool authorization rules; system prompts can be overridden by the user and survive app upgrades
 
+### Models & Providers
+
+- **Model-agnostic** — No bundled models and no vendor lock-in: models, keys and endpoints are yours to configure
+- **Protocol support** — Compatible with the OpenAI / Anthropic / Gemini protocols, with presets for several official providers and support for custom ones; model lists and pricing are customizable
+- **Multiple keys** — Configure several keys per provider with sequential or round-robin rotation; reasoning effort is adjustable
+
 ### Development Environment
 
-- **Built-in Terminal & Container** — A local Linux container built on Termux components and PRoot with a built-in Alpine image; supports importing custom rootfs images and mounting host directories; multi-tab terminals that can stay alive in the background
-- **Remote SSH Mode** — Use a remote server as the execution backend: commands via exec channel, files via SFTP, terminal via shell channel — operate on remote projects directly from your phone
-- **File tree & code editor** — An inline indented file tree; tap a file for the full-screen editor with syntax highlighting for mainstream languages (Kotlin / Java / Python / JS·TS / Go / Rust / C·C++ / PHP and more), VS Code color schemes that follow the app theme, Markdown preview, undo/redo and a symbol shortcut bar; `file:line` links in AI replies open the file and jump to that line, in both local and remote SSH workspaces
-- **Git Integration** — Visual management of status, branches, commit history, diffs and tags, with staging/discarding changes plus sign-off and credential configuration
+- **Built-in Terminal & Container** — A local Linux container built on Termux and PRoot with a built-in Alpine image; supports custom rootfs images and host directory mounts; multi-tab terminals that can stay alive in the background
+- **Remote SSH Mode** — Use a remote SSH server as the execution backend: commands, files and terminal all act on the remote project
+- **File tree & code editor** — An indented file tree that opens files in a full-screen editor with syntax highlighting for mainstream languages and Markdown preview; `file:line` links in AI replies jump straight to that line, in both local and remote SSH workspaces
+- **Git Integration** — Visual management of status, branches, commit history, diffs and tags, plus staging/discarding changes, sign-off and credentials
 - **Workspace Sync** — SFTP / FTP synchronization with a built-in FTP server for desktop file management
 
 ### Experience
 
-- **Tablet & large screen** — Layout responds to window width: a persistent sidebar on wide screens with code or terminal open next to the chat, falling back to a single pane when the window shrinks
+- **Tablet & large screen** — Layout adapts to window width: a persistent sidebar on wide screens with code or terminal beside the chat, falling back to a single pane when narrow
 - **Token stats** — Usage and cost estimates per provider and model, with a drill-down into individual calls
 - **Appearance & language** — Light/dark themes, preset color schemes, Material You colors, custom background images, and a bilingual (Chinese/English) UI
 - **Network proxy** — Configure a global proxy and per-provider proxies separately
@@ -95,12 +101,22 @@ Terminal, AI agent, file tree with a code editor, visual Git panel and backgroun
 
 If AiCode is helpful to you, give it a [Star](https://github.com/jieapi/aicode) — it helps more developers discover the project.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=jieapi%2Faicode&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=jieapi/aicode&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=jieapi/aicode&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=jieapi/aicode&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## Feedback & Contribution
 
-- **QQ group**: join the [AiCode QQ group](https://qm.qq.com/q/ByvqODJdIs) (group number: 1107110698) to chat with other users and share feedback
+- **QQ group**: join the [AiCode QQ group](https://qm.qq.com/q/ByvqODJdIs) (group number: 1107110698) to share tips and feedback
 - **Bug reports**: open an [Issue](https://github.com/jieapi/aicode/issues) with reproduction steps, device model and OS version
-- **Feature requests**: discuss your ideas in [Issues](https://github.com/jieapi/aicode/issues) first
-- **Contributing**: pull requests are welcome via [Pull Requests](https://github.com/jieapi/aicode/pulls)
+- **Feature requests**: discuss your ideas in [Issues](https://github.com/jieapi/aicode/issues)
+- **Contributing**: submit a [Pull Request](https://github.com/jieapi/aicode/pulls)
 
 ## Acknowledgements
 

@@ -152,12 +152,13 @@ export default defineConfig({
         {
           text: '设置与维护',
           items: [
+            { text: '偏好设置', link: '/guide/general' },
+            { text: '外观与语言', link: '/guide/appearance' },
             { text: '工具授权', link: '/guide/permissions' },
             { text: '软件权限', link: '/guide/app-permissions' },
-            { text: '外观与语言', link: '/guide/appearance' },
-            { text: '通用设置', link: '/guide/general' },
-            { text: '常见错误提示', link: '/guide/error-codes' },
+            { text: '后台运行', link: '/guide/background-run' },
             { text: '日志与故障排查', link: '/guide/logs' },
+            { text: '常见错误提示', link: '/guide/error-codes' },
             { text: '存储空间', link: '/guide/storage' },
             { text: '备份与还原', link: '/guide/backup' },
             { text: '关于与更新', link: '/guide/about' }

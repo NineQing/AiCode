@@ -81,11 +81,6 @@ class TerminalThemePresetTest {
     @Test
     fun find_by_id_unknown_falls_back_to_termius_dark() {
         assertEquals(TerminalThemePreset.TERMIUS_DARK, TerminalThemePreset.findById("no_such_theme"))
-    }
-
-    @Test
-    fun find_by_id_github_light_falls_back_to_github_dark() {
-        // 源码特例：github_light 尚无专属预设，回退到 GitHub Dark
-        assertEquals(TerminalThemePreset.GITHUB_DARK, TerminalThemePreset.findById("github_light"))
+        assertEquals(TerminalThemePreset.TERMIUS_DARK, TerminalThemePreset.findById("github_light"))
     }
 }

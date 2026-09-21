@@ -19,13 +19,12 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ProviderBalanceRunnerTest {
+class ProviderDashboardRunnerTest {
 
     private val subscriptionCardJson = """
         {
           "type": "AdaptiveCard",
           "version": "1.5",
-          "refreshInterval": 5,
           "compact": {
             "type": "ColumnSet",
             "spacing": "Medium",
@@ -81,11 +80,10 @@ class ProviderBalanceRunnerTest {
 
     @Test
     fun testParseSubscriptionCard() {
-        val result = ProviderBalanceRunner.parseBalanceJson(subscriptionCardJson)
+        val result = ProviderDashboardRunner.parseDashboardJson(subscriptionCardJson)
         val card = result.card
 
         assertEquals("1.5", card.version)
-        assertEquals(5, card.refreshInterval)
 
         // 验证 compact
         assertNotNull(card.compact)
@@ -139,7 +137,7 @@ class ProviderBalanceRunnerTest {
             }
         """.trimIndent()
 
-        val result = ProviderBalanceRunner.parseBalanceJson(alertJson)
+        val result = ProviderDashboardRunner.parseDashboardJson(alertJson)
         val card = result.card
         assertEquals(2, card.body.size)
 
@@ -215,7 +213,7 @@ class ProviderBalanceRunnerTest {
             }
         """.trimIndent()
 
-        val result = ProviderBalanceRunner.parseBalanceJson(fineGrainedJson)
+        val result = ProviderDashboardRunner.parseDashboardJson(fineGrainedJson)
         val card = result.card
         assertEquals(2, card.body.size)
 

@@ -30,10 +30,10 @@ data class AIProviderConfig(
     val anthropicCacheBreakpoints: Boolean = true,
     /** Chat Completion 路径发送 prompt_cache_key（shard 路由）。仅 OPENAI 类型生效，默认关闭。 */
     val openaiChatCacheKey: Boolean = false,
-    /** 套餐余量查询脚本路径（位于 ~/.aicode/scripts/，或绝对路径/自定义命令）。 */
-    val balanceScriptPath: String = "",
-    /** 套餐余量自动刷新间隔（分钟），0 表示仅进入时/手动刷新，支持 1, 3, 5, 10 等。默认 5 分钟。 */
-    val balanceRefreshInterval: Int = 5,
+    /** 自定义面板脚本路径（位于 ~/.aicode/scripts/，或绝对路径/自定义命令）。 */
+    val dashboardScriptPath: String = "",
+    /** 自定义面板自动刷新间隔（分钟），0 表示仅进入时/手动刷新，支持 1, 3, 5, 10 等。默认 5 分钟。 */
+    val dashboardRefreshInterval: Int = 5,
     /**
      * 自定义请求头（Header 名 -> 值），完全覆盖该提供商所有请求的同名默认头。
      * 值支持占位符 `{{SESSION_ID}}`（会话 id）与 `{{API_KEY}}`（本次实际取用的 Key），
@@ -104,7 +104,7 @@ fun AIProviderConfig.sanitized(): AIProviderConfig = copy(
     defaultModel = defaultModel.stripLineBreaks(),
     models = models.map { it.stripLineBreaks() }.filter { it.isNotEmpty() }.distinct(),
     selectedModel = selectedModel.stripLineBreaks(),
-    balanceScriptPath = balanceScriptPath.stripLineBreaks(),
+    dashboardScriptPath = dashboardScriptPath.stripLineBreaks(),
     customHeaders = customHeaders
         .mapKeys { (k, _) -> k.trim() }
         .mapValues { (_, v) -> v.stripLineBreaks() }

@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.aicode.core.theme.Radius
 import com.aicode.core.theme.semanticColors
 
 /**
@@ -91,7 +92,7 @@ fun AppTextField(
     readOnly: Boolean = false,
     enabled: Boolean = true,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
-    shape: Shape = RoundedCornerShape(12.dp),
+    shape: Shape = RoundedCornerShape(Radius.mdLarge),
     colors: TextFieldColors = appTextFieldColors(),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }
 ) {

@@ -1,5 +1,6 @@
 package com.aicode.feature.settings.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -35,10 +36,12 @@ data class AIProviderEntity(
     val anthropicCacheBreakpoints: Boolean = true,
     /** Chat Completion 路径发送 prompt_cache_key（shard 路由）。仅 OPENAI 类型使用，默认关闭（官方 API 不接受该字段）。 */
     val openaiChatCacheKey: Boolean = false,
-    /** 套餐余量脚本路径。 */
-    val balanceScriptPath: String = "",
-    /** 套餐余量自动刷新间隔（分钟）。默认 5 分钟。 */
-    val balanceRefreshInterval: Int = 5,
+    /** 自定义面板脚本路径。列名沿用历史命名以兼容已发布数据库。 */
+    @ColumnInfo(name = "balanceScriptPath")
+    val dashboardScriptPath: String = "",
+    /** 自定义面板自动刷新间隔（分钟）。默认 5 分钟。列名沿用历史命名以兼容已发布数据库。 */
+    @ColumnInfo(name = "balanceRefreshInterval")
+    val dashboardRefreshInterval: Int = 5,
     /** 自定义请求头（JSON 编码的 Map<Header 名, 值>，空为 ""），完全覆盖同名默认头。 */
     val customHeaders: String = "",
     /** 提供商列表排序序号，越小越靠前；新建时分配 max+1。 */

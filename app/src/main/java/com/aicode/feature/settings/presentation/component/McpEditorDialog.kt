@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -128,6 +129,7 @@ fun McpServerEditDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = screenHeight * 0.88f)
+                .imePadding()
         ) {
                 // ── Top Bar：标题绝对居中，右侧按钮浮动，避免按钮数量不同导致标题偏移 ──
                 Box(

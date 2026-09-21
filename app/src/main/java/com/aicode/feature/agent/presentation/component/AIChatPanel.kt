@@ -13,6 +13,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
@@ -77,7 +80,7 @@ import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.presentation.SettingsViewModel
 import com.aicode.feature.settings.domain.model.DashboardContext
-import com.aicode.feature.settings.domain.model.ProviderBalanceState
+import com.aicode.feature.settings.domain.model.ProviderDashboardState
 import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
@@ -546,21 +549,21 @@ fun AIChatPanel(
     val canUploadImages = projectRoot.isNotBlank()
     val reasoningEffort by viewModel.currentSessionReasoningEffort.collectAsStateWithLifecycle()
 
-    val providerBalances by (settingsViewModel?.providerBalances?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyMap()) })
-    val currentBalanceState = activeProvider?.let { providerBalances[it.id] } ?: ProviderBalanceState.Idle
+    val providerDashboards by (settingsViewModel?.providerDashboards?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyMap()) })
+    val currentDashboardState = activeProvider?.let { providerDashboards[it.id] } ?: ProviderDashboardState.Idle
 
     // 键盘弹出时收起面板，避免输入框被挤压
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     val imeVisible = imeBottomPx > 0
 
     // 余额面板展开状态：展开时叠加面板联动折叠，避免输入框被双重顶开
-    var balanceExpanded by rememberSaveable { mutableStateOf(false) }
-    // ProviderBalanceBar 仅在有余额脚本的 provider 下渲染（见 ChatInputBar）。无该栏时
-    // balanceExpanded 可能残留 true：面板曾展开后随 provider 切换/脚本移除而卸载，LaunchedEffect
+    var dashboardExpanded by rememberSaveable { mutableStateOf(false) }
+    // ProviderDashboardBar 仅在有面板脚本的 provider 下渲染（见 ChatInputBar）。无该栏时
+    // dashboardExpanded 可能残留 true：面板曾展开后随 provider 切换/脚本移除而卸载，LaunchedEffect
     // 上报链路中断无法复位，直接拿它做 forceCollapse 会把授权/询问/计划面板永久压成收起态。
     // 故叠加可见性，只在余额面板当前可见且展开时才折叠叠加面板。
-    val balanceBarVisible = activeProvider?.balanceScriptPath?.isNotBlank() == true
-    val balanceCollapseActive = balanceExpanded && balanceBarVisible
+    val dashboardBarVisible = activeProvider?.dashboardScriptPath?.isNotBlank() == true
+    val dashboardCollapseActive = dashboardExpanded && dashboardBarVisible
 
     fun buildDashboardContext(
         lastInput: Int = 0,
@@ -616,12 +619,12 @@ fun AIChatPanel(
     // 会话切换时等 currentSession / messages 都落到新会话（sessionReady）再刷新：
     // 否则 buildDashboardContext 读到的是切换瞬间的旧会话快照，面板会显示旧数据或空 token。
     val sessionReady = currentSession?.id == currentSessionId && messagesReady
-    LaunchedEffect(activeProvider?.id, activeProvider?.balanceScriptPath, currentSessionId, sessionReady) {
+    LaunchedEffect(activeProvider?.id, activeProvider?.dashboardScriptPath, currentSessionId, sessionReady) {
         val provider = activeProvider ?: return@LaunchedEffect
-        if (provider.balanceScriptPath.isBlank()) return@LaunchedEffect
+        if (provider.dashboardScriptPath.isBlank()) return@LaunchedEffect
         if (!sessionReady) return@LaunchedEffect
         val context = buildDashboardContext(refreshReason = "session")
-        settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+        settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
     }
 
     // 每次单次 LLM 请求返回时，立即带上最新 Token 与上下文实时刷新面板
@@ -636,14 +639,14 @@ fun AIChatPanel(
     LaunchedEffect(Unit) {
         viewModel.llmCallEvents.collect { callEvent ->
             val provider = latestActiveProvider ?: return@collect
-            if (provider.balanceScriptPath.isBlank()) return@collect
+            if (provider.dashboardScriptPath.isBlank()) return@collect
             val context = latestBuildDashboardContext(
                 callEvent.inputTokens,
                 callEvent.outputTokens,
                 callEvent.cachedTokens,
                 "llm"
             )
-            settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+            settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
         }
     }
 
@@ -658,9 +661,9 @@ fun AIChatPanel(
         val nowDone = agentState !is AgentUIState.Loading && agentState !is AgentUIState.Streaming
         if (wasBusy && nowDone) {
             val provider = latestActiveProvider ?: return@LaunchedEffect
-            if (provider.balanceScriptPath.isBlank()) return@LaunchedEffect
+            if (provider.dashboardScriptPath.isBlank()) return@LaunchedEffect
             val context = latestBuildDashboardContext(0, 0, 0, "done")
-            settingsViewModel?.refreshProviderBalance(provider, context = context, force = true)
+            settingsViewModel?.refreshProviderDashboard(provider, context = context, force = true)
         }
     }
 
@@ -759,25 +762,35 @@ fun AIChatPanel(
         takePictureLauncher.launch(uri)
     }
 
-    // 缓冲流式文本：流式期间跟随 streamingText；流式刚结束而数据库尚未完成派发期间（messages 末尾仍是 USER 消息），
-    // 持续保留本轮完整文本，撑住底部气泡，彻底杜绝「字快打完了突然整段蒸发消失（空白闪回）」；
+    // 缓冲流式文本与思考过程：流式期间跟随 streamingText / streamingReasoning；流式刚结束而数据库尚未完成派发期间（messages 末尾仍是 USER/TOOL 消息），
+    // 持续保留本轮完整文本与思考，撑住底部气泡，彻底杜绝「字快打完了突然整段蒸发消失（空白闪回）」或「思考块突然消失又冒出」；
     // 一旦 messages 列表末尾正式接纳了本轮助手消息，立即清空让位。
     var retainedStreamingText by remember { mutableStateOf<String?>(null) }
+    var retainedStreamingReasoning by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentSessionId) {
         retainedStreamingText = null
+        retainedStreamingReasoning = null
     }
 
     val lastMsg = messages.lastOrNull()
     // 本轮助手消息是否已经在消息列表中正式就位渲染：
-    // 只有末尾消息是 ASSISTANT 且前缀吻合，才代表本轮输出已落库进 messages 列表
+    // 只有末尾消息是 ASSISTANT 且正文与思考前缀吻合，才代表本轮输出已落库进 messages 列表
     val isAssistantSettled = lastMsg?.role == MessageRole.ASSISTANT && run {
         val currentText = streamingText ?: retainedStreamingText
-        if (currentText.isNullOrBlank()) {
+        val currentReasoning = streamingReasoning ?: retainedStreamingReasoning
+        val textSettled = if (currentText.isNullOrBlank()) {
             true
         } else {
             val prefix = currentText.trimStart().take(20)
             prefix.isEmpty() || lastMsg.content.trimStart().startsWith(prefix)
         }
+        val reasoningSettled = if (currentReasoning.isNullOrBlank()) {
+            true
+        } else {
+            val prefix = currentReasoning.trimStart().take(20)
+            prefix.isEmpty() || (lastMsg.reasoning?.trimStart()?.startsWith(prefix) == true)
+        }
+        textSettled && reasoningSettled
     }
 
     LaunchedEffect(streamingText, isAssistantSettled) {
@@ -789,8 +802,20 @@ fun AIChatPanel(
         }
     }
 
+    LaunchedEffect(streamingReasoning, isAssistantSettled) {
+        val sr = streamingReasoning
+        if (sr != null && sr.hasVisibleContent()) {
+            retainedStreamingReasoning = sr
+        } else if (isAssistantSettled) {
+            retainedStreamingReasoning = null
+        }
+    }
+
     val displayStreamingText = if (isAssistantSettled) null else (streamingText ?: retainedStreamingText)
     val showStreaming = displayStreamingText?.hasVisibleContent() == true
+
+    val displayStreamingReasoning = if (isAssistantSettled) null else (streamingReasoning ?: retainedStreamingReasoning)
+    val showReasoning = displayStreamingReasoning?.hasVisibleContent() == true
 
     // 打字机渲染进度：持有在 LazyColumn 之外，尾巴 item 滚出视口被 dispose 后进度不丢。
     val typewriter = rememberTypewriterStreamingText(
@@ -803,7 +828,7 @@ fun AIChatPanel(
     // 正文开始输出（streamingText 非空）即视为思考结束：思考打字机立即收尾，
     // 避免思考还没打完、正文已开始导致两者叠着慢慢打。
     val typewriterReasoningText = rememberTypewriterStreamingText(
-        text = streamingReasoning ?: "",
+        text = displayStreamingReasoning ?: "",
         active = streamingReasoning != null && streamingText == null,
         sessionKey = currentSessionId
     ).text
@@ -1170,8 +1195,8 @@ fun AIChatPanel(
                                 )
                             }
                         }
-                        val reasoning = streamingReasoning
-                        val showReasoning = reasoning != null && reasoning.isNotEmpty()
+                        val reasoning = displayStreamingReasoning
+                        val showReasoning = reasoning?.hasVisibleContent() == true
                         // 忙碌状态指示器：在没有正文/思考流式输出、未在压缩、未被权限弹窗或询问挂起时展示。
                         // 工具正在执行或模型正在准备工具时，文案会由 thinkingLabel 动态呈现为对应场景（如「正在读取文件」）；
                         // 既无流式又无具体工具时兜底显示「正在思考」。
@@ -1239,25 +1264,6 @@ fun AIChatPanel(
                 lastUploadingCount?.let { UploadingBanner(count = it) }
             }
 
-            // 三个面板都用「最后一次非空值」渲染：退出动画期间源状态已置空，直接在 content 里
-            // 解引用会淡出一个空面板，看起来是瞬间消失而不是淡出。位移也一并补上——只淡入的话
-            // 面板在 Column 里占的高度是瞬间生效的，输入框会先跳一格再看到面板浮现。
-            val permissionForPanel = rememberLastNonNull(pendingPermission)
-            AnimatedVisibility(
-                visible = pendingPermission != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                permissionForPanel?.let { request ->
-                    ToolPermissionPanel(
-                        request = request,
-                        onChoice = { choice -> viewModel.resolveToolPermission(request.id, choice) },
-                        sessionTitle = pendingPermissionSessionTitle,
-                        forceCollapse = balanceCollapseActive
-                    )
-                }
-            }
-
             val questionForPanel = rememberLastNonNull(pendingQuestion)
             AnimatedVisibility(
                 visible = pendingQuestion != null,
@@ -1269,7 +1275,7 @@ fun AIChatPanel(
                         question = question,
                         onConfirm = { answer -> viewModel.resolveUserQuestion(question.id, answer) },
                         onSkip = { viewModel.resolveUserQuestion(question.id, UserQuestionAnswer(emptyList())) },
-                        forceCollapse = balanceCollapseActive
+                        forceCollapse = dashboardCollapseActive
                     )
                 }
             }
@@ -1286,7 +1292,7 @@ fun AIChatPanel(
                         state = state,
                         onApprove = { viewModel.approvePlanAndBuild() },
                         onRefine = { viewModel.refinePlan() },
-                        forceCollapse = balanceCollapseActive
+                        forceCollapse = dashboardCollapseActive
                     )
                 }
             }
@@ -1325,19 +1331,19 @@ fun AIChatPanel(
                 slashCommands = viewModel.slashCommands,
                 queuedRequests = queuedRequests,
                 onRemoveQueued = { viewModel.removeQueuedRequest(it) },
-                balanceState = currentBalanceState,
-                forceCollapseBalance = pendingPermission != null || pendingQuestion != null || planApproval != null || imeVisible,
-                onBalanceExpandedChange = { balanceExpanded = it },
-                onRefreshBalance = {
+                dashboardState = currentDashboardState,
+                forceCollapseDashboard = pendingPermission != null || pendingQuestion != null || planApproval != null || imeVisible,
+                onDashboardExpandedChange = { dashboardExpanded = it },
+                onRefreshDashboard = {
                     activeProvider?.let {
                         val context = buildDashboardContext(refreshReason = "manual")
-                        settingsViewModel?.refreshProviderBalance(it, context = context, force = true)
+                        settingsViewModel?.refreshProviderDashboard(it, context = context, force = true)
                     }
                 },
-                onRefreshBalanceByButton = {
+                onRefreshDashboardByButton = {
                     activeProvider?.let {
                         val context = buildDashboardContext(refreshReason = "button")
-                        settingsViewModel?.refreshProviderBalance(it, context = context, force = true)
+                        settingsViewModel?.refreshProviderDashboard(it, context = context, force = true)
                     }
                 },
                 tokenProgress = run {
@@ -1356,14 +1362,46 @@ fun AIChatPanel(
             )
             } // 悬浮层结束
 
-            // 滚动到底部按钮：悬浮在输入框右上角上方（悬浮层高度 + 间距定位），离底超过半屏时
+            // 悬浮授权弹窗：独立于底栏排版流，悬浮于输入框上方，避免撑大底栏高度导致消息列表被顶上去。
+            // 用户上下滑动消息列表时跟随透明弱化，不遮挡阅读视线。
+            val permissionForPanel = rememberLastNonNull(pendingPermission)
+            var permissionPanelHeightPx by remember { mutableStateOf(0) }
+            AnimatedVisibility(
+                visible = pendingPermission != null,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = with(LocalDensity.current) { floatingLayerHeightPx.toDp() } + Spacing.xs)
+                    .onGloballyPositioned { permissionPanelHeightPx = if (pendingPermission != null) it.size.height else 0 },
+                enter = fadeIn(tween(220)) +
+                        slideInVertically(tween(220)) { it / 3 } +
+                        scaleIn(initialScale = 0.96f, animationSpec = tween(220)),
+                exit = fadeOut(tween(160)) +
+                       slideOutVertically(tween(160)) { it / 3 } +
+                       scaleOut(targetScale = 0.96f, animationSpec = tween(160))
+            ) {
+                permissionForPanel?.let { request ->
+                    ToolPermissionPanel(
+                        request = request,
+                        onChoice = { choice -> viewModel.resolveToolPermission(request.id, choice) },
+                        sessionTitle = pendingPermissionSessionTitle,
+                        forceCollapse = dashboardCollapseActive,
+                        isScrolling = listState.isScrollInProgress
+                    )
+                }
+            }
+
+            // 滚动到底部按钮：悬浮在输入框右上角上方（避让底栏及可能悬浮的授权弹窗），离底超过半屏时
             // 显示，不看滚动方向——往上翻历史后停住恰恰是最需要一键回底的时刻；滚动时跟随输入框淡出。
+            val permissionOffsetPx = with(LocalDensity.current) {
+                if (pendingPermission != null) permissionPanelHeightPx + Spacing.xs.toPx() else 0f
+            }
             androidx.compose.animation.AnimatedVisibility(
                 visible = isFarFromBottom,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = Spacing.lg)
-                    .padding(bottom = with(LocalDensity.current) { (floatingLayerHeightPx + FLOATING_LAYER_GAP_DP.toPx()).toDp() })
+                    .padding(bottom = with(LocalDensity.current) { (floatingLayerHeightPx + permissionOffsetPx + FLOATING_LAYER_GAP_DP.toPx()).toDp() })
                     .graphicsLayer { alpha = if (listState.isScrollInProgress) 0.4f else 1f },
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()

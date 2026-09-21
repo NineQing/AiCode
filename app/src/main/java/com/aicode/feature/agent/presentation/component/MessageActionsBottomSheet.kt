@@ -48,7 +48,6 @@ internal fun MessageActionsBottomSheet(
     AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = Radius.lg, topEnd = Radius.lg),
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(

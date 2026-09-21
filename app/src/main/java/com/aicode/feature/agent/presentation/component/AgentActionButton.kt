@@ -38,19 +38,19 @@ internal fun AgentActionButton(
     val success = MaterialTheme.semanticColors.success
     val (container, content, border) = when (tone) {
         AgentActionTone.Success -> Triple(
-            if (enabled) success else MaterialTheme.colorScheme.surfaceVariant,
-            if (enabled) MaterialTheme.semanticColors.onSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
-            if (enabled) success else MaterialTheme.colorScheme.outlineVariant
+            if (enabled) success else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            if (enabled) MaterialTheme.semanticColors.onSuccess else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            if (enabled) success else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
         AgentActionTone.Danger -> Triple(
-            MaterialTheme.colorScheme.errorContainer,
-            MaterialTheme.colorScheme.error,
-            MaterialTheme.colorScheme.error.copy(alpha = 0.22f)
+            if (enabled) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            if (enabled) MaterialTheme.colorScheme.error.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
         AgentActionTone.Neutral -> Triple(
-            MaterialTheme.colorScheme.surface,
-            MaterialTheme.colorScheme.onSurface,
-            MaterialTheme.colorScheme.outlineVariant
+            if (enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            if (enabled) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
         )
     }
 

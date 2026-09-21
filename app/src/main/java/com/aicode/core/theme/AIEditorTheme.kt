@@ -33,7 +33,9 @@ object Radius {
     val xs = 4.dp
     val sm = 8.dp
     val md = 10.dp
+    val mdLarge = 12.dp
     val lg = 14.dp
+    val xl = 16.dp
     val pill = 999.dp
 }
 

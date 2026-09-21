@@ -34,7 +34,6 @@ data class DashboardContext(
  */
 data class AdaptiveCardRoot(
     val version: String = "1.5",
-    val refreshInterval: Int? = null,
     val compact: AdaptiveCardElement? = null,
     val body: List<AdaptiveCardElement> = emptyList()
 )

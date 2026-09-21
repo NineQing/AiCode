@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -326,16 +327,21 @@ internal fun SectionHeader(text: String) {
  *
  * 与多数 Git 客户端约定一致：新增=绿、修改=琥珀、删除=红、重命名/复制=蓝、未跟踪=灰、
  * 冲突=紫红、类型变更=青。仅取首字符判定，porcelain 的 X/Y 两列统一映射。
+ * 前景色根据背景亮度自适应，避免浅灰等高明度背景配白字导致对比度不足。
  */
-private fun statusColor(code: String): Pair<Color, Color> = when (code.firstOrNull()) {
-    'A' -> GitStatusColors.Added to Color.White            // 新增
-    'M' -> GitStatusColors.Modified to Color.White         // 修改
-    'D' -> GitStatusColors.Deleted to Color.White          // 删除
-    'R', 'C' -> GitStatusColors.Renamed to Color.White     // 重命名/复制
-    '?' -> GitStatusColors.Untracked to Color.White        // 未跟踪
-    'U' -> GitStatusColors.Conflict to Color.White         // 冲突
-    'T' -> GitStatusColors.TypeChanged to Color.White      // 类型变更
-    else -> GitStatusColors.Default to Color.White         // 兜底
+private fun statusColor(code: String): Pair<Color, Color> {
+    val bg = when (code.firstOrNull()) {
+        'A' -> GitStatusColors.Added            // 新增
+        'M' -> GitStatusColors.Modified         // 修改
+        'D' -> GitStatusColors.Deleted          // 删除
+        'R', 'C' -> GitStatusColors.Renamed     // 重命名/复制
+        '?' -> GitStatusColors.Untracked        // 未跟踪
+        'U' -> GitStatusColors.Conflict         // 冲突
+        'T' -> GitStatusColors.TypeChanged      // 类型变更
+        else -> GitStatusColors.Default         // 兜底
+    }
+    val fg = if (bg.luminance() > 0.45f) Color(0xFF0F172A) else Color.White
+    return bg to fg
 }
 
 @Composable

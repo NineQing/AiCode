@@ -13,6 +13,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
@@ -1257,25 +1260,6 @@ fun AIChatPanel(
                 lastUploadingCount?.let { UploadingBanner(count = it) }
             }
 
-            // 三个面板都用「最后一次非空值」渲染：退出动画期间源状态已置空，直接在 content 里
-            // 解引用会淡出一个空面板，看起来是瞬间消失而不是淡出。位移也一并补上——只淡入的话
-            // 面板在 Column 里占的高度是瞬间生效的，输入框会先跳一格再看到面板浮现。
-            val permissionForPanel = rememberLastNonNull(pendingPermission)
-            AnimatedVisibility(
-                visible = pendingPermission != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                permissionForPanel?.let { request ->
-                    ToolPermissionPanel(
-                        request = request,
-                        onChoice = { choice -> viewModel.resolveToolPermission(request.id, choice) },
-                        sessionTitle = pendingPermissionSessionTitle,
-                        forceCollapse = dashboardCollapseActive
-                    )
-                }
-            }
-
             val questionForPanel = rememberLastNonNull(pendingQuestion)
             AnimatedVisibility(
                 visible = pendingQuestion != null,
@@ -1374,14 +1358,46 @@ fun AIChatPanel(
             )
             } // 悬浮层结束
 
-            // 滚动到底部按钮：悬浮在输入框右上角上方（悬浮层高度 + 间距定位），离底超过半屏时
+            // 悬浮授权弹窗：独立于底栏排版流，悬浮于输入框上方，避免撑大底栏高度导致消息列表被顶上去。
+            // 用户上下滑动消息列表时跟随透明弱化，不遮挡阅读视线。
+            val permissionForPanel = rememberLastNonNull(pendingPermission)
+            var permissionPanelHeightPx by remember { mutableStateOf(0) }
+            AnimatedVisibility(
+                visible = pendingPermission != null,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = with(LocalDensity.current) { floatingLayerHeightPx.toDp() } + Spacing.xs)
+                    .onGloballyPositioned { permissionPanelHeightPx = if (pendingPermission != null) it.size.height else 0 },
+                enter = fadeIn(tween(220)) +
+                        slideInVertically(tween(220)) { it / 3 } +
+                        scaleIn(initialScale = 0.96f, animationSpec = tween(220)),
+                exit = fadeOut(tween(160)) +
+                       slideOutVertically(tween(160)) { it / 3 } +
+                       scaleOut(targetScale = 0.96f, animationSpec = tween(160))
+            ) {
+                permissionForPanel?.let { request ->
+                    ToolPermissionPanel(
+                        request = request,
+                        onChoice = { choice -> viewModel.resolveToolPermission(request.id, choice) },
+                        sessionTitle = pendingPermissionSessionTitle,
+                        forceCollapse = dashboardCollapseActive,
+                        isScrolling = listState.isScrollInProgress
+                    )
+                }
+            }
+
+            // 滚动到底部按钮：悬浮在输入框右上角上方（避让底栏及可能悬浮的授权弹窗），离底超过半屏时
             // 显示，不看滚动方向——往上翻历史后停住恰恰是最需要一键回底的时刻；滚动时跟随输入框淡出。
+            val permissionOffsetPx = with(LocalDensity.current) {
+                if (pendingPermission != null) permissionPanelHeightPx + Spacing.xs.toPx() else 0f
+            }
             androidx.compose.animation.AnimatedVisibility(
                 visible = isFarFromBottom,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = Spacing.lg)
-                    .padding(bottom = with(LocalDensity.current) { (floatingLayerHeightPx + FLOATING_LAYER_GAP_DP.toPx()).toDp() })
+                    .padding(bottom = with(LocalDensity.current) { (floatingLayerHeightPx + permissionOffsetPx + FLOATING_LAYER_GAP_DP.toPx()).toDp() })
                     .graphicsLayer { alpha = if (listState.isScrollInProgress) 0.4f else 1f },
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()

@@ -111,6 +111,7 @@ import compose.icons.feathericons.Maximize
 import compose.icons.feathericons.Minimize
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
+import compose.icons.feathericons.Shield
 import kotlinx.coroutines.launch
 
 /** 输入框区域蒙版高度：盖住圆角容器，滚动内容滑入时被渐变遮罩；随键盘（IME）上移。 */
@@ -711,20 +712,35 @@ internal fun SendButton(
 internal fun ToolPermissionPanel(
     request: PendingToolPermission,
     onChoice: (PermissionChoice) -> Unit,
+    modifier: Modifier = Modifier,
     sessionTitle: String = "",
-    forceCollapse: Boolean = false
+    forceCollapse: Boolean = false,
+    isScrolling: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(true) }
-    // 余额面板展开时同帧收起本面板，避免叠加顶开输入框
+    // 余额面板展开时同帧收起本面板，避免叠加
     val effectiveExpanded = expanded && !forceCollapse
 
+    // 滚动弱化：用户上下滑动列表时，悬浮授权弹窗跟随淡化为半透明，避免遮挡用户查看背后消息；停止滑动后平滑恢复
+    val panelAlpha by animateFloatAsState(
+        targetValue = if (isScrolling) 0.25f else 1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "permission-panel-alpha"
+    )
+
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(Radius.md),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .padding(horizontal = Spacing.lg, vertical = Spacing.xs)
+            .graphicsLayer { alpha = panelAlpha },
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(Radius.lg),
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+        )
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
             Row(
@@ -736,102 +752,147 @@ internal fun ToolPermissionPanel(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(28.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = FeatherIcons.Shield,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
                 Spacer(Modifier.width(Spacing.sm))
-                Text(
-                    text = request.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = request.toolName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Icon(
-                    imageVector = if (effectiveExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            if (sessionTitle.isNotBlank()) {
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    text = stringResource(R.string.chat_perm_session_label, sessionTitle),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (effectiveExpanded) {
-                Spacer(Modifier.height(Spacing.sm))
-                SelectionContainer {
-                    Column(
-                        modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
                     ) {
                         Text(
-                            text = request.summary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = request.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
-                        if (request.details.isNotBlank()) {
-                            Spacer(Modifier.height(Spacing.xs))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                        ) {
                             Text(
-                                text = request.details,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = request.toolName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                     }
+                    if (sessionTitle.isNotBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.chat_perm_session_label, sessionTitle),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-
-                val canRemember = request.rememberablePatterns.isNotEmpty()
-                val rememberLabel = when {
-                    !canRemember -> request.rememberDisabledReason ?: stringResource(R.string.chat_perm_single_use_desc)
-                    request.rememberablePatterns == listOf("*") -> stringResource(R.string.chat_perm_always_tool_desc)
-                    else -> stringResource(R.string.chat_perm_always_prefix) + request.rememberablePatterns.joinToString("、")
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = if (effectiveExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    text = rememberLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            }
 
-                Spacer(Modifier.height(Spacing.sm))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    AgentActionButton(
-                        text = stringResource(R.string.chat_perm_deny),
-                        onClick = { onChoice(PermissionChoice.REJECT) },
-                        modifier = Modifier.weight(1f),
-                        tone = AgentActionTone.Danger
+            AnimatedVisibility(
+                visible = effectiveExpanded,
+                enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+            ) {
+                Column {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Surface(
+                        shape = RoundedCornerShape(Radius.sm),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.5.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SelectionContainer {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+                                    .heightIn(max = 160.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = request.summary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (request.details.isNotBlank()) {
+                                    Spacer(Modifier.height(Spacing.xs))
+                                    Text(
+                                        text = request.details,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    val canRemember = request.rememberablePatterns.isNotEmpty()
+                    val rememberLabel = when {
+                        !canRemember -> request.rememberDisabledReason ?: stringResource(R.string.chat_perm_single_use_desc)
+                        request.rememberablePatterns == listOf("*") -> stringResource(R.string.chat_perm_always_tool_desc)
+                        else -> stringResource(R.string.chat_perm_always_prefix) + request.rememberablePatterns.joinToString("、")
+                    }
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        text = rememberLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    AgentActionButton(
-                        text = stringResource(R.string.chat_perm_always_allow),
-                        onClick = { onChoice(PermissionChoice.ALWAYS) },
-                        modifier = Modifier.weight(1f),
-                        enabled = canRemember,
-                        tone = AgentActionTone.Neutral
-                    )
-                    AgentActionButton(
-                        text = stringResource(R.string.common_allow),
-                        onClick = { onChoice(PermissionChoice.ONCE) },
-                        modifier = Modifier.weight(1f),
-                        tone = AgentActionTone.Success
-                    )
+
+                    Spacer(Modifier.height(Spacing.sm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        AgentActionButton(
+                            text = stringResource(R.string.chat_perm_deny),
+                            onClick = { onChoice(PermissionChoice.REJECT) },
+                            modifier = Modifier.weight(1f),
+                            tone = AgentActionTone.Danger
+                        )
+                        AgentActionButton(
+                            text = stringResource(R.string.chat_perm_always_allow),
+                            onClick = { onChoice(PermissionChoice.ALWAYS) },
+                            modifier = Modifier.weight(1f),
+                            enabled = canRemember,
+                            tone = AgentActionTone.Neutral
+                        )
+                        AgentActionButton(
+                            text = stringResource(R.string.common_allow),
+                            onClick = { onChoice(PermissionChoice.ONCE) },
+                            modifier = Modifier.weight(1f),
+                            tone = AgentActionTone.Success
+                        )
+                    }
                 }
             }
         }

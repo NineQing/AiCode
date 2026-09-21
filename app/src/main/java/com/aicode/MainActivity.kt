@@ -61,15 +61,24 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aicode.core.theme.AIEditorTheme
 import com.aicode.core.theme.AppThemePreset
+import com.aicode.core.ui.ImageSource
+import com.aicode.core.ui.ImageViewerHost
+import com.aicode.core.ui.ImageViewerRequest
+import com.aicode.core.ui.LocalImageViewer
 import com.aicode.core.ui.PAGE_MOTION_MS
 import com.aicode.core.ui.VerticalSplitHandle
 import com.aicode.core.ui.drawerWidth
 import com.aicode.core.ui.isExpandedWidth
 import com.aicode.core.ui.pageEnter
 import com.aicode.core.ui.pageExit
+import com.aicode.core.ui.rememberImageViewerState
+import com.aicode.core.ui.rememberViewerDecodeSpec
 import com.aicode.feature.agent.presentation.AIAgentViewModel
+import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.agent.presentation.component.AIChatPanel
 import com.aicode.feature.agent.presentation.component.ChatDrawerContent
+import com.aicode.feature.agent.presentation.component.chatImageLoader
+import com.aicode.feature.agent.presentation.component.openSentAttachment
 import com.aicode.feature.editor.presentation.CodeEditorScreen
 import com.aicode.feature.browser.presentation.BrowserScreen
 import com.aicode.feature.git.presentation.GitViewModel
@@ -466,6 +475,37 @@ fun AppNavigation(
         }
     }
 
+    // 文件树里点文件：图片进内置全屏查看器、APK 走系统安装器，其余仍进编辑器。
+    val drawerImageViewerState = rememberImageViewerState()
+    val drawerDecodeSpec = rememberViewerDecodeSpec()
+    val drawerImageLoad = remember(agentViewModel.fileAccess, drawerDecodeSpec) {
+        chatImageLoader(agentViewModel.fileAccess, drawerDecodeSpec.maxEdge, drawerDecodeSpec.maxPixels)
+    }
+    val openTreeEntry: (String) -> Unit = { path ->
+        val name = path.trimEnd('/').substringAfterLast('/')
+        val ext = name.substringAfterLast('.', "").lowercase()
+        when {
+            ext in PREVIEWABLE_IMAGE_EXTS -> drawerImageViewerState.show(
+                ImageViewerRequest(listOf(ImageSource.ContainerPath(path)), name)
+            )
+            ext in INSTALLABLE_APK_EXTS -> scope.launch {
+                openSentAttachment(
+                    context,
+                    AgentAttachment(
+                        fileName = name,
+                        containerPath = path,
+                        localPath = "",
+                        mimeType = APK_MIME_TYPE,
+                        sizeBytes = 0L,
+                        isImage = false
+                    ),
+                    agentViewModel.fileAccess
+                )
+            }
+            else -> openFile(path, 0, true)
+        }
+    }
+
     // 终端 / Git：大屏在右栏内开合切换，窄窗跳全屏页。
     val openWorkbench: (WorkbenchPaneKind) -> Unit = { target ->
         if (expanded) {
@@ -494,7 +534,7 @@ fun AppNavigation(
             clipboard = browseClipboard,
             pasteConflict = pasteConflict,
             onToggleExpand = { agentViewModel.toggleExpand(it) },
-            onOpenFile = { filePath -> openFile(filePath, 0, true) },
+            onOpenFile = openTreeEntry,
             onRefreshBrowse = { agentViewModel.refreshBrowse() },
             onCreateFile = { parent, name ->
                 agentViewModel.createBrowseFile(parent, name) { ok ->
@@ -731,8 +771,13 @@ fun AppNavigation(
         }
     }
 
-    CompositionLocalProvider(LocalOnboardingTargetRegistry provides onboardingRegistry) {
+    CompositionLocalProvider(
+        LocalOnboardingTargetRegistry provides onboardingRegistry,
+        LocalImageViewer provides drawerImageViewerState
+    ) {
     Box(modifier = Modifier.fillMaxSize()) {
+    // 文件树里点开的图片走这个查看器；聊天面板自带一个，两层互不影响。
+    ImageViewerHost(state = drawerImageViewerState, load = drawerImageLoad)
     if (expanded) {
         // 大屏不套 ModalNavigationDrawer：侧栏常驻在左，抽屉那套 scrim / 手势 / 锚点在这里完全用不上。
         // 侧栏只在聊天页展开：设置页自己就是「菜单 + 详情」两栏，外面再套一层会话侧栏就成了三栏。
@@ -956,6 +1001,14 @@ private val OPAQUE_URL_SCHEME = Regex(
 )
 
 private val TRAILING_LINE = Regex("^(.*):(\\d+)$")
+
+/** 文件树里点击即在内置查看器预览的图片格式（与 sendFile 的图片判定一致）。 */
+private val PREVIEWABLE_IMAGE_EXTS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")
+
+/** 文件树里点击即调系统安装器的安装包格式。 */
+private val INSTALLABLE_APK_EXTS = setOf("apk", "apks", "xapk")
+
+private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
 /** 聊天区链接目标 → 归一化后的文件路径；判定为网址（非 `file` scheme）时返回 null。 */
 internal fun asChatFilePath(uri: String): String? {

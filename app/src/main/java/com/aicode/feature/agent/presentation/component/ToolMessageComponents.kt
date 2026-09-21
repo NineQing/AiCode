@@ -494,7 +494,7 @@ internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String
 private fun toolIcon(toolName: String?): ImageVector = when (toolName?.lowercase()) {
     "editfile", "writefile", "generateimage" -> FeatherIcons.Edit3
     "readfile", "list", "sendfile", "viewimage" -> FeatherIcons.FileText
-    "search", "websearch", "webfetch" -> FeatherIcons.Search
+    "search", "websearch", "webfetch", "browser" -> FeatherIcons.Search
     "bash", "terminal" -> FeatherIcons.Terminal
     "todo" -> FeatherIcons.Check
     "task" -> FeatherIcons.Cpu
@@ -515,7 +515,7 @@ private fun toolIcon(toolName: String?): ImageVector = when (toolName?.lowercase
 internal fun toolRunningLabelRes(toolName: String?): Int = when (toolName?.lowercase()) {
     "editfile", "writefile" -> R.string.chat_status_editing_file
     "readfile", "list", "sendfile", "viewimage" -> R.string.chat_status_reading_file
-    "search", "websearch", "webfetch" -> R.string.chat_status_searching_web
+    "search", "websearch", "webfetch", "browser" -> R.string.chat_status_searching_web
     "bash", "terminal" -> R.string.chat_status_running_command
     "generateimage" -> R.string.chat_status_generating_image
     "todo" -> R.string.chat_status_updating_todo

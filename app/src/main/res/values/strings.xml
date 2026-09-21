@@ -371,6 +371,7 @@
     <string name="chat_no_model_selected">未选择模型</string>
     <string name="chat_open_git">打开版本控制</string>
     <string name="chat_open_terminal">打开终端</string>
+    <string name="chat_open_browser">打开浏览器</string>
     <string name="chat_ssh_connected">SSH：已连接</string>
     <string name="chat_ssh_connecting">SSH：连接中…</string>
     <string name="chat_ssh_failed">SSH：连接失败</string>
@@ -1447,4 +1448,12 @@
     <string name="onboarding_choose_model_in_sheet_desc">点击刚刚添加的模型，指定当前对话使用的 AI。</string>
     <string name="onboarding_send_message_title">开始对话</string>
     <string name="onboarding_send_message_desc">模型已就绪！在输入框输入你的编程需求或问题，开始与 AI 助手协同工作吧！</string>
+
+    <!-- Browser -->
+    <string name="browser_title">浏览器</string>
+    <string name="browser_address_hint">输入网址或搜索</string>
+    <string name="browser_back">后退</string>
+    <string name="browser_forward">前进</string>
+    <string name="browser_reload">刷新</string>
+    <string name="browser_not_ready">浏览器未就绪，请在地址栏输入网址开始浏览</string>
 </resources>

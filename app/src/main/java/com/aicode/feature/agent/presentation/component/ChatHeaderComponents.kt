@@ -40,6 +40,7 @@ import com.aicode.feature.onboarding.presentation.onboardingTarget
 import com.aicode.feature.settings.presentation.component.ModelLogoIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
+import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Terminal
@@ -54,12 +55,14 @@ internal fun ChatHeader(
     onNewChat: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
+    onNavigateToBrowser: () -> Unit = {},
     currentMode: AgentMode,
     onToggleMode: (AgentMode) -> Unit,
     connectionState: com.aicode.feature.agent.domain.container.ConnectionState? = null,
     showMenuButton: Boolean = true,
     terminalActive: Boolean = false,
-    gitActive: Boolean = false
+    gitActive: Boolean = false,
+    browserActive: Boolean = false
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background
@@ -124,6 +127,12 @@ internal fun ChatHeader(
                     contentDescription = stringResource(R.string.chat_open_git),
                     active = gitActive,
                     onClick = onNavigateToGit
+                )
+                WorkbenchIconButton(
+                    icon = FeatherIcons.Globe,
+                    contentDescription = stringResource(R.string.chat_open_browser),
+                    active = browserActive,
+                    onClick = onNavigateToBrowser
                 )
                 WorkbenchIconButton(
                     icon = FeatherIcons.Terminal,

@@ -71,6 +71,7 @@ import com.aicode.feature.agent.presentation.AIAgentViewModel
 import com.aicode.feature.agent.presentation.component.AIChatPanel
 import com.aicode.feature.agent.presentation.component.ChatDrawerContent
 import com.aicode.feature.editor.presentation.CodeEditorScreen
+import com.aicode.feature.browser.presentation.BrowserScreen
 import com.aicode.feature.git.presentation.GitViewModel
 import com.aicode.feature.credentials.presentation.component.CredentialScreen
 import com.aicode.feature.git.presentation.component.GitScreen
@@ -453,7 +454,13 @@ fun AppNavigation(
         if (expanded) {
             paneKind = if (paneKind == target) WorkbenchPaneKind.NONE else target
         } else {
-            navController.navigate(if (target == WorkbenchPaneKind.TERMINAL) "terminal" else "git")
+            val route = when (target) {
+                WorkbenchPaneKind.TERMINAL -> "terminal"
+                WorkbenchPaneKind.GIT -> "git"
+                WorkbenchPaneKind.BROWSER -> "browser"
+                else -> "chat"
+            }
+            navController.navigate(route)
         }
     }
 
@@ -572,8 +579,10 @@ fun AppNavigation(
                                 showMenuButton = !permanentDrawer,
                                 onNavigateToTerminal = { openWorkbench(WorkbenchPaneKind.TERMINAL) },
                                 onNavigateToGit = { openWorkbench(WorkbenchPaneKind.GIT) },
+                                onNavigateToBrowser = { openWorkbench(WorkbenchPaneKind.BROWSER) },
                                 terminalActive = paneOpen && paneKind == WorkbenchPaneKind.TERMINAL,
                                 gitActive = paneOpen && paneKind == WorkbenchPaneKind.GIT,
+                                browserActive = paneOpen && paneKind == WorkbenchPaneKind.BROWSER,
                                 onboardingStep = if (onboardingUiState.active) onboardingUiState.step else null,
                                 onSelectModelInOnboarding = {
                                     if (onboardingUiState.active && onboardingUiState.step == OnboardingStep.SIMULATE_CHOOSE_MODEL) {
@@ -647,6 +656,13 @@ fun AppNavigation(
                 val terminalViewModel: TerminalViewModel = hiltViewModel()
                 TerminalScreen(
                     viewModel = terminalViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable("browser") {
+                val browserViewModel: com.aicode.feature.browser.presentation.BrowserViewModel = hiltViewModel()
+                BrowserScreen(
+                    browserManager = browserViewModel.browserManager,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

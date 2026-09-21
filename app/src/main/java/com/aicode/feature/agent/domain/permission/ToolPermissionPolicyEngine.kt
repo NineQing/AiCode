@@ -58,6 +58,13 @@ class ToolPermissionPolicyEngine @Inject constructor(
         private val TASK_AUTO_ACTIONS = setOf("read", "list", "send")
 
         /**
+         * 浏览器工具：navigate/click/fill/select/evaluate/dialog/back/forward/reload 为写操作（PLAN 拦截），
+         * getText/getHtml/getBackbone/screenshot/console/wait 为只读（PLAN 放行）。
+         */
+        const val BROWSER_TOOL = "browser"
+        private val BROWSER_READ_ONLY_ACTIONS = setOf("getText", "getHtml", "getBackbone", "screenshot", "console", "wait")
+
+        /**
          * 提权参数：非 AUTO 模式下，命令因内置安全防护（灾难性 rm）被拒时，
          * 可在调用时置为 true 重试，把硬拒绝降级为一次性用户授权。
          */
@@ -193,6 +200,10 @@ class ToolPermissionPolicyEngine @Inject constructor(
         if (toolName == TERMINAL_TOOL) {
             val action = (args["action"] as? JsonPrimitive)?.content?.trim()?.lowercase()
             return action != "read"
+        }
+        if (toolName == BROWSER_TOOL) {
+            val action = (args["action"] as? JsonPrimitive)?.content?.trim()
+            return action !in BROWSER_READ_ONLY_ACTIONS
         }
         return false
     }

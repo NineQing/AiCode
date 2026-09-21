@@ -393,6 +393,7 @@ fun AIChatPanel(
     viewModel: AIAgentViewModel,
     onNavigateToTerminal: () -> Unit = {},
     onNavigateToGit: () -> Unit = {},
+    onNavigateToBrowser: () -> Unit = {},
     settingsViewModel: SettingsViewModel? = null,
     workspaceViewModel: WorkspaceViewModel? = null,
     onOpenDrawer: () -> Unit,
@@ -400,6 +401,7 @@ fun AIChatPanel(
     /** 大屏右栏当前开的是终端 / Git 时，顶栏对应图标高亮。 */
     terminalActive: Boolean = false,
     gitActive: Boolean = false,
+    browserActive: Boolean = false,
     currentFile: String? = null,
     selectedCode: String? = null,
     onboardingStep: OnboardingStep? = null,
@@ -1068,12 +1070,14 @@ fun AIChatPanel(
                 onNewChat = { viewModel.newSession() },
                 onNavigateToTerminal = onNavigateToTerminal,
                 onNavigateToGit = onNavigateToGit,
+                onNavigateToBrowser = onNavigateToBrowser,
                 currentMode = currentMode,
                 onToggleMode = { viewModel.setSessionMode(it) },
                 connectionState = connectionState?.takeIf { isRemote },
                 showMenuButton = showMenuButton,
                 terminalActive = terminalActive,
-                gitActive = gitActive
+                gitActive = gitActive,
+                browserActive = browserActive
             )
         }
     ) { padding ->

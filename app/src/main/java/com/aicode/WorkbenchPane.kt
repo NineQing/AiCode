@@ -11,13 +11,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.aicode.feature.credentials.presentation.CredentialViewModel
 import com.aicode.feature.credentials.presentation.component.CredentialScreen
 import com.aicode.feature.editor.presentation.CodeEditorScreen
+import com.aicode.feature.browser.presentation.BrowserScreen
+import com.aicode.feature.browser.presentation.BrowserViewModel
 import com.aicode.feature.git.presentation.GitViewModel
 import com.aicode.feature.git.presentation.component.GitScreen
 import com.aicode.feature.terminal.presentation.TerminalViewModel
 import com.aicode.feature.terminal.presentation.component.TerminalScreen
 
 /** 大屏右栏（工作台）当前承载的内容。 */
-internal enum class WorkbenchPaneKind { NONE, EDITOR, TERMINAL, GIT }
+internal enum class WorkbenchPaneKind { NONE, EDITOR, TERMINAL, GIT, BROWSER }
 
 /**
  * 大屏下与聊天并排的右栏内容。
@@ -74,6 +76,14 @@ internal fun WorkbenchPaneContent(
                         embedded = true
                     )
                 }
+            }
+            WorkbenchPaneKind.BROWSER -> {
+                val browserViewModel: BrowserViewModel = hiltViewModel()
+                BrowserScreen(
+                    browserManager = browserViewModel.browserManager,
+                    onNavigateBack = onClose,
+                    embedded = true
+                )
             }
         }
     }

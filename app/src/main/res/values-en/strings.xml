@@ -371,6 +371,7 @@
     <string name="chat_no_model_selected">No model selected</string>
     <string name="chat_open_git">Open version control</string>
     <string name="chat_open_terminal">Open terminal</string>
+    <string name="chat_open_browser">Open browser</string>
     <string name="chat_ssh_connected">SSH: Connected</string>
     <string name="chat_ssh_connecting">SSH: Connecting…</string>
     <string name="chat_ssh_failed">SSH: Connection failed</string>
@@ -1448,4 +1449,12 @@
     <string name="onboarding_choose_model_in_sheet_desc">Tap the model you just added to set it for your chat session.</string>
     <string name="onboarding_send_message_title">Start Chatting</string>
     <string name="onboarding_send_message_desc">Model ready! Type your coding tasks or questions here to start collaborating with the AI assistant.</string>
+
+    <!-- Browser -->
+    <string name="browser_title">Browser</string>
+    <string name="browser_address_hint">Enter URL or search</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
+    <string name="browser_not_ready">Browser not ready. Enter a URL in the address bar to start browsing.</string>
 </resources>

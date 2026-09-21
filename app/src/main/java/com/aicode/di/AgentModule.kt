@@ -81,6 +81,7 @@ import com.aicode.feature.agent.domain.tool.mode.PlanApprovalManager
 import com.aicode.feature.agent.domain.tool.mode.SwitchModeTool
 import com.aicode.feature.agent.domain.tool.search.WebFetchTool
 import com.aicode.feature.agent.domain.tool.search.WebSearchTool
+import com.aicode.feature.agent.domain.tool.browser.BrowserTool
 import com.aicode.feature.agent.domain.workflow.ContextCompactor
 import com.aicode.feature.agent.domain.workflow.StatefulAgentWorkflow
 import com.aicode.feature.settings.data.repository.CompactionModelSettingsRepository
@@ -285,7 +286,8 @@ object AgentModule {
         todoTool: TodoTool,
         memoryTool: MemoryTool,
         taskTool: TaskTool,
-        messageParentTool: MessageParentTool
+        messageParentTool: MessageParentTool,
+        browserTool: BrowserTool
     ): ToolRegistry {
         return ToolRegistry().apply {
             register("readFile", readFileTool)
@@ -309,6 +311,7 @@ object AgentModule {
             register("memory", memoryTool)
             register("task", taskTool)
             register("messageParent", messageParentTool)
+            register("browser", browserTool)
         }
     }
 

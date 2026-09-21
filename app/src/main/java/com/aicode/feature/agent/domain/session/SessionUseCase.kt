@@ -85,6 +85,11 @@ class SessionUseCase @Inject constructor(
         return chatSessionDao.getRootSessionsByWorkspaceOnce(workspacePath).firstOrNull()
     }
 
+    /** 工作区里最近更新的根会话（忽略置顶），供启动时进入最近会话。 */
+    suspend fun getMostRecentSessionOfWorkspace(workspacePath: String): ChatSessionEntity? {
+        return chatSessionDao.getLatestRootSessionByWorkspace(workspacePath)
+    }
+
     /** 回收工作区下多余的空会话（从未发送过消息），保留 [keepId]；保证列表最多一个空会话。 */
     suspend fun recycleEmptySessions(workspacePath: String, keepId: String? = null): Int {
         var count = 0

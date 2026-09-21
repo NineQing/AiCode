@@ -950,10 +950,10 @@ class AIAgentViewModel @Inject constructor(
         viewModelScope.launch {
             _currentWorkspace.collectLatest { path ->
                 if (path.isBlank()) return@collectLatest
-                val recent = sessionUseCase.getFirstSessionOfWorkspace(path)
+                val recent = sessionUseCase.getMostRecentSessionOfWorkspace(path)
                 // 立即确定并设置当前会话，确保首帧 UI 秒开、侧边栏立即出现新会话，彻底消除转圈卡顿。
-                // 「打开最近会话」有历史就直接进最近那个；「新开会话」复用还没发过消息的空会话
-                //（避免每次启动都堆一个空会话），其余情况新建。
+                // 「打开最近会话」有历史就直接进最近那个（按 updatedAt，不受置顶影响）；
+                // 「新开会话」复用还没发过消息的空会话（避免每次启动都堆一个空会话），其余情况新建。
                 val targetId = when {
                     recent == null -> createAndUpsertSession(path)
                     generalSettingsRepository.startupSessionMode() == StartupSessionMode.RECENT_SESSION -> recent.id

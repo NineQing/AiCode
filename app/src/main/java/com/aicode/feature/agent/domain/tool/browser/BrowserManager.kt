@@ -3,6 +3,7 @@ package com.aicode.feature.agent.domain.tool.browser
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -55,7 +56,8 @@ data class BrowserTabState(
 data class BrowserState(
     val tabs: List<BrowserTabState> = emptyList(),
     val activeTabId: String = "",
-    val attached: Boolean = false
+    val attached: Boolean = false,
+    val nightMode: Boolean = false
 ) {
     val activeTab: BrowserTabState? get() = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
     val url: String get() = activeTab?.url.orEmpty()
@@ -100,6 +102,15 @@ class BrowserManager @Inject constructor(
         private const val MAX_CONSOLE_LOGS = 200
         private const val DIALOG_TIMEOUT_MS = 30_000L
         const val MAX_TABS = 10
+
+        private const val NIGHT_STYLE_ID = "__bicode_night_css__"
+        private val NIGHT_BG_COLOR = 0xFF121212.toInt()
+
+        /** 反色夜间样式：整页 invert + hue-rotate，图片/视频二次反色还原原始观感。 */
+        private const val NIGHT_CSS =
+            "html{filter:invert(1) hue-rotate(180deg);background:#fff}" +
+                "img,video,picture,canvas,svg image,[style*=\"background-image\"]" +
+                "{filter:invert(1) hue-rotate(180deg)}"
     }
 
     private class TabHolder(
@@ -131,6 +142,14 @@ class BrowserManager @Inject constructor(
     private var tabSeq = 1
     private var containerView: FrameLayout? = null
     private var hiddenHost: ViewGroup? = null
+
+    /** App 外观是否为深色，由 UI 层通过 [setAppDarkTheme] 推送。 */
+    private var appDarkTheme: Boolean = false
+
+    /** 手动覆盖：null 表示跟随 App 外观，true/false 为用户在浏览器内的显式选择。 */
+    private var nightModeOverride: Boolean? = null
+
+    private val nightMode: Boolean get() = nightModeOverride ?: appDarkTheme
 
     private val _state = MutableStateFlow(BrowserState())
     val state: StateFlow<BrowserState> = _state.asStateFlow()
@@ -242,6 +261,7 @@ class BrowserManager @Inject constructor(
                 val tab = tabHolderRef() ?: return
                 tab.loading = false
                 tab.url = url.orEmpty()
+                if (view != null && nightMode) applyNightModeTo(view)
                 val finish = {
                     tab.loadDeferred?.complete(Result.success(url.orEmpty()))
                     tab.loadDeferred = null
@@ -322,6 +342,7 @@ class BrowserManager @Inject constructor(
         wv.settings.useWideViewPort = true
         wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        wv.setBackgroundColor(if (nightMode) NIGHT_BG_COLOR else Color.WHITE)
         wv.addJavascriptInterface(BrowserJsBridge(tabId), "__browserBridge__")
 
         // 设置 Headless 默认尺寸，保证后台与离屏测试可用
@@ -376,9 +397,49 @@ class BrowserManager @Inject constructor(
             it.copy(
                 tabs = tabs.map { t -> t.toState() },
                 activeTabId = activeTabId,
-                attached = containerView != null
+                attached = containerView != null,
+                nightMode = nightMode
             )
         }
+    }
+
+    // ================= 夜间模式 =================
+
+    /** App 外观变化时调用，重算并应用到所有标签页。 */
+    fun setAppDarkTheme(dark: Boolean) {
+        if (appDarkTheme == dark) return
+        appDarkTheme = dark
+        applyNightMode()
+    }
+
+    /** 底栏手动切换；切回与 App 外观一致时自动恢复跟随。 */
+    fun toggleNightMode() {
+        val next = !nightMode
+        nightModeOverride = if (next == appDarkTheme) null else next
+        applyNightMode()
+    }
+
+    private fun applyNightMode() {
+        val night = nightMode
+        tabs.forEach { tab ->
+            tab.webView.setBackgroundColor(if (night) NIGHT_BG_COLOR else Color.WHITE)
+            applyNightModeTo(tab.webView)
+        }
+        publishState()
+    }
+
+    /** 注入或移除夜间样式。反色作用在渲染上，离屏截图同样会呈现夜间配色。 */
+    private fun applyNightModeTo(wv: WebView) {
+        val js = if (nightMode) {
+            "(function(){var id='$NIGHT_STYLE_ID';var el=document.getElementById(id);" +
+                "if(!el){el=document.createElement('style');el.id=id;" +
+                "(document.head||document.documentElement).appendChild(el);}" +
+                "el.textContent=${jsStringLiteral(NIGHT_CSS)};})()"
+        } else {
+            "(function(){var el=document.getElementById('$NIGHT_STYLE_ID');" +
+                "if(el&&el.parentNode){el.parentNode.removeChild(el);}})()"
+        }
+        wv.evaluateJavascript(js, null)
     }
 
     private fun updateContainerView() {

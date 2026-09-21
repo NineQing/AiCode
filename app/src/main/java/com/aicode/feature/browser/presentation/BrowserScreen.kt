@@ -73,8 +73,10 @@ import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Globe
+import compose.icons.feathericons.Moon
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Sun
 import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 
@@ -111,10 +113,12 @@ fun BrowserScreen(
                 canGoBack = activeTab?.loading == false,
                 canGoForward = activeTab?.loading == false,
                 tabsCount = state.tabs.size,
+                nightMode = state.nightMode,
                 embedded = embedded,
                 onGoBack = { scope.launch { browserManager.goBack() } },
                 onGoForward = { scope.launch { browserManager.goForward() } },
                 onNewTab = { scope.launch { browserManager.newTab() } },
+                onToggleNightMode = { browserManager.toggleNightMode() },
                 onOpenTabs = { showTabsSheet = true }
             )
         }
@@ -478,10 +482,12 @@ private fun BrowserBottomBar(
     canGoBack: Boolean,
     canGoForward: Boolean,
     tabsCount: Int,
+    nightMode: Boolean,
     embedded: Boolean,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
     onNewTab: () -> Unit,
+    onToggleNightMode: () -> Unit,
     onOpenTabs: () -> Unit
 ) {
     Surface(
@@ -540,7 +546,19 @@ private fun BrowserBottomBar(
                     )
                 }
 
-                // 4. 标签页管理按钮（数字方框徽标）
+                // 4. 夜间模式切换
+                IconButton(onClick = onToggleNightMode) {
+                    Icon(
+                        if (nightMode) FeatherIcons.Sun else FeatherIcons.Moon,
+                        contentDescription = stringResource(
+                            if (nightMode) R.string.browser_night_mode_on else R.string.browser_night_mode_off
+                        ),
+                        tint = if (nightMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // 5. 标签页管理按钮（数字方框徽标）
                 Box(
                     modifier = Modifier
                         .size(28.dp)

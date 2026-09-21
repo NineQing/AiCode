@@ -231,6 +231,10 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
 
+            LaunchedEffect(darkTheme) {
+                browserManager.setAppDarkTheme(darkTheme)
+            }
+
             AIEditorTheme(
                 darkTheme = darkTheme,
                 preset = AppThemePreset.findById(themePresetId),

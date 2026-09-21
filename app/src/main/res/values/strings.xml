@@ -37,6 +37,11 @@
     <string name="settings_compaction_threshold_desc">上下文占用达到窗口的该比例时自动压缩</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_compaction_threshold_input_hint">填 1-100 的整数百分比</string>
+    <string name="settings_general_tools">工具</string>
+    <string name="settings_sendfile_max_size">sendFile 单文件上限</string>
+    <string name="settings_sendfile_max_size_desc">单个文件大小上限，超过则整批发送失败</string>
+    <string name="settings_mb_value">%1$d MB</string>
+    <string name="settings_sendfile_max_size_input_hint">单位 MB，填大于 0 的整数</string>
     <string name="settings_vision_model">识图模型</string>
     <string name="settings_compaction_model">压缩模型</string>
     <string name="settings_title_model">标题总结模型</string>

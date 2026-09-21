@@ -485,6 +485,9 @@ class SettingsViewModel @Inject constructor(
     private val _compactionThresholdPercent = MutableStateFlow(90)
     val compactionThresholdPercent: StateFlow<Int> = _compactionThresholdPercent.asStateFlow()
 
+    private val _sendFileMaxSizeMb = MutableStateFlow(100)
+    val sendFileMaxSizeMb: StateFlow<Int> = _sendFileMaxSizeMb.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -787,6 +790,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 generalSettingsRepository.compactionThresholdPercentFlow.collectLatest {
                     _compactionThresholdPercent.value = it
+                }
+            }
+
+            launch {
+                generalSettingsRepository.sendFileMaxSizeMbFlow.collectLatest {
+                    _sendFileMaxSizeMb.value = it
                 }
             }
 
@@ -1438,6 +1447,13 @@ class SettingsViewModel @Inject constructor(
     fun setCompactionThresholdPercent(percent: Int) {
         viewModelScope.launch {
             generalSettingsRepository.setCompactionThresholdPercent(percent)
+        }
+    }
+
+    /** sendFile 单个文件大小上限（MB，不小于 1）。 */
+    fun setSendFileMaxSizeMb(mb: Int) {
+        viewModelScope.launch {
+            generalSettingsRepository.setSendFileMaxSizeMb(mb)
         }
     }
 

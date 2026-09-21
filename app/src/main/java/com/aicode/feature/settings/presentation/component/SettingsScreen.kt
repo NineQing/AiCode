@@ -219,6 +219,7 @@ fun SettingsScreen(
     val maxNetworkRetries by viewModel.maxNetworkRetries.collectAsStateWithLifecycle()
     val enterToSend by viewModel.enterToSend.collectAsStateWithLifecycle()
     val compactionThresholdPercent by viewModel.compactionThresholdPercent.collectAsStateWithLifecycle()
+    val sendFileMaxSizeMb by viewModel.sendFileMaxSizeMb.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val themePresetId by viewModel.themePresetId.collectAsStateWithLifecycle()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
@@ -761,7 +762,9 @@ fun SettingsScreen(
                     enterToSend = enterToSend,
                     onToggleEnterToSend = { viewModel.setEnterToSend(it) },
                     compactionThresholdPercent = compactionThresholdPercent,
-                    onSetCompactionThresholdPercent = { viewModel.setCompactionThresholdPercent(it) }
+                    onSetCompactionThresholdPercent = { viewModel.setCompactionThresholdPercent(it) },
+                    sendFileMaxSizeMb = sendFileMaxSizeMb,
+                    onSetSendFileMaxSizeMb = { viewModel.setSendFileMaxSizeMb(it) }
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,

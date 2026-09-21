@@ -27,9 +27,10 @@ enum class StartupSessionMode {
 /**
  * 「偏好设置」里的用户偏好。
  *
- * 目前六项：拉取模型成功后是否自动移除远端已不存在的本地模型（默认开启）、
+ * 目前七项：拉取模型成功后是否自动移除远端已不存在的本地模型（默认开启）、
  * 启动时进入新会话还是最近会话（默认新开会话）、首字 / 数据块间隔超时（秒）、
- * 网络请求的最大重试次数（默认 6），以及回车发送与自动压缩阈值。
+ * 网络请求的最大重试次数（默认 6）、回车发送、自动压缩阈值，
+ * 以及 sendFile 单个文件大小上限（默认 100MB）。
  * DataStore 用法与 [KeepaliveSettingsRepository] 一致。
  */
 @Singleton
@@ -44,6 +45,7 @@ class GeneralSettingsRepository @Inject constructor(
         val MAX_NETWORK_RETRIES_KEY = intPreferencesKey("max_network_retries")
         val ENTER_TO_SEND_KEY = booleanPreferencesKey("enter_to_send")
         val COMPACTION_THRESHOLD_PERCENT_KEY = intPreferencesKey("compaction_threshold_percent")
+        val SENDFILE_MAX_SIZE_MB_KEY = intPreferencesKey("sendfile_max_size_mb")
 
         /** 首字超时默认 5 分钟，与原硬编码值一致。 */
         const val DEFAULT_FIRST_BYTE_TIMEOUT_SEC = 300
@@ -53,6 +55,9 @@ class GeneralSettingsRepository @Inject constructor(
 
         /** 自动压缩阈值默认 90%，与原硬编码值一致。 */
         const val DEFAULT_COMPACTION_THRESHOLD_PERCENT = 90
+
+        /** sendFile 单个文件大小上限默认 100MB，与原硬编码值一致。 */
+        const val DEFAULT_SENDFILE_MAX_SIZE_MB = 100
     }
 
     /** 拉取模型后自动对齐本地列表的开关流；未设置时回退到 true（默认开启）。 */
@@ -172,4 +177,21 @@ class GeneralSettingsRepository @Inject constructor(
     suspend fun restoreEnterToSend(enabled: Boolean) = setEnterToSend(enabled)
 
     suspend fun restoreCompactionThresholdPercent(percent: Int) = setCompactionThresholdPercent(percent)
+
+    /** sendFile 单个文件大小上限（MB）；默认 100，下限 1，不设上限。 */
+    val sendFileMaxSizeMbFlow: Flow<Int> = context.generalDataStore.data.map {
+        (it[SENDFILE_MAX_SIZE_MB_KEY] ?: DEFAULT_SENDFILE_MAX_SIZE_MB).coerceAtLeast(1)
+    }
+
+    suspend fun setSendFileMaxSizeMb(mb: Int) {
+        context.generalDataStore.edit { it[SENDFILE_MAX_SIZE_MB_KEY] = mb.coerceAtLeast(1) }
+    }
+
+    /** 执行 sendFile 前读取一次单个文件大小上限（MB）。 */
+    suspend fun sendFileMaxSizeMb(): Int = sendFileMaxSizeMbFlow.first()
+
+    /** 备份快照：sendFile 单个文件大小上限。 */
+    suspend fun sendFileMaxSizeMbSnapshot(): Int = sendFileMaxSizeMbFlow.first()
+
+    suspend fun restoreSendFileMaxSizeMb(mb: Int) = setSendFileMaxSizeMb(mb)
 }

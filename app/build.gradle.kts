@@ -189,6 +189,15 @@ android {
                 include = false
             }
         }
+        // beta 测试版：继承 release 的全部配置（签名/R8/资源压缩/proguard），仅包名后缀 .beta
+        // → applicationId 变 com.aicode.beta，可与正式版同机共存、互不覆盖。
+        // 由 .github/workflows/beta.yml 在 push main 时构建并上传 Artifacts，供测机验证。
+        create("beta") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".beta"
+            // :terminal-emulator / :terminal-view 无 beta 变体，依赖解析回退到它们的 release 变体。
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {

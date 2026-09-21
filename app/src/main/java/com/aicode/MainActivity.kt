@@ -61,6 +61,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aicode.core.theme.AIEditorTheme
 import com.aicode.core.theme.AppThemePreset
+import com.aicode.core.ui.BetaWatermark
 import com.aicode.core.ui.PAGE_MOTION_MS
 import com.aicode.core.ui.VerticalSplitHandle
 import com.aicode.core.ui.drawerWidth
@@ -276,6 +277,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                        // beta 包全局水印，置于最上层，不拦截触摸。
+                        BetaWatermark()
                     }
                 }
             }

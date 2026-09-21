@@ -22,6 +22,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.model.AgentImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -540,11 +541,25 @@ class BrowserManager @Inject constructor(
 
     suspend fun navigate(url: String, tabId: String? = null): String = withContext(Dispatchers.Main) {
         val tab = resolveTab(tabId)
-        val finalUrl = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            loadInto(tab, url)
+        } else {
+            // 无协议头：优先 https，SSL/连接失败再回退 http（部分站点未配置 SSL）
+            try {
+                loadInto(tab, "https://$url")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                loadInto(tab, "http://$url")
+            }
+        }
+    }
+
+    private suspend fun loadInto(tab: TabHolder, finalUrl: String): String {
         val deferred = CompletableDeferred<Result<String>>()
         tab.loadDeferred = deferred
         tab.webView.loadUrl(finalUrl)
-        withTimeout(NAVIGATE_TIMEOUT_MS) { deferred.await() }.getOrThrow()
+        return withTimeout(NAVIGATE_TIMEOUT_MS) { deferred.await() }.getOrThrow()
     }
 
     suspend fun evaluateJavaScript(script: String, tabId: String? = null): String? = withContext(Dispatchers.Main) {

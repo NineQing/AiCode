@@ -56,7 +56,9 @@ class SlashCommandRegistry @Inject constructor(
                 )
             )
         }
-        skills.filterNot { it.name.lowercase() in actionsByName }.forEach {
+        skills.filterNot { it.name.lowercase() in actionsByName }
+            .sortedBy { it.name.lowercase() }
+            .forEach {
             add(
                 SlashCommand(
                     name = it.name,

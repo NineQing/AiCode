@@ -86,8 +86,10 @@ jobs:
           sha7="${GITHUB_SHA::7}"
           cp "app/build/outputs/apk/universal/beta/app-universal-beta.apk" \
              "dist/aicode-universal-beta-${sha7}.apk"
-          if [[ -f "app/build/outputs/mapping/universal/beta/mapping.txt" ]]; then
-            cp "app/build/outputs/mapping/universal/beta/mapping.txt" \
+          # AGP 8.x 的 mapping 输出目录是 variant 驼峰名（flavor + BuildType），
+          # 即 outputs/mapping/universalBeta/，不是 outputs/mapping/universal/beta/。
+          if [[ -f "app/build/outputs/mapping/universalBeta/mapping.txt" ]]; then
+            cp "app/build/outputs/mapping/universalBeta/mapping.txt" \
                "dist/aicode-universal-beta-${sha7}-mapping.txt"
           fi
           ls -lh dist/

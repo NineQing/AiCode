@@ -197,7 +197,17 @@ data class TokenStatsUiState(
     /** 当前周期总费用（USD，渠道自定义单价优先，否则回退 models.dev 单价估算）。 */
     val totalCostUsd: Double = 0.0,
     /** 调用明细分页内每条记录的费用（key=记录 id，null=模型无单价）。 */
-    val recentCallCosts: Map<Long, Double?> = emptyMap()
+    val recentCallCosts: Map<Long, Double?> = emptyMap(),
+    /** 筛选：指定供应商 ID（null 为不限）。 */
+    val filterProviderId: String? = null,
+    /** 筛选：指定模型名（null 为不限）。 */
+    val filterModel: String? = null,
+    /** 可供筛选的供应商列表（id to 名称）。 */
+    val availableProviders: List<Pair<String, String>> = emptyList(),
+    /** 可供筛选的模型列表。 */
+    val availableModels: List<String> = emptyList(),
+    /** 各供应商 ID 对应的密钥/凭据数量。 */
+    val providerKeyCounts: Map<String, Int> = emptyMap()
 )
 
 private data class ModelStatsPaging(
@@ -488,6 +498,9 @@ class SettingsViewModel @Inject constructor(
     private val _sendFileMaxSizeMb = MutableStateFlow(100)
     val sendFileMaxSizeMb: StateFlow<Int> = _sendFileMaxSizeMb.asStateFlow()
 
+    private val _deleteExternalWorkspaceSessions = MutableStateFlow(false)
+    val deleteExternalWorkspaceSessions: StateFlow<Boolean> = _deleteExternalWorkspaceSessions.asStateFlow()
+
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
@@ -641,6 +654,14 @@ class SettingsViewModel @Inject constructor(
 
     /** Token 统计：模型分页页码（0 起）。 */
     private val _modelStatsPage = MutableStateFlow(0)
+
+    /** Token 统计：供应商筛选（null 为全部）。 */
+    private val _filterProviderId = MutableStateFlow<String?>(null)
+    val filterProviderId: StateFlow<String?> = _filterProviderId.asStateFlow()
+
+    /** Token 统计：模型筛选（null 为全部）。 */
+    private val _filterModel = MutableStateFlow<String?>(null)
+    val filterModel: StateFlow<String?> = _filterModel.asStateFlow()
 
     /** 工作区已配置的远程连接通道，供容器镜像 SSH 模式下拉复用。 */
     val remoteConnections: StateFlow<List<RemoteConnection>> = remoteRepository.getConnections()
@@ -800,6 +821,12 @@ class SettingsViewModel @Inject constructor(
             }
 
             launch {
+                generalSettingsRepository.deleteExternalWorkspaceSessionsFlow.collectLatest {
+                    _deleteExternalWorkspaceSessions.value = it
+                }
+            }
+
+            launch {
                 themeSettingsRepository.themeModeFlow.collectLatest {
                     _themeMode.value = it
                 }
@@ -894,17 +921,28 @@ class SettingsViewModel @Inject constructor(
             }
 
             launch {
-                _tokenStatsPeriod.flatMapLatest { period ->
+                combine(
+                    _tokenStatsPeriod,
+                    _filterProviderId,
+                    _filterModel
+                ) { period, filterProviderId, filterModel ->
+                    Triple(period, filterProviderId, filterModel)
+                }.flatMapLatest { (period, filterProviderId, filterModel) ->
                     val start = period.startMillis(System.currentTimeMillis())
                     val tz = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong()
                     combine(
-                        if (period == TokenStatsPeriod.TODAY) {
-                            llmCallRecordDao.getHourStats(start, tz)
-                        } else {
-                            llmCallRecordDao.getDayStats(start, tz)
-                        },
-                        llmCallRecordDao.getSummary(start),
-                        combine(llmCallRecordDao.getProviderStats(start), _providerStatsPage) { list, page ->
+                        combine(
+                            if (period == TokenStatsPeriod.TODAY) {
+                                llmCallRecordDao.getHourStats(start, tz, filterProviderId, filterModel)
+                            } else {
+                                llmCallRecordDao.getDayStats(start, tz, filterProviderId, filterModel)
+                            },
+                            llmCallRecordDao.getSummary(start, filterProviderId, filterModel)
+                        ) { rawTrend, summary -> rawTrend to summary },
+                        combine(
+                            llmCallRecordDao.getProviderStats(start, filterProviderId, filterModel),
+                            _providerStatsPage
+                        ) { list, page ->
                             val total = list.size
                             val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
                             val safePage = page.coerceIn(0, lastPage)
@@ -912,7 +950,10 @@ class SettingsViewModel @Inject constructor(
                             Triple(paged, safePage, total)
                         },
                         combine(
-                            combine(llmCallRecordDao.getModelStats(start), _modelStatsPage) { list, page ->
+                            combine(
+                                llmCallRecordDao.getModelStats(start, filterProviderId, filterModel),
+                                _modelStatsPage
+                            ) { list, page ->
                                 val total = list.size
                                 val lastPage = if (total == 0) 0 else (total - 1) / STATS_PAGE_SIZE
                                 val safePage = page.coerceIn(0, lastPage)
@@ -920,17 +961,31 @@ class SettingsViewModel @Inject constructor(
                                 ModelStatsPaging(paged, safePage, total)
                             },
                             // 总费用必须带渠道聚合：自定义单价按渠道存储，丢渠道就会取错价。
-                            llmCallRecordDao.getModelProviderCostStats(start)
+                            llmCallRecordDao.getModelProviderCostStats(start, filterProviderId, filterModel)
                         ) { modelPaging, costStats -> modelPaging to costStats },
                         // 明细分页：页号或总数变化时重查当前页，其余聚合不重复计算
-                        combine(_tokenStatsPage, llmCallRecordDao.getCallsCount(start)) { page, total -> page to total }
+                        combine(_tokenStatsPage, llmCallRecordDao.getCallsCount(start, filterProviderId, filterModel)) { page, total -> page to total }
                             .flatMapLatest { (page, total) ->
-                                llmCallRecordDao.getRecentCalls(start, CALLS_PAGE_SIZE, page * CALLS_PAGE_SIZE)
+                                llmCallRecordDao.getRecentCalls(start, CALLS_PAGE_SIZE, page * CALLS_PAGE_SIZE, filterProviderId, filterModel)
                                     .map { calls -> Triple(calls, total, page) }
-                            }
-                    ) { rawTrend, summary, (pProviders, pPage, pTotal), (modelPaging, costStats), (calls, total, page) ->
+                            },
+                        // 可选筛选选项列表（全局不限过滤条件时的渠道与模型列表）
+                        combine(
+                            llmCallRecordDao.getProviderStats(start),
+                            llmCallRecordDao.getModelStats(start),
+                            _providers
+                        ) { allProviders, allModels, configuredProviders ->
+                            val providerList = (allProviders.mapNotNull { p ->
+                                val id = p.providerId ?: return@mapNotNull null
+                                id to (p.providerName ?: id)
+                            } + configuredProviders.map { it.id to it.name }).distinctBy { it.first }
+                            val modelList = allModels.mapNotNull { it.model }.distinct()
+                            val keyCounts = configuredProviders.associate { it.id to it.apiKeys.size }
+                            Triple(providerList, modelList, keyCounts)
+                        }
+                    ) { (rawTrend, summary), (pProviders, pPage, pTotal), (modelPaging, costStats), (calls, total, page), (availableProviders, availableModels, keyCounts) ->
                         val trend = padTrend(period, rawTrend, tz)
-                        val costs = withContext(Dispatchers.IO) {
+                        val costs = withContext(Dispatchers.Default) {
                             val perCall = calls.associate {
                                 it.record.id to callCostUsd(it.record.providerId, it.record.model, it.record.inputTokens.toLong(), it.record.cachedInputTokens.toLong(), it.record.outputTokens.toLong(), it.record.cacheCreationTokens.toLong())
                             }
@@ -953,7 +1008,12 @@ class SettingsViewModel @Inject constructor(
                             modelsPage = modelPaging.page,
                             modelsTotal = modelPaging.total,
                             totalCostUsd = costs.second,
-                            recentCallCosts = costs.first
+                            recentCallCosts = costs.first,
+                            filterProviderId = filterProviderId,
+                            filterModel = filterModel,
+                            availableProviders = availableProviders,
+                            availableModels = availableModels,
+                            providerKeyCounts = keyCounts
                         )
                     }
                 }.collectLatest { _tokenStats.value = it }
@@ -1457,6 +1517,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** 移除外部本地工作区时是否一并删除其聊天记录。 */
+    fun setDeleteExternalWorkspaceSessions(enabled: Boolean) {
+        viewModelScope.launch {
+            generalSettingsRepository.setDeleteExternalWorkspaceSessions(enabled)
+        }
+    }
+
     fun setThemeMode(mode: AppThemeMode) {
         viewModelScope.launch {
             themeSettingsRepository.setThemeMode(mode)
@@ -1813,6 +1880,34 @@ class SettingsViewModel @Inject constructor(
         _modelStatsPage.value = 0
     }
 
+    /** 设置供应商筛选（null 为全部）。 */
+    fun setFilterProviderId(providerId: String?) {
+        if (_filterProviderId.value == providerId) return
+        _filterProviderId.value = providerId
+        _tokenStatsPage.value = 0
+        _providerStatsPage.value = 0
+        _modelStatsPage.value = 0
+    }
+
+    /** 设置模型筛选（null 为全部）。 */
+    fun setFilterModel(model: String?) {
+        if (_filterModel.value == model) return
+        _filterModel.value = model
+        _tokenStatsPage.value = 0
+        _providerStatsPage.value = 0
+        _modelStatsPage.value = 0
+    }
+
+    /** 清除所有筛选条件。 */
+    fun clearTokenStatsFilters() {
+        if (_filterProviderId.value == null && _filterModel.value == null) return
+        _filterProviderId.value = null
+        _filterModel.value = null
+        _tokenStatsPage.value = 0
+        _providerStatsPage.value = 0
+        _modelStatsPage.value = 0
+    }
+
     /**
      * 单次调用的预估费用（USD）；模型无单价返回 null。
      * 缓存读价缺失时按输入价 10% 估算，缓存写价缺失时按输入价 [CACHE_WRITE_MARKUP] 倍估算。
@@ -1863,6 +1958,8 @@ class SettingsViewModel @Inject constructor(
     fun resetTokenStats() {
         viewModelScope.launch {
             llmCallRecordDao.deleteAll()
+            _filterProviderId.value = null
+            _filterModel.value = null
             _tokenStatsPage.value = 0
             _providerStatsPage.value = 0
             _modelStatsPage.value = 0

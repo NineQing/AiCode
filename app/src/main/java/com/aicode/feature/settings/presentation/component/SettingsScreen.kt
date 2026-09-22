@@ -220,6 +220,7 @@ fun SettingsScreen(
     val enterToSend by viewModel.enterToSend.collectAsStateWithLifecycle()
     val compactionThresholdPercent by viewModel.compactionThresholdPercent.collectAsStateWithLifecycle()
     val sendFileMaxSizeMb by viewModel.sendFileMaxSizeMb.collectAsStateWithLifecycle()
+    val deleteExternalWorkspaceSessions by viewModel.deleteExternalWorkspaceSessions.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val themePresetId by viewModel.themePresetId.collectAsStateWithLifecycle()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
@@ -764,7 +765,9 @@ fun SettingsScreen(
                     compactionThresholdPercent = compactionThresholdPercent,
                     onSetCompactionThresholdPercent = { viewModel.setCompactionThresholdPercent(it) },
                     sendFileMaxSizeMb = sendFileMaxSizeMb,
-                    onSetSendFileMaxSizeMb = { viewModel.setSendFileMaxSizeMb(it) }
+                    onSetSendFileMaxSizeMb = { viewModel.setSendFileMaxSizeMb(it) },
+                    deleteExternalWorkspaceSessions = deleteExternalWorkspaceSessions,
+                    onToggleDeleteExternalWorkspaceSessions = { viewModel.setDeleteExternalWorkspaceSessions(it) }
                 )
                 SettingsSection.Providers -> ProvidersSection(
                     providers = providers,
@@ -943,7 +946,10 @@ fun SettingsScreen(
                     onSelectPeriod = { viewModel.setTokenStatsPeriod(it) },
                     onSelectPage = { viewModel.setTokenStatsPage(it) },
                     onSelectProviderPage = { viewModel.setProviderStatsPage(it) },
-                    onSelectModelPage = { viewModel.setModelStatsPage(it) }
+                    onSelectModelPage = { viewModel.setModelStatsPage(it) },
+                    onSelectFilterProvider = { viewModel.setFilterProviderId(it) },
+                    onSelectFilterModel = { viewModel.setFilterModel(it) },
+                    onClearFilters = { viewModel.clearTokenStatsFilters() }
                 )
                 SettingsSection.Storage -> storageViewModel?.let { StorageSectionHost(viewModel = it) }
                 SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理

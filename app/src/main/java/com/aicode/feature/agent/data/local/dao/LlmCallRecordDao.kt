@@ -106,11 +106,18 @@ interface LlmCallRecordDao {
                SUM(retryCount) AS retryCount
         FROM llm_call_records
         WHERE createdAt >= :start
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
         GROUP BY day
         ORDER BY day ASC
         """
     )
-    fun getDayStats(start: Long, tzOffsetMillis: Long): Flow<List<DayCallStats>>
+    fun getDayStats(
+        start: Long,
+        tzOffsetMillis: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<DayCallStats>>
 
     /** 按小时聚合（本地时区），「今天」周期用小时粒度展示趋势。 */
     @Query(
@@ -126,11 +133,18 @@ interface LlmCallRecordDao {
                SUM(retryCount) AS retryCount
         FROM llm_call_records
         WHERE createdAt >= :start
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
         GROUP BY day
         ORDER BY day ASC
         """
     )
-    fun getHourStats(start: Long, tzOffsetMillis: Long): Flow<List<DayCallStats>>
+    fun getHourStats(
+        start: Long,
+        tzOffsetMillis: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<DayCallStats>>
 
     /** 按渠道聚合，LEFT JOIN ai_providers 取渠道名（渠道被删除后记录仍显示）。 */
     @Query(
@@ -146,11 +160,17 @@ interface LlmCallRecordDao {
         FROM llm_call_records r
         LEFT JOIN ai_providers p ON p.id = r.providerId
         WHERE r.createdAt >= :start
+          AND (:providerId IS NULL OR r.providerId = :providerId)
+          AND (:model IS NULL OR r.model = :model)
         GROUP BY r.providerId
         ORDER BY (SUM(r.inputTokens) + SUM(r.outputTokens)) DESC
         """
     )
-    fun getProviderStats(start: Long): Flow<List<ProviderCallStats>>
+    fun getProviderStats(
+        start: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<ProviderCallStats>>
 
     /** 按模型聚合，按总消耗倒序。 */
     @Query(
@@ -167,11 +187,17 @@ interface LlmCallRecordDao {
                SUM(retryCount) AS retryCount
         FROM llm_call_records
         WHERE createdAt >= :start AND model IS NOT NULL AND model != ''
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
         GROUP BY model
         ORDER BY (SUM(inputTokens) + SUM(outputTokens)) DESC
         """
     )
-    fun getModelStats(start: Long): Flow<List<ModelCallStats>>
+    fun getModelStats(
+        start: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<ModelCallStats>>
 
     /** 按「渠道 + 模型」聚合 token 用量，供周期总费用估算（费用必须带渠道才算得到自定义单价）。 */
     @Query(
@@ -184,10 +210,16 @@ interface LlmCallRecordDao {
                SUM(cacheCreationTokens) AS cacheCreationTokens
         FROM llm_call_records
         WHERE createdAt >= :start AND model IS NOT NULL AND model != ''
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
         GROUP BY providerId, model
         """
     )
-    fun getModelProviderCostStats(start: Long): Flow<List<ModelProviderCostStats>>
+    fun getModelProviderCostStats(
+        start: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<ModelProviderCostStats>>
 
     /** 周期整体汇总（无 GROUP BY，恒返回一行）。 */
     @Query(
@@ -202,13 +234,30 @@ interface LlmCallRecordDao {
                SUM(retryCount) AS retryCount
         FROM llm_call_records
         WHERE createdAt >= :start
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
         """
     )
-    fun getSummary(start: Long): Flow<CallSummary>
+    fun getSummary(
+        start: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<CallSummary>
 
     /** 当前周期调用总数，供分页显示总页数。 */
-    @Query("SELECT COUNT(*) FROM llm_call_records WHERE createdAt >= :start")
-    fun getCallsCount(start: Long): Flow<Int>
+    @Query(
+        """
+        SELECT COUNT(*) FROM llm_call_records
+        WHERE createdAt >= :start
+          AND (:providerId IS NULL OR providerId = :providerId)
+          AND (:model IS NULL OR model = :model)
+        """
+    )
+    fun getCallsCount(
+        start: Long,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<Int>
 
     /** 调用明细分页（倒序，[offset] 起取 [limit] 条），LEFT JOIN 渠道名。 */
     @Query(
@@ -217,9 +266,17 @@ interface LlmCallRecordDao {
         FROM llm_call_records r
         LEFT JOIN ai_providers p ON p.id = r.providerId
         WHERE r.createdAt >= :start
+          AND (:providerId IS NULL OR r.providerId = :providerId)
+          AND (:model IS NULL OR r.model = :model)
         ORDER BY r.createdAt DESC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun getRecentCalls(start: Long, limit: Int, offset: Int): Flow<List<RecentCallRecord>>
+    fun getRecentCalls(
+        start: Long,
+        limit: Int,
+        offset: Int,
+        providerId: String? = null,
+        model: String? = null
+    ): Flow<List<RecentCallRecord>>
 }

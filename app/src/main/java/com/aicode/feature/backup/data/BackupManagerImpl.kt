@@ -589,10 +589,14 @@ class BackupManagerImpl @Inject constructor(
             aiProviderDao.insertAllProviders(meta.providers.map { it.toEntity() })
         }
         if (meta.remoteConnections.isNotEmpty()) {
-            remoteConnectionDao.insertAllConnections(meta.remoteConnections.map { it.toEntity() })
+            remoteConnectionDao.insertAllConnections(meta.remoteConnections.mapNotNull { it.toEntity() })
         }
         if (meta.remoteMounts.isNotEmpty()) {
-            remoteConnectionDao.insertAllMounts(meta.remoteMounts.map { it.toEntity() })
+            // 指向已移除协议（旧版本的本地通道）的挂载一并跳过，避免外键约束失败。
+            val connectionIds = remoteConnectionDao.getAllConnectionsOnce().map { it.id }.toSet()
+            remoteConnectionDao.insertAllMounts(
+                meta.remoteMounts.map { it.toEntity() }.filter { it.connectionId in connectionIds }
+            )
         }
         if (meta.mcpServers.isNotEmpty()) {
             mcpConfigRepository.setGlobalServers(meta.mcpServers)
@@ -769,9 +773,11 @@ class BackupManagerImpl @Inject constructor(
         id, name, protocol.name, host, port, username, authType, authData, passphrase
     )
 
-    private fun RemoteConnectionDto.toEntity() = RemoteConnectionEntity(
-        id, name, RemoteProtocol.valueOf(protocol), host, port, username, authType, authData, passphrase
-    )
+    /** 旧备份可能含已移除的协议（本地通道），此类记录跳过不恢复。 */
+    private fun RemoteConnectionDto.toEntity(): RemoteConnectionEntity? {
+        val parsed = runCatching { RemoteProtocol.valueOf(protocol) }.getOrNull() ?: return null
+        return RemoteConnectionEntity(id, name, parsed, host, port, username, authType, authData, passphrase)
+    }
 
     private fun RemoteMountEntity.toDto() = RemoteMountDto(id, connectionId, remotePath, localMountPath, isActive, autoConnect)
     private fun RemoteMountDto.toEntity() = RemoteMountEntity(id, connectionId, remotePath, localMountPath, isActive, autoConnect)

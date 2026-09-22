@@ -196,13 +196,12 @@ private fun RowIconBox(icon: androidx.compose.ui.graphics.vector.ImageVector) {
     }
 }
 
-/** 协议徽章：SFTP/FTP/LOCAL 用不同颜色区分（样式同容器镜像来源徽章）。 */
+/** 协议徽章：SFTP/FTP 用不同颜色区分（样式同容器镜像来源徽章）。 */
 @Composable
 private fun ProtocolBadge(protocol: RemoteProtocol) {
     val color = when (protocol) {
         RemoteProtocol.SFTP -> MaterialTheme.colorScheme.primary
         RemoteProtocol.FTP -> MaterialTheme.colorScheme.tertiary
-        RemoteProtocol.LOCAL -> MaterialTheme.semanticColors.warning
     }
     Box(
         modifier = Modifier
@@ -224,7 +223,6 @@ fun RemoteConnectionCard(
     onEdit: (RemoteConnection) -> Unit,
     onDelete: (RemoteConnection) -> Unit
 ) {
-    val isLocal = conn.protocol == RemoteProtocol.LOCAL
     SwipeToDeleteRow(
         onDelete = { onDelete(conn) },
         onClick = { onEdit(conn) }
@@ -251,7 +249,7 @@ fun RemoteConnectionCard(
                     ProtocolBadge(conn.protocol)
                 }
                 Text(
-                    text = if (isLocal) conn.host else "${conn.username}@${conn.host}:${conn.port}",
+                    text = "${conn.username}@${conn.host}:${conn.port}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
@@ -274,7 +272,6 @@ fun RemoteMountCard(
     onConnect: (RemoteMount) -> Unit,
     onDisconnect: (RemoteMount) -> Unit
 ) {
-    val isLocal = mount.connection?.protocol == RemoteProtocol.LOCAL
     SwipeToDeleteRow(onDelete = { onDelete(mount) }) {
         Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -352,20 +349,18 @@ fun RemoteMountCard(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            if (isLocal) stringResource(R.string.sync_all) else stringResource(R.string.sync_upload_all),
+                            stringResource(R.string.sync_upload_all),
                             style = MaterialTheme.typography.labelLarge
                         )
                     }
-                    if (!isLocal) {
-                        OutlinedButton(
-                            onClick = { onDownload(mount) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(32.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(stringResource(R.string.sync_download_all), style = MaterialTheme.typography.labelLarge)
-                        }
+                    OutlinedButton(
+                        onClick = { onDownload(mount) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(32.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(stringResource(R.string.sync_download_all), style = MaterialTheme.typography.labelLarge)
                     }
                 } else {
                     Button(

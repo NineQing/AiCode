@@ -355,7 +355,6 @@ class RemoteServerViewModel @Inject constructor(
     private fun defaultPort(protocol: RemoteProtocol): Int = when (protocol) {
         RemoteProtocol.SFTP -> 22
         RemoteProtocol.FTP -> 21
-        RemoteProtocol.LOCAL -> 0
     }
 }
 

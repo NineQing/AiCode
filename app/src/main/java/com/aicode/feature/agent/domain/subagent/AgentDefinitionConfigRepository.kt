@@ -1,11 +1,21 @@
 package com.aicode.feature.agent.domain.subagent
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChange
+import com.aicode.core.watch.FileChangeHub
 import com.aicode.feature.agent.domain.container.ContainerInstaller
 import com.aicode.feature.workspace.domain.ProjectAicodeRoot
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -27,11 +37,42 @@ import kotlinx.serialization.json.putJsonArray
 @Singleton
 class AgentDefinitionConfigRepository @Inject constructor(
     private val containerInstaller: ContainerInstaller,
-    private val projectAicodeRoot: ProjectAicodeRoot
+    private val projectAicodeRoot: ProjectAicodeRoot,
+    private val fileChangeHub: FileChangeHub
 ) {
     private fun globalFile(): File = File(containerInstaller.aicodeDir, CONFIG_FILE)
 
     private fun projectFile(): File = File(projectAicodeRoot.current(), CONFIG_FILE)
+
+    // ── 外部变更监听：容器内/手工直接增删改子代理目录或 agents.json 后，数秒内通知 UI 刷新 ──
+
+    private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 子代理目录或配置文件被外部修改时广播一次。订阅驱动：只在有订阅者（设置页）期间才由
+     * [FileChangeHub] 监听子代理目录与两个 agents.json，无人订阅时零开销。
+     */
+    val changes: SharedFlow<Unit> = merge(
+        fileChangeHub.watchAicode(AGENTS_DIR, recursive = true),
+        fileChangeHub.watchAicode(),
+        fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR/$AGENTS_DIR", recursive = true),
+        fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR")
+    ).mapNotNull { batch ->
+        if (!batch.changes.any(::isAgentChange)) return@mapNotNull null
+        FileLogger.i(TAG, "检测到子代理目录或配置变化，已通知刷新")
+        Unit
+    }.shareIn(watchScope, SharingStarted.WhileSubscribed(), replay = 0)
+
+    /** 子代理相关变更：两个 agents.json，或全局/项目子代理目录自身及其下的任何文件。 */
+    private fun isAgentChange(change: FileChange): Boolean {
+        val path = change.hostPath
+        if (path == globalFile().absolutePath) return true
+        if (path == projectFile().absolutePath) return true
+        val globalAgents = File(containerInstaller.aicodeDir, AGENTS_DIR).absolutePath
+        if (path == globalAgents || path.startsWith("$globalAgents/")) return true
+        val projectAgents = File(projectAicodeRoot.current(), AGENTS_DIR).absolutePath
+        return path == projectAgents || path.startsWith("$projectAgents/")
+    }
 
     /** 当前生效的禁用子代理名集合（全局 + 项目并集，归一化为小写）。 */
     fun disabledNames(): Set<String> =
@@ -49,6 +90,7 @@ class AgentDefinitionConfigRepository @Inject constructor(
         private const val TAG = "AgentDefinitionConfigRepository"
         private const val CONFIG_FILE = "agents.json"
         private const val AICODE_DIR = ".aicode"
+        private const val AGENTS_DIR = "agents"
         private val JSON = Json { ignoreUnknownKeys = true; isLenient = true }
         private val PRETTY_JSON = Json { prettyPrint = true }
 

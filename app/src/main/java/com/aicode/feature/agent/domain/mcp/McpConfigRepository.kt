@@ -1,6 +1,7 @@
 package com.aicode.feature.agent.domain.mcp
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChangeHub
 import com.aicode.feature.agent.domain.container.ContainerInstaller
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
 import com.aicode.feature.workspace.domain.ProjectAicodeRoot
@@ -8,20 +9,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -64,14 +64,15 @@ data class McpServerEntry(
 class McpConfigRepository @Inject constructor(
     private val containerInstaller: ContainerInstaller,
     private val workspaceRepository: WorkspaceRepository,
-    private val projectAicodeRoot: ProjectAicodeRoot
+    private val projectAicodeRoot: ProjectAicodeRoot,
+    private val fileChangeHub: FileChangeHub
 ) {
     private companion object {
         const val TAG = "McpConfigRepository"
         const val CONFIG_FILE = "mcp.json"
         const val DEFAULT_JSON = """{"mcpServers":{}}"""
-        /** 配置文件轮询间隔：外部直接编辑后约 2s 内刷新。 */
-        const val WATCH_POLL_MS = 2000L
+        /** 项目级配置目录名，容器内即 `~/workspace/.aicode`。 */
+        const val AICODE_DIR_NAME = ".aicode"
         val JSON = Json { ignoreUnknownKeys = true; isLenient = true }
         val PRETTY_JSON = Json { prettyPrint = true }
     }
@@ -90,82 +91,46 @@ class McpConfigRepository @Inject constructor(
 
     // ── 外部修改监听：容器内/手工直接编辑配置文件后，刷新缓存并广播给 McpManager 重连 ──
 
-    /** 配置被外部修改（内容与缓存不一致）时广播一次。 */
-    private val _externalChanges = MutableSharedFlow<Unit>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val externalChanges: SharedFlow<Unit> = _externalChanges.asSharedFlow()
-
     private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** 文件 mtime+size 快照，用于低成本检测外部修改。 */
-    private data class FileStamp(val mtime: Long, val size: Long) {
-        companion object {
-            fun of(file: File): FileStamp? = runCatching {
-                FileStamp(file.lastModified(), file.length())
-            }.getOrNull()?.takeIf { it.mtime > 0L }
-        }
-    }
-
-    @Volatile
-    private var globalStamp: FileStamp? = null
-    @Volatile
-    private var globalWatchingInitialized = false
-    private val projectStamps = ConcurrentHashMap<String, FileStamp?>()
-    private val initializedProjectPaths = ConcurrentHashMap.newKeySet<String>()
+    /**
+     * 配置被外部修改（内容与缓存不一致）时广播一次。订阅驱动：只在有订阅者（McpManager）期间
+     * 才由 [FileChangeHub] 监听两个配置文件所在目录，无人订阅时零开销。
+     */
+    val externalChanges: SharedFlow<Unit> = merge(
+        fileChangeHub.watchAicode(),
+        fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR_NAME")
+    ).mapNotNull { batch ->
+        val globalPath = globalFile.absolutePath
+        val projectPath = projectFileForPath(workspaceRepository.currentPath()).absolutePath
+        val touched = batch.changes.any { it.hostPath == globalPath || it.hostPath == projectPath }
+        // 同目录下其它文件的变更（如 skills.json）不触发重连；内容没真变（如 touch）也不触发。
+        if (!touched) null else if (reloadFromDisk()) Unit else null
+    }.shareIn(watchScope, SharingStarted.WhileSubscribed(), replay = 0)
 
     /**
-     * 启动配置文件监听：2s 轮询 mtime，外部修改后刷新缓存并广播 [externalChanges]。
-     * App 常驻期间一直运行；内部写入会同步 stamp，不会误触发。幂等可重复调。
+     * 外部变更后按磁盘现状刷新缓存，内容确实变化时返回 true。项目级只处理当前工作区；
+     * 其缓存尚未加载时不广播——首次加载由 [ensureProjectLoaded] 完成，工作区切换不算外部变更。
      */
-    fun startWatching() {
-        watchScope.launch {
-            while (true) {
-                delay(WATCH_POLL_MS)
-                runCatching {
-                    checkGlobalChanged()
-                    checkProjectChanged()
-                }
-            }
-        }
-    }
-
-    private suspend fun checkGlobalChanged() {
-        val stamp = FileStamp.of(globalFile)
-        if (!globalWatchingInitialized) {
-            globalStamp = stamp
-            globalWatchingInitialized = true
-            return
-        }
-        if (globalStamp == stamp) return
-        val content = if (stamp == null) DEFAULT_JSON else load(globalFile)
-        globalStamp = stamp
-        if (content != (globalState.value ?: DEFAULT_JSON)) {
-            globalState.value = content
-            _externalChanges.tryEmit(Unit)
+    private suspend fun reloadFromDisk(): Boolean {
+        var changed = false
+        val globalContent = load(globalFile)
+        if (globalContent != (globalState.value ?: DEFAULT_JSON)) {
+            globalState.value = globalContent
+            changed = true
             FileLogger.i(TAG, "检测到全局 MCP 配置变化，已刷新")
         }
-    }
-
-    private suspend fun checkProjectChanged() {
         val path = workspaceRepository.currentPath()
-        val file = projectFileForPath(path)
-        val stamp = FileStamp.of(file)
-        if (!initializedProjectPaths.contains(path)) {
-            projectStamps[path] = stamp
-            initializedProjectPaths.add(path)
-            return
-        }
-        if (projectStamps[path] == stamp) return
-        val content = if (stamp == null) DEFAULT_JSON else load(file)
-        projectStamps[path] = stamp
         val state = getProjectState(path)
-        if (content != (state.value ?: DEFAULT_JSON)) {
-            state.value = content
-            _externalChanges.tryEmit(Unit)
-            FileLogger.i(TAG, "检测到项目 MCP 配置变化，已刷新")
+        if (state.value != null) {
+            val content = load(projectFileForPath(path))
+            if (content != state.value) {
+                state.value = content
+                changed = true
+                FileLogger.i(TAG, "检测到项目 MCP 配置变化，已刷新")
+            }
         }
+        return changed
     }
 
     private fun getProjectState(workspacePath: String): MutableStateFlow<String?> =
@@ -241,7 +206,6 @@ class McpConfigRepository @Inject constructor(
         mutex.withLock {
             withContext(Dispatchers.IO) { writeFile(globalFile, json) }
             globalState.value = json
-            globalStamp = FileStamp.of(globalFile)
         }
     }
 
@@ -251,7 +215,6 @@ class McpConfigRepository @Inject constructor(
         mutex.withLock {
             withContext(Dispatchers.IO) { writeFile(projectFileForPath(path), json) }
             getProjectState(path).value = json
-            projectStamps[path] = FileStamp.of(projectFileForPath(path))
         }
     }
 

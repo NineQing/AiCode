@@ -36,6 +36,7 @@ import com.aicode.feature.agent.domain.skill.SkillImportReport
 import com.aicode.feature.agent.domain.skill.SkillRepository
 import com.aicode.feature.agent.domain.skill.SkillSaveError
 import com.aicode.feature.agent.domain.skill.SkillScope
+import com.aicode.feature.agent.domain.subagent.AgentDefinitionConfigRepository
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionForm
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionRepository
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionScope
@@ -302,6 +303,7 @@ class SettingsViewModel @Inject constructor(
     private val toolSafetySettingsRepository: ToolSafetySettingsRepository,
     private val skillRepository: SkillRepository,
     private val agentDefinitionRepository: AgentDefinitionRepository,
+    private val agentDefinitionConfigRepository: AgentDefinitionConfigRepository,
     private val toolRegistry: ToolRegistry,
     private val skillConfigRepository: SkillConfigRepository,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
@@ -868,6 +870,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 skillConfigRepository.changes.collectLatest {
                     refreshSkills()
+                }
+            }
+
+            launch {
+                agentDefinitionConfigRepository.changes.collectLatest {
+                    refreshSubAgents()
                 }
             }
 

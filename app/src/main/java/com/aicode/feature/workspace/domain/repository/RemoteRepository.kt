@@ -1,6 +1,8 @@
 package com.aicode.feature.workspace.domain.repository
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChangeHub
+import com.aicode.core.watch.WatchFilter
 import com.aicode.feature.agent.domain.container.SshHostKeyStore
 import com.aicode.feature.agent.domain.container.SshHostKeyVerifier
 import com.aicode.feature.agent.domain.container.friendlySshError
@@ -14,7 +16,6 @@ import com.aicode.feature.workspace.domain.model.RemoteProtocol
 import com.aicode.feature.workspace.domain.remote.RemoteAuth
 import com.aicode.feature.workspace.domain.remote.SyncEngine
 import com.aicode.feature.workspace.domain.remote.ftp.FtpSyncClient
-import com.aicode.feature.workspace.domain.remote.local.LocalSyncClient
 import com.aicode.feature.workspace.domain.remote.sftp.SftpSyncClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,7 +42,8 @@ class RemoteRepository @Inject constructor(
     private val syncSettings: com.aicode.feature.settings.data.repository.SyncSettingsRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val hostKeyStore: SshHostKeyStore,
-    private val hostKeyVerifier: SshHostKeyVerifier
+    private val hostKeyVerifier: SshHostKeyVerifier,
+    private val fileChangeHub: FileChangeHub
 ) {
     private val activeEngines = ConcurrentHashMap<String, SyncEngine>()
     private val activeEngineIds = MutableStateFlow<Set<String>>(emptySet())
@@ -47,6 +51,9 @@ class RemoteRepository @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** 每个挂载的自动连接重试协程，切换工作区/手动断开时取消。 */
     private val autoConnectJobs = ConcurrentHashMap<String, Job>()
+
+    /** 每个挂载的本地文件变更订阅协程，断开挂载时取消。 */
+    private val watchJobs = ConcurrentHashMap<String, Job>()
 
     init {
         // 跟随当前工作区：App 启动（工作区就绪）与切换工作区时，自动断开非当前工作区的挂载、
@@ -182,7 +189,6 @@ class RemoteRepository @Inject constructor(
     }
 
     suspend fun connectMount(mountId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        var connProtocol: RemoteProtocol? = null
         try {
             // 已存在旧连接时先清理，避免重复/并发连接泄漏 engine
             activeEngines[mountId]?.shutdown()
@@ -193,13 +199,11 @@ class RemoteRepository @Inject constructor(
             val connEntity = dao.getConnectionById(mountEntity.connectionId) ?: return@withContext Result.failure(Exception("Connection not found"))
             
             val conn = connEntity.toDomainModel()
-            connProtocol = conn.protocol
             val mount = mountEntity.toDomainModel(conn)
 
             val client = when (conn.protocol) {
                 RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
                 RemoteProtocol.FTP -> FtpSyncClient()
-                RemoteProtocol.LOCAL -> LocalSyncClient()
             }
 
             val auth = if (connEntity.authType == "PASSWORD") {
@@ -220,23 +224,40 @@ class RemoteRepository @Inject constructor(
                 maxSyncBatchSize = syncSettings.maxSyncBatchSize.value
             )
             // 移除默认的全量下载以免覆盖本地修改，交由用户手动点击同步
-            engine.startWatching()     // 增量监听
-            if (conn.protocol == RemoteProtocol.LOCAL) {
-                engine.uploadWorkspace()
-            }
 
             activeEngines[mountId] = engine
             activeEngineIds.update { it + mountId }
+            startLocalWatching(mountId, mount, engine)
             Result.success(Unit)
         } catch (e: Exception) {
             // 挂载连接不弹确认：提示用户先去连接配置页测试连通性完成确认
             val pending = hostKeyVerifier.consumePending()
             if (pending != null) {
                 Result.failure(Exception("主机密钥未确认，请先在「连接配置」页测试连通性完成确认"))
-            } else if (connProtocol == RemoteProtocol.LOCAL) {
-                Result.failure(Exception(e.message ?: "本地工作区连接失败", e))
             } else {
                 Result.failure(Exception(friendlySshError(e), e))
+            }
+        }
+    }
+
+    /**
+     * 本地文件变更由中心服务统一监听（含剪枝与合并批量），这里只把事件投进该挂载的同步队列；
+     * 订阅随挂载断开而取消，无人订阅时中心服务不持有任何句柄。
+     */
+    private fun startLocalWatching(mountId: String, mount: RemoteMount, engine: SyncEngine) {
+        watchJobs.remove(mountId)?.cancel()
+        watchJobs[mountId] = scope.launch {
+            fileChangeHub.watchHostDir(
+                hostDir = File(mount.localMountPath),
+                recursive = true,
+                filter = WatchFilter(
+                    ignoredNames = syncSettings.ignoredPatterns.value
+                        .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+                    followGitignore = syncSettings.useGitIgnore.value
+                ),
+                fallbackPoll = false
+            ).collect { batch ->
+                for (change in batch.changes) engine.enqueueLocalChange(change.hostPath)
             }
         }
     }
@@ -244,6 +265,7 @@ class RemoteRepository @Inject constructor(
     suspend fun disconnectMount(mountId: String) {
         autoConnectJobs[mountId]?.cancel()
         autoConnectJobs.remove(mountId)
+        watchJobs.remove(mountId)?.cancel()
         activeEngines[mountId]?.shutdown()
         activeEngines.remove(mountId)
         activeEngineIds.update { it - mountId }
@@ -286,7 +308,6 @@ class RemoteRepository @Inject constructor(
             val client = when (protocol) {
                 RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
                 RemoteProtocol.FTP -> FtpSyncClient()
-                RemoteProtocol.LOCAL -> LocalSyncClient()
             }
             client.connect(host, port, username, auth)
             client.disconnect()
@@ -298,11 +319,7 @@ class RemoteRepository @Inject constructor(
                     pending.host, pending.port, pending.keyType, pending.fingerprint, pending.changed
                 )
             }
-            if (protocol == RemoteProtocol.LOCAL) {
-                Result.failure(Exception(e.message ?: "本地工作区连接失败", e))
-            } else {
-                Result.failure(Exception(friendlySshError(e), e))
-            }
+            Result.failure(Exception(friendlySshError(e), e))
         }
     }
 
@@ -314,7 +331,6 @@ class RemoteRepository @Inject constructor(
             val client = when (conn.protocol) {
                 RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
                 RemoteProtocol.FTP -> FtpSyncClient()
-                RemoteProtocol.LOCAL -> LocalSyncClient()
             }
             val auth = if (connEntity.authType == "PASSWORD") {
                 RemoteAuth.Password(connEntity.authData)

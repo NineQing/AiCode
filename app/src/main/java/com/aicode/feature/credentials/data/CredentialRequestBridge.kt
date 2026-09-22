@@ -1,8 +1,8 @@
 package com.aicode.feature.credentials.data
 
 import android.content.Context
-import android.os.FileObserver
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChangeHub
 import com.aicode.feature.agent.domain.container.LinuxContainerEngine
 import com.aicode.feature.credentials.domain.model.GitCredential
 import com.aicode.feature.credentials.domain.repository.CredentialRepository
@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +26,7 @@ import javax.inject.Singleton
  * 自定义 git credential helper（容器内 /root/.aicode/git-credential-aicode）与 app 之间的文件 IPC 桥。
  *
  * 容器内 git 缺凭据时 helper 写 `cred-req-<id>` 到 /root/.aicode（经 PRoot -b 绑定即宿主 filesDir/aicode 同一
- * inode）。本桥用 [FileObserver] 监听该宿主目录捕获请求 → 暴露 [request] StateFlow 供全局 Compose 弹窗 →
+ * inode）。本桥订阅 [FileChangeHub] 的 aicode 目录事件捕获请求 → 暴露 [request] StateFlow 供全局 Compose 弹窗 →
  * 用户回填后 [respond] 写 `cred-resp-<id>` 明文 KV，helper 轮询取走喂回 git，git 自动续跑。三端（UI / AI Bash /
  * 交互终端）git 缺凭据都走这条统一链，无需逐命令路径适配。
  *
@@ -36,23 +37,25 @@ import javax.inject.Singleton
  * [LinuxContainerEngine.launchKillWatchdog] 在 helper 在途时暂停超时杀进程——用户离开几分钟填凭据，git 命令
  * 不会被 120s watchdog 强杀。
  *
- * FileObserver 跨 PRoot -b 对 app filesDir 基本可靠，但个别机型 inotify 在绑定目录可能失效，故另起一个低频
- * 兜底轮询协程（[fallbackPollLoop]）扫 `cred-req-*` 未处理项；两者按 requestId 去重防双处理。
+ * 目录监听交给中心服务 [FileChangeHub]（inotify 跨 PRoot -b 对 app filesDir 基本可靠，但个别机型 inotify 在
+ * 绑定目录可能失效），本桥另起一个低频兜底轮询协程（[fallbackPollLoop]）扫 `cred-req-*` 未处理项；两者按
+ * requestId 去重防双处理。
  *
- * 生命周期：@Singleton = App 级，借 [com.aicode.AIEditorApp] 主线程调 [start]。FileObserver 必须主线程创建与
- * startWatching。弹窗在任意页面（终端页/聊天页/Git 页）都能弹，不限于 Git 页。
+ * 生命周期：@Singleton = App 级，借 [com.aicode.AIEditorApp] 调 [start]。弹窗在任意页面（终端页/聊天页/Git 页）
+ * 都能弹，不限于 Git 页。
  */
 @Singleton
 class CredentialRequestBridge @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val credentialRepository: CredentialRepository,
-    private val containerEngine: LinuxContainerEngine
+    private val containerEngine: LinuxContainerEngine,
+    private val fileChangeHub: FileChangeHub
 ) {
     private companion object {
         const val TAG = "CredentialRequestBridge"
         const val REQ_PREFIX = "cred-req-"
         const val RESP_PREFIX = "cred-resp-"
-        /** 兜底轮询间隔：FileObserver 不灵时也能在 ~1s 内捕获请求。 */
+        /** 兜底轮询间隔：中心服务的 inotify 不灵时也能在 ~1s 内捕获请求。 */
         const val FALLBACK_POLL_MS = 1000L
         /** seen 去重集容量上限，超过淘汰最旧。 */
         const val SEEN_CAP = 64
@@ -67,41 +70,40 @@ class CredentialRequestBridge @Inject constructor(
     private val _request = MutableStateFlow<CredentialRequest?>(null)
     val request: StateFlow<CredentialRequest?> = _request.asStateFlow()
 
-    /** 已处理/在途的 requestId 去重集，防 FileObserver 与兜底轮询双触发同一条。 */
+    /** 已处理/在途的 requestId 去重集，防事件订阅与兜底轮询双触发同一条。 */
     private val seen = LinkedHashSetWithCap(SEEN_CAP)
 
     private val seenMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private var observer: FileObserver? = null
+    private var started = false
     private var aicodeDir: File? = null
 
     /**
-     * 主线程启动：建 [FileObserver] 监听 aicodeDir，并起兜底轮询协程。
-     * 必须在主线程调用（FileObserver 绑定主 Looper）。幂等可重复调。
+     * 启动监听：订阅中心服务的 aicode 目录事件捕获请求，并起兜底轮询协程。幂等可重复调。
      */
     fun start() {
         val dir = File(context.filesDir, "aicode").apply { mkdirs() }
         aicodeDir = dir
-        if (observer == null) {
-            // 用 String 构造：File 版本要 API 29，本项目 minSdk 26，低版本设备会 NoSuchMethodError。
-            @Suppress("DEPRECATION")
-            val obs = object : FileObserver(dir.absolutePath, FileObserver.CREATE or FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO) {
-                override fun onEvent(event: Int, path: String?) {
-                    val name = path ?: return
-                    if (!name.startsWith(REQ_PREFIX) || name.endsWith(".tmp")) return
-                    scope.launch { handleRequest(File(dir, name), name) }
+        if (!started) {
+            started = true
+            // 请求文件落在 ~/.aicode 根下，由中心服务统一监听；本桥只做业务侧过滤、去重与弹窗。
+            scope.launch {
+                fileChangeHub.watchAicode().collect { batch ->
+                    for (change in batch.changes) {
+                        val name = File(change.hostPath).name
+                        if (!name.startsWith(REQ_PREFIX) || name.endsWith(".tmp")) continue
+                        handleRequest(File(dir, name), name)
+                    }
                 }
             }
-            obs.startWatching()
-            observer = obs
-            FileLogger.i(TAG, "FileObserver 启动，监听 ${dir.absolutePath}")
+            FileLogger.i(TAG, "已订阅 aicode 目录事件，监听 ${dir.absolutePath}")
         }
         // 兜底轮询：个别机型 -b 目录 inotify 失效时仍能取到请求；并清理上次会话残留。
         scope.launch { cleanupStale(dir); fallbackPollLoop(dir) }
     }
 
-    /** 兜底轮询：扫未在 seen 里的 cred-req-* 文件，补 FileObserver 漏报。App 常驻，永不退出。 */
+    /** 兜底轮询：扫未在 seen 里的 cred-req-* 文件，补中心服务漏报。App 常驻，永不退出。 */
     private suspend fun fallbackPollLoop(dir: File) {
         while (true) {
             delay(FALLBACK_POLL_MS)
@@ -120,7 +122,7 @@ class CredentialRequestBridge @Inject constructor(
         }
     }
 
-    /** 解析请求文件 → 置 [request]，并 inc 在途。FileObserver 与轮询都走这里，靠 seen 去重。 */
+    /** 解析请求文件 → 置 [request]，并 inc 在途。事件订阅与轮询都走这里，靠 seen 去重。 */
     private suspend fun handleRequest(file: File, name: String) {
         val requestId = name.removePrefix(REQ_PREFIX)
         val fresh = seenMutex.withLock { seen.addCapped(requestId) }

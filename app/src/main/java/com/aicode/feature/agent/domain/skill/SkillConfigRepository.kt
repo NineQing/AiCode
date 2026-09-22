@@ -1,10 +1,9 @@
 package com.aicode.feature.agent.domain.skill
 
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChange
+import com.aicode.core.watch.FileChangeHub
 import com.aicode.feature.agent.domain.container.ContainerInstaller
-import com.aicode.feature.settings.data.repository.ExecutionMode
-import com.aicode.feature.settings.data.repository.ExecutionModeHolder
-import com.aicode.feature.workspace.data.repository.WorkspaceRepository
 import com.aicode.feature.workspace.domain.ProjectAicodeRoot
 import java.io.File
 import javax.inject.Inject
@@ -12,12 +11,11 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -40,9 +38,8 @@ import kotlinx.serialization.json.putJsonArray
 @Singleton
 class SkillConfigRepository @Inject constructor(
     private val containerInstaller: ContainerInstaller,
-    private val workspaceRepository: WorkspaceRepository,
     private val projectAicodeRoot: ProjectAicodeRoot,
-    private val executionModeHolder: ExecutionModeHolder
+    private val fileChangeHub: FileChangeHub
 ) {
     /** 全局配置文件：`filesDir/aicode/skills.json`。 */
     private fun globalFile(): File = File(containerInstaller.aicodeDir, CONFIG_FILE)
@@ -69,75 +66,37 @@ class SkillConfigRepository @Inject constructor(
 
     private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _changes = MutableSharedFlow<Unit>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-
-    /** 技能目录或配置文件被外部修改（内容与上次快照不一致）时广播一次。 */
-    val changes: SharedFlow<Unit> = _changes.asSharedFlow()
-
-    @Volatile
-    private var lastSnapshot: String? = null
-    @Volatile
-    private var watchingInitialized = false
-
     /**
-     * 启动监听：2s 轮询全局/当前工作区项目技能目录树与两个 skills.json 的 mtime 快照，
-     * 外部修改后广播 [changes]。App 常驻期间一直运行；内部写入会更新快照，不会误触发。
-     * 项目级只盯当前工作区（路径每次轮询现算），切换工作区后自动跟随。幂等可重复调。
+     * 技能目录或配置文件被外部修改时广播一次。订阅驱动：只在有订阅者（设置页）期间才由
+     * [FileChangeHub] 监听技能目录与两个 skills.json，无人订阅时零开销。
      */
-    fun startWatching() {
-        watchScope.launch {
-            while (true) {
-                delay(WATCH_POLL_MS)
-                runCatching { checkChanged() }
-            }
-        }
-    }
-
-    private suspend fun checkChanged() {
-        val snapshot = snapshotKey()
-        if (!watchingInitialized) {
-            lastSnapshot = snapshot
-            watchingInitialized = true
-            return
-        }
-        if (lastSnapshot == snapshot) return
-        lastSnapshot = snapshot
-        _changes.tryEmit(Unit)
+    val changes: SharedFlow<Unit> = merge(
+        fileChangeHub.watchAicode(SKILLS_DIR, recursive = true),
+        fileChangeHub.watchAicode(),
+        fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR/$SKILLS_DIR", recursive = true),
+        fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR")
+    ).mapNotNull { batch ->
+        if (!batch.changes.any(::isSkillChange)) return@mapNotNull null
         FileLogger.i(TAG, "检测到技能目录或配置变化，已通知刷新")
-    }
+        Unit
+    }.shareIn(watchScope, SharingStarted.WhileSubscribed(), replay = 0)
 
-    /** 快照：全局/项目技能目录树 + 两个配置文件的 mtime/size。 */
-    private fun snapshotKey(): String = buildString {
-        appendStamp(File(containerInstaller.aicodeDir, "skills"))
-        // 远程模式下项目技能目录在服务器上，本地 File 看不见，跳过探测
-        if (executionModeHolder.currentMode() != ExecutionMode.REMOTE_SSH) {
-            appendStamp(File(File(workspaceRepository.currentPath(), AICODE_DIR), "skills"))
-        }
-        appendStamp(globalFile())
-        appendStamp(projectFile())
-    }
-
-    /** 目录 → 递归所有文件的相对路径+mtime+size；文件 → 自身。不存在则无输出。 */
-    private fun StringBuilder.appendStamp(file: File) {
-        if (file.isDirectory) {
-            file.walkTopDown()
-                .filter { it.isFile }
-                .sortedBy { it.absolutePath }
-                .forEach { append(it.relativeTo(file).path).append(':').append(it.lastModified()).append(':').append(it.length()).append(';') }
-        } else if (file.isFile) {
-            append(file.name).append(':').append(file.lastModified()).append(':').append(file.length()).append(';')
-        }
+    /** 技能相关变更：两个 skills.json，或全局/项目技能目录自身及其下的任何文件。 */
+    private fun isSkillChange(change: FileChange): Boolean {
+        val path = change.hostPath
+        if (path == globalFile().absolutePath) return true
+        if (path == projectFile().absolutePath) return true
+        val globalSkills = File(containerInstaller.aicodeDir, SKILLS_DIR).absolutePath
+        if (path == globalSkills || path.startsWith("$globalSkills/")) return true
+        val projectSkills = File(projectAicodeRoot.current(), SKILLS_DIR).absolutePath
+        return path == projectSkills || path.startsWith("$projectSkills/")
     }
 
     companion object {
         private const val TAG = "SkillConfigRepository"
         private const val CONFIG_FILE = "skills.json"
         private const val AICODE_DIR = ".aicode"
-        /** 外部变更轮询间隔：手工编辑后约 2s 内刷新。 */
-        private const val WATCH_POLL_MS = 2000L
+        private const val SKILLS_DIR = "skills"
         private val JSON = Json { ignoreUnknownKeys = true; isLenient = true }
         private val PRETTY_JSON = Json { prettyPrint = true }
 

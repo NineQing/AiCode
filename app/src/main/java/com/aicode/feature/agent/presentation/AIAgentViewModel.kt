@@ -47,6 +47,8 @@ import com.aicode.feature.agent.domain.subagent.AgentDefinition
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionRepository
 import com.aicode.feature.agent.domain.subagent.SubAgentEvent
 import com.aicode.feature.agent.domain.subagent.SubAgentEventBus
+import com.aicode.core.watch.FileChangeHub
+import com.aicode.core.watch.asDirtySignal
 import com.aicode.feature.agent.domain.subagent.SubAgentEventType
 import com.aicode.feature.agent.domain.workflow.AgentWorkflow
 import com.aicode.feature.terminal.domain.TabFinishedEvent
@@ -55,7 +57,6 @@ import com.aicode.feature.terminal.domain.TerminalSessionManager
 import com.aicode.feature.terminal.domain.takeTailLines
 import com.aicode.feature.workspace.domain.FileAccessProvider
 import com.aicode.feature.workspace.domain.FileEntry
-import com.aicode.feature.workspace.domain.WorkspaceDirWatcher
 import com.aicode.feature.workspace.domain.WorkspacePathMapper
 import com.aicode.feature.workspace.domain.isValidFileEntryName
 import com.aicode.feature.agent.domain.workflow.AgentEvent
@@ -136,7 +137,7 @@ class AIAgentViewModel @Inject constructor(
     private val agentNotificationCenter: AgentNotificationCenter,
     private val agentDefinitionRepository: AgentDefinitionRepository,
     val fileAccess: FileAccessProvider,
-    private val dirWatcher: WorkspaceDirWatcher,
+    private val fileChangeHub: FileChangeHub,
     @param:ApplicationContext private val context: Context
 ) : ViewModel(), SlashCommandContext {
 
@@ -416,7 +417,7 @@ class AIAgentViewModel @Inject constructor(
         .flatMapLatest { expanded ->
             val watched = expanded + WorkspacePathMapper.CONTAINER_ROOT
             val triggers = merge(
-                watched.map { dirWatcher.watch(it) }.merge().debounce(BROWSE_DEBOUNCE_MS),
+                watched.map { fileChangeHub.watchWorkspace(it).asDirtySignal() }.merge().debounce(BROWSE_DEBOUNCE_MS),
                 // drop(1) 丢掉 StateFlow 重建时的当前值，否则刚展开就会多读一次
                 _browseRefresh.drop(1).map { }
             )

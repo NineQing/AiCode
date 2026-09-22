@@ -2,6 +2,8 @@ package com.aicode.feature.agent.domain.permission
 
 import android.content.Context
 import com.aicode.core.util.FileLogger
+import com.aicode.core.watch.FileChangeBatch
+import com.aicode.core.watch.FileChangeHub
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
 import com.aicode.feature.workspace.domain.ProjectAicodeRoot
@@ -9,15 +11,16 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -53,13 +56,14 @@ import javax.inject.Singleton
 class PermissionRulesRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val workspaceRepository: WorkspaceRepository,
-    private val projectAicodeRoot: ProjectAicodeRoot
+    private val projectAicodeRoot: ProjectAicodeRoot,
+    private val fileChangeHub: FileChangeHub
 ) {
     private companion object {
         const val TAG = "PermissionRules"
         const val PERMISSIONS_FILE = "permissions.json"
-        /** 配置文件轮询间隔：外部直接编辑后约 2s 内刷新。 */
-        const val WATCH_POLL_MS = 2000L
+        /** 项目级配置目录名，容器内即 `~/workspace/.aicode`。 */
+        const val AICODE_DIR_NAME = ".aicode"
         val JSON = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     }
 
@@ -81,70 +85,41 @@ class PermissionRulesRepository @Inject constructor(
 
     private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** 文件 mtime+size 快照，用于低成本检测外部修改。 */
-    private data class FileStamp(val mtime: Long, val size: Long) {
-        companion object {
-            fun of(file: File): FileStamp? = runCatching {
-                FileStamp(file.lastModified(), file.length())
-            }.getOrNull()?.takeIf { it.mtime > 0L }
-        }
-    }
-
-    @Volatile
-    private var globalStamp: FileStamp? = null
-    @Volatile
-    private var globalWatchingInitialized = false
-    private val projectStamps = ConcurrentHashMap<String, FileStamp?>()
-    private val initializedProjectPaths = ConcurrentHashMap.newKeySet<String>()
-
     /**
-     * 启动配置文件监听：2s 轮询 mtime，外部修改后刷新缓存。App 常驻期间一直运行；
-     * 内部写入会同步 stamp，不会误触发。幂等可重复调。
+     * 启动配置文件监听：外部修改后按磁盘现状刷新缓存。App 启动调用一次（幂等）。
+     * 订阅驱动：[FileChangeHub] 监听两个权限文件所在目录并合并成批上报，不再自建轮询。
+     * 保持常驻订阅是因为 AI 权限评估随时要读到最新规则（不像纯 UI 列表可以暂停刷新）。
      */
     fun startWatching() {
         watchScope.launch {
-            while (true) {
-                delay(WATCH_POLL_MS)
-                runCatching {
-                    checkGlobalChanged()
-                    checkProjectChanged()
-                }
+            merge(
+                fileChangeHub.watchAicode(),
+                fileChangeHub.watchWorkspace("${FileChangeHub.CONTAINER_ROOT}/$AICODE_DIR_NAME")
+            ).collect { batch -> refreshFromDisk(batch) }
+        }
+    }
+
+    /** 只处理命中的文件；内容确实变化才更新缓存（touch 不算）。 */
+    private suspend fun refreshFromDisk(batch: FileChangeBatch) {
+        val globalPath = globalFile.absolutePath
+        if (batch.changes.any { it.hostPath == globalPath }) {
+            val rules = loadFromFile(globalFile)
+            if (rules != (globalState.value ?: emptyList<PermissionRule>())) {
+                globalState.value = rules
+                FileLogger.i(TAG, "检测到全局权限配置变化，已刷新")
             }
         }
-    }
-
-    private suspend fun checkGlobalChanged() {
-        val stamp = FileStamp.of(globalFile)
-        if (!globalWatchingInitialized) {
-            globalStamp = stamp
-            globalWatchingInitialized = true
-            return
-        }
-        if (globalStamp == stamp) return
-        val rules = if (stamp == null) emptyList() else loadFromFile(globalFile)
-        globalStamp = stamp
-        if (rules != (globalState.value ?: emptyList<PermissionRule>())) {
-            globalState.value = rules
-            FileLogger.i(TAG, "检测到全局权限配置变化，已刷新")
-        }
-    }
-
-    private suspend fun checkProjectChanged() {
         val path = workspaceRepository.currentPath()
-        val file = projectFileForPath(path)
-        val stamp = FileStamp.of(file)
-        if (!initializedProjectPaths.contains(path)) {
-            projectStamps[path] = stamp
-            initializedProjectPaths.add(path)
-            return
-        }
-        if (projectStamps[path] == stamp) return
-        val rules = if (stamp == null) emptyList() else loadFromFile(file)
-        projectStamps[path] = stamp
-        val state = getProjectState(path)
-        if (rules != (state.value ?: emptyList<PermissionRule>())) {
-            state.value = rules
-            FileLogger.i(TAG, "检测到项目权限配置变化，已刷新")
+        if (batch.changes.any { it.hostPath == projectFileForPath(path).absolutePath }) {
+            val state = getProjectState(path)
+            // 缓存尚未加载时不处理：首次加载由 [ensureProjectLoaded] 完成，工作区切换不算外部变更。
+            if (state.value != null) {
+                val rules = loadFromFile(projectFileForPath(path))
+                if (rules != state.value) {
+                    state.value = rules
+                    FileLogger.i(TAG, "检测到项目权限配置变化，已刷新")
+                }
+            }
         }
     }
 
@@ -220,7 +195,6 @@ class PermissionRulesRepository @Inject constructor(
         mutex.withLock {
             withContext(Dispatchers.IO) { writeToFile(globalFile, rules) }
             globalState.value = rules
-            globalStamp = FileStamp.of(globalFile)
         }
     }
 
@@ -282,7 +256,6 @@ class PermissionRulesRepository @Inject constructor(
             mutate(list)
             withContext(Dispatchers.IO) { writeToFile(globalFile, list) }
             globalState.value = list
-            globalStamp = FileStamp.of(globalFile)
         }
     }
 
@@ -294,7 +267,6 @@ class PermissionRulesRepository @Inject constructor(
             mutate(list)
             withContext(Dispatchers.IO) { writeToFile(projectFileForPath(workspacePath), list) }
             state.value = list
-            projectStamps[workspacePath] = FileStamp.of(projectFileForPath(workspacePath))
         }
     }
 }

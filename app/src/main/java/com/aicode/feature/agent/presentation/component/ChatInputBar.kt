@@ -92,6 +92,7 @@ import com.aicode.feature.agent.domain.command.SlashCommand
 import com.aicode.feature.agent.domain.command.SlashCommandKind
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.model.ReasoningEffort
+import com.aicode.feature.agent.domain.model.TodoItem
 import com.aicode.feature.agent.domain.permission.PermissionChoice
 import com.aicode.feature.agent.domain.tool.PendingToolPermission
 import com.aicode.feature.agent.domain.tool.mode.PlanApprovalRequest
@@ -165,6 +166,9 @@ internal fun ChatInputBar(
     onRefreshDashboard: () -> Unit = {},
     onRefreshDashboardByButton: () -> Unit = {},
     onDashboardExpandedChange: (Boolean) -> Unit = {},
+    todoItems: List<TodoItem> = emptyList(),
+    sessionId: String = "",
+    onTodoExpandedChange: (Boolean) -> Unit = {},
     forceCollapseDashboard: Boolean = false,
     /** 消息列表正在滚动时内容区淡出到 40%，停止滚动恢复；用于长列表阅读时降低底部干扰（同 git 页 tab 栏）。 */
     isScrolling: Boolean = false,
@@ -216,7 +220,7 @@ internal fun ChatInputBar(
         modifier = modifier.fillMaxWidth()
     ) {
         val imeInset = rememberImeBottomInset()
-        // 滚动弱化：内容区（slash 菜单/排队面板/输入框本体）整体淡出，蒙版渐变保持不透明（同 git 页 tab 栏）。
+        // 滚动弱化：内容区（slash 菜单/排队面板/数据面板/输入框本体）整体淡出到 40%，蒙版渐变保持不透明。
         val contentAlpha by animateFloatAsState(
             targetValue = if (isScrolling) 0.4f else 1f,
             animationSpec = tween(200),
@@ -318,6 +322,15 @@ internal fun ChatInputBar(
                 QueuedRequestPanel(
                     queuedRequests = queuedRequests,
                     onRemoveQueued = onRemoveQueued
+                )
+            }
+
+            if (todoItems.isNotEmpty()) {
+                TodoDashboardBar(
+                    items = todoItems,
+                    sessionId = sessionId,
+                    forceCollapse = forceCollapseDashboard,
+                    onExpandedChange = onTodoExpandedChange
                 )
             }
 
@@ -747,9 +760,9 @@ internal fun ToolPermissionPanel(
     // 余额面板展开时同帧收起本面板，避免叠加
     val effectiveExpanded = expanded && !forceCollapse
 
-    // 滚动弱化：用户上下滑动列表时，悬浮授权弹窗跟随淡化为半透明，避免遮挡用户查看背后消息；停止滑动后平滑恢复
+    // 滚动弱化：用户上下滑动列表时，悬浮授权弹窗跟随淡化为 40%，避免遮挡用户查看背后消息；停止滑动后平滑恢复
     val panelAlpha by animateFloatAsState(
-        targetValue = if (isScrolling) 0.25f else 1f,
+        targetValue = if (isScrolling) 0.4f else 1f,
         animationSpec = tween(durationMillis = 200),
         label = "permission-panel-alpha"
     )
@@ -759,13 +772,11 @@ internal fun ToolPermissionPanel(
             .fillMaxWidth()
             .padding(horizontal = Spacing.lg, vertical = Spacing.xs)
             .graphicsLayer { alpha = panelAlpha },
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(Radius.lg),
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(Radius.md),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Column(modifier = Modifier.padding(Spacing.md)) {
@@ -999,19 +1010,25 @@ private fun ErrorBubble(message: String) {
                     modifier = Modifier.size(18.dp)
                 )
             }
-            if (expanded) {
-                Spacer(Modifier.height(Spacing.sm))
-                SelectionContainer {
-                    Column(
-                        modifier = Modifier
-                            .heightIn(max = 160.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+            ) {
+                Column {
+                    Spacer(Modifier.height(Spacing.sm))
+                    SelectionContainer {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 160.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -1072,36 +1089,42 @@ internal fun PlanApprovalPanel(
                 )
             }
 
-            if (effectiveExpanded) {
-                if (state.reason.isNotBlank()) {
-                    Spacer(Modifier.height(Spacing.xs))
-                    SelectionContainer {
-                        Column(
-                            modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())
-                        ) {
-                            Text(
-                                text = state.reason,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+            AnimatedVisibility(
+                visible = effectiveExpanded,
+                enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+            ) {
+                Column {
+                    if (state.reason.isNotBlank()) {
+                        Spacer(Modifier.height(Spacing.xs))
+                        SelectionContainer {
+                            Column(
+                                modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = state.reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-                }
 
-                Spacer(Modifier.height(Spacing.md))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    AgentActionButton(
-                        text = stringResource(R.string.chat_continue_feedback),
-                        onClick = onRefine,
-                        modifier = Modifier.weight(1f),
-                        tone = AgentActionTone.Neutral
-                    )
-                    AgentActionButton(
-                        text = stringResource(R.string.chat_approve_and_implement),
-                        onClick = onApprove,
-                        modifier = Modifier.weight(1f),
-                        tone = AgentActionTone.Success
-                    )
+                    Spacer(Modifier.height(Spacing.md))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        AgentActionButton(
+                            text = stringResource(R.string.chat_continue_feedback),
+                            onClick = onRefine,
+                            modifier = Modifier.weight(1f),
+                            tone = AgentActionTone.Neutral
+                        )
+                        AgentActionButton(
+                            text = stringResource(R.string.chat_approve_and_implement),
+                            onClick = onApprove,
+                            modifier = Modifier.weight(1f),
+                            tone = AgentActionTone.Success
+                        )
+                    }
                 }
             }
         }

@@ -1,8 +1,11 @@
 package com.aicode.feature.agent.presentation.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -143,7 +146,11 @@ fun AskUserQuestionPanel(
                 )
             }
 
-            if (effectiveExpanded) {
+            AnimatedVisibility(
+                visible = effectiveExpanded,
+                enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+            ) {
                 Column(
                     modifier = Modifier
                         .heightIn(max = 480.dp)

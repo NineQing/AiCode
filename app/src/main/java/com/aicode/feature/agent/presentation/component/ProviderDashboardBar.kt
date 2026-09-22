@@ -6,8 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -82,9 +86,7 @@ fun ProviderDashboardBar(
             .fillMaxWidth()
             .padding(bottom = Spacing.xs)
             .clip(RoundedCornerShape(Radius.lg))
-            .border(1.dp, borderColor, RoundedCornerShape(Radius.lg))
-            // 强制收起时动画时长归零，避免收缩过程露出底部空白
-            .animateContentSize(animationSpec = tween(if (forceCollapse) 0 else 220)),
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.lg)),
         shape = RoundedCornerShape(Radius.lg),
         color = cardBgColor
     ) {
@@ -182,76 +184,68 @@ fun ProviderDashboardBar(
                         }
                     }
 
-                    if (!effectiveExpanded) {
-                        // ── 收起状态 ──
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { isExpanded = true },
-                            verticalAlignment = Alignment.CenterVertically
+                    // ── 顶部单行常驻栏（点击展开/折叠） ──
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isExpanded = !effectiveExpanded },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = provider.name,
+                            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(end = Spacing.md)
+                        )
+
+                        // 收起状态展示单行卡片摘要
+                        AnimatedVisibility(
+                            visible = !effectiveExpanded,
+                            modifier = Modifier.weight(1f),
+                            enter = fadeIn(tween(180)),
+                            exit = fadeOut(tween(120))
                         ) {
-                            Text(
-                                text = provider.name,
-                                style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(end = Spacing.md)
-                            )
-
-                            Box(modifier = Modifier.weight(1f)) {
-                                AdaptiveCardView(
-                                    card = card,
-                                    isExpanded = false,
-                                    onAction = onCardAction,
-                                    onRefresh = onRefreshByButton
-                                )
-                            }
-
-                            Spacer(Modifier.width(Spacing.sm))
-
-                            Icon(
-                                imageVector = FeatherIcons.ChevronDown,
-                                contentDescription = stringResource(R.string.common_expand),
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .clip(CircleShape)
-                                    .clickable { isExpanded = true },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            AdaptiveCardView(
+                                card = card,
+                                isExpanded = false,
+                                onAction = onCardAction,
+                                onRefresh = onRefreshByButton
                             )
                         }
-                    } else {
-                        // ── 展开状态 ──
-                        // 注意：点击展开时若 forceCollapse 仍为 true，effectiveExpanded 仍为 false，
-                        // 弹窗消失后会自动恢复展开态（isExpanded 保持 true）。
+
+                        if (effectiveExpanded) {
+                            Spacer(Modifier.weight(1f))
+                        }
+
+                        Spacer(Modifier.width(Spacing.sm))
+
+                        Icon(
+                            imageVector = if (effectiveExpanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                            contentDescription = if (effectiveExpanded) {
+                                stringResource(R.string.common_collapse)
+                            } else {
+                                stringResource(R.string.common_expand)
+                            },
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // ── 展开状态内容（平滑自上而下展开、自下而上收起） ──
+                    AnimatedVisibility(
+                        visible = effectiveExpanded,
+                        enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                        exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                    ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = Spacing.sm),
                             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                         ) {
-                            // 顶部提供商名 + 折叠按钮
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { isExpanded = false },
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = provider.name,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Icon(
-                                    imageVector = FeatherIcons.ChevronUp,
-                                    contentDescription = stringResource(R.string.common_collapse),
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clip(CircleShape)
-                                        .clickable { isExpanded = false },
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
                             // 卡片 Body 展开渲染
                             AdaptiveCardView(
                                 card = card,

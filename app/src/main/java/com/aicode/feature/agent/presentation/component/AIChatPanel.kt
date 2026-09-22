@@ -15,6 +15,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -446,6 +447,7 @@ fun AIChatPanel(
     val pendingPermission by viewModel.pendingToolPermission.collectAsStateWithLifecycle()
     val pendingPermissionSessionTitle by viewModel.pendingToolPermissionSessionTitle.collectAsStateWithLifecycle()
     val pendingQuestion by viewModel.pendingUserQuestion.collectAsStateWithLifecycle()
+    val currentTodoItems by viewModel.currentSessionTodoItems.collectAsStateWithLifecycle()
     val queuedRequests by viewModel.queuedRequests.collectAsStateWithLifecycle()
     val targetRewindMessageId by viewModel.targetRewindMessageId.collectAsStateWithLifecycle()
     val providers = (settingsViewModel?.providers?.collectAsStateWithLifecycle()?.value ?: emptyList()).filter { it.isEnabled }
@@ -561,14 +563,15 @@ fun AIChatPanel(
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     val imeVisible = imeBottomPx > 0
 
-    // 余额面板展开状态：展开时叠加面板联动折叠，避免输入框被双重顶开
+    // 余额/待办面板展开状态：展开时叠加面板联动折叠，避免输入框被双重顶开
     var dashboardExpanded by rememberSaveable { mutableStateOf(false) }
+    var todoExpanded by rememberSaveable { mutableStateOf(false) }
     // ProviderDashboardBar 仅在有面板脚本的 provider 下渲染（见 ChatInputBar）。无该栏时
     // dashboardExpanded 可能残留 true：面板曾展开后随 provider 切换/脚本移除而卸载，LaunchedEffect
     // 上报链路中断无法复位，直接拿它做 forceCollapse 会把授权/询问/计划面板永久压成收起态。
-    // 故叠加可见性，只在余额面板当前可见且展开时才折叠叠加面板。
+    // 故叠加可见性，只在面板当前可见且展开时才折叠叠加面板。
     val dashboardBarVisible = activeProvider?.dashboardScriptPath?.isNotBlank() == true
-    val dashboardCollapseActive = dashboardExpanded && dashboardBarVisible
+    val dashboardCollapseActive = (dashboardExpanded && dashboardBarVisible) || (todoExpanded && currentTodoItems.isNotEmpty())
 
     fun buildDashboardContext(
         lastInput: Int = 0,
@@ -1249,6 +1252,11 @@ fun AIChatPanel(
             } // 内容层结束
 
             // 悬浮层：错误气泡 / 面板 / 输入框（蒙版在 ChatInputBar 内部，跟随键盘上移）
+            val floatingPanelAlpha by animateFloatAsState(
+                targetValue = if (listState.isScrollInProgress) 0.4f else 1f,
+                animationSpec = tween(200),
+                label = "floating-panel-alpha"
+            )
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1256,13 +1264,16 @@ fun AIChatPanel(
                     // 实测悬浮层实际高度作为滚动留白，横幅/面板/输入框任何形态都不遮挡最后一条
                     .onGloballyPositioned { if (it.size.height > 0) floatingLayerHeightPx = it.size.height }
             ) {
-            StatusBanner(state = agentState)
+            Box(modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = floatingPanelAlpha }) {
+                StatusBanner(state = agentState)
+            }
 
             // 退场动画期间 uploadingCount 已归零，直接读会淡出一个「正在上传 0 个文件」，
             // 与 StatusBanner 同样用非空记忆值兜住退场。
             val lastUploadingCount = rememberLastNonNull(uploadingCount.takeIf { it > 0 })
             AnimatedVisibility(
                 visible = uploadingCount > 0,
+                modifier = Modifier.graphicsLayer { alpha = floatingPanelAlpha },
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -1272,6 +1283,7 @@ fun AIChatPanel(
             val questionForPanel = rememberLastNonNull(pendingQuestion)
             AnimatedVisibility(
                 visible = pendingQuestion != null,
+                modifier = Modifier.graphicsLayer { alpha = floatingPanelAlpha },
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -1289,6 +1301,7 @@ fun AIChatPanel(
             val planForPanel = rememberLastNonNull(planApproval)
             AnimatedVisibility(
                 visible = planApproval != null,
+                modifier = Modifier.graphicsLayer { alpha = floatingPanelAlpha },
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -1337,6 +1350,9 @@ fun AIChatPanel(
                 queuedRequests = queuedRequests,
                 onRemoveQueued = { viewModel.removeQueuedRequest(it) },
                 dashboardState = currentDashboardState,
+                todoItems = currentTodoItems,
+                sessionId = currentSessionId.orEmpty(),
+                onTodoExpandedChange = { todoExpanded = it },
                 forceCollapseDashboard = pendingPermission != null || pendingQuestion != null || planApproval != null || imeVisible,
                 onDashboardExpandedChange = { dashboardExpanded = it },
                 onRefreshDashboard = {

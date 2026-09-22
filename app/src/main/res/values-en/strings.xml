@@ -1263,6 +1263,9 @@
     <!-- Todo Card -->
     <string name="todo_completed">Completed</string>
     <string name="todo_in_progress">In Progress</string>
+    <string name="todo_dashboard_title">Tasks</string>
+    <string name="todo_dashboard_progress">%1$d/%2$d done</string>
+    <string name="todo_dashboard_all_done">All done</string>
 
     <!-- Tool Message -->
     <string name="tool_instruction">Instruction</string>

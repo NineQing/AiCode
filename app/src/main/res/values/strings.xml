@@ -1262,6 +1262,9 @@
     <!-- Todo Card -->
     <string name="todo_completed">已完成</string>
     <string name="todo_in_progress">进行中</string>
+    <string name="todo_dashboard_title">任务待办</string>
+    <string name="todo_dashboard_progress">%1$d/%2$d 完成</string>
+    <string name="todo_dashboard_all_done">全部完成</string>
 
     <!-- Tool Message -->
     <string name="tool_instruction">指令</string>

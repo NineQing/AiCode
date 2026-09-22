@@ -1,56 +1,101 @@
 package com.aicode.feature.agent.presentation.component
 
-import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.aicode.R
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Code
+import compose.icons.feathericons.Database
+import compose.icons.feathericons.File
 import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Image
+import compose.icons.feathericons.Music
+import compose.icons.feathericons.Package
+import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Video
 
 /**
- * 文件浏览行的图标来源，分两类以适配不同的着色方式：
- * - [Colored]：彩色矢量图（如 php 大象），显示时不染色，保留原色；
- * - [Mono]：线性图标（Feather），显示时随主题着色。
+ * 文件浏览行的单色线性图标，按文件语义和扩展名挑选合适的 Feather 线性图标。
+ * 风格与 App 全局保持一致的极简线性视觉，渲染时跟随主题色着色。
  */
-sealed interface FileTypeIcon {
-    data class Colored(@DrawableRes val res: Int) : FileTypeIcon
-    data class Mono(val vector: ImageVector) : FileTypeIcon
-}
+fun fileTypeIconFor(name: String): ImageVector {
+    val lower = name.lowercase()
+    if (lower in SPECIAL_TERMINAL_FILES) return FeatherIcons.Terminal
+    if (lower in SPECIAL_TEXT_FILES || lower.startsWith(".env")) return FeatherIcons.FileText
 
-/**
- * 按文件名（主要看扩展名）挑选图标，分层回退：
- * 图片各格式共用一个图标 → 主流语言用各自的彩色图标 → 其它可识别的代码/标记/配置文件
- * 用统一的“代码”图标 → 其余用默认文件图标。
- */
-fun fileTypeIconFor(name: String): FileTypeIcon {
     val ext = name.substringAfterLast('.', "").lowercase()
     return when (ext) {
-        in IMAGE_EXTS -> FileTypeIcon.Colored(R.drawable.filetype_image)
-        "php" -> FileTypeIcon.Colored(R.drawable.filetype_php)
-        "java" -> FileTypeIcon.Colored(R.drawable.filetype_java)
-        "py", "pyw", "pyi" -> FileTypeIcon.Colored(R.drawable.filetype_python)
-        "js", "mjs", "cjs", "jsx" -> FileTypeIcon.Colored(R.drawable.filetype_javascript)
-        "ts", "mts", "cts", "tsx" -> FileTypeIcon.Colored(R.drawable.filetype_typescript)
-        "go" -> FileTypeIcon.Colored(R.drawable.filetype_go)
-        "rs" -> FileTypeIcon.Colored(R.drawable.filetype_rust)
-        "c", "h" -> FileTypeIcon.Colored(R.drawable.filetype_c)
-        "cpp", "cc", "cxx", "hpp", "hh", "hxx" -> FileTypeIcon.Colored(R.drawable.filetype_cpp)
-        "kt", "kts" -> FileTypeIcon.Colored(R.drawable.filetype_kotlin)
-        in CODE_EXTS -> FileTypeIcon.Mono(FeatherIcons.Code)
-        else -> FileTypeIcon.Mono(FeatherIcons.FileText)
+        in CODE_EXTS -> FeatherIcons.Code
+        in TERMINAL_EXTS -> FeatherIcons.Terminal
+        in TEXT_AND_CONFIG_EXTS -> FeatherIcons.FileText
+        in IMAGE_EXTS -> FeatherIcons.Image
+        in VIDEO_EXTS -> FeatherIcons.Video
+        in AUDIO_EXTS -> FeatherIcons.Music
+        in ARCHIVE_EXTS -> FeatherIcons.Package
+        in DATABASE_EXTS -> FeatherIcons.Database
+        else -> FeatherIcons.File
     }
 }
 
-/** 图片：各格式共用一个图标。 */
+/** 源代码文件扩展名。 */
+private val CODE_EXTS = setOf(
+    "kt", "kts", "java", "py", "pyw", "pyi",
+    "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx",
+    "c", "h", "cpp", "cc", "cxx", "hpp", "hh", "hxx",
+    "cs", "go", "rs", "php", "rb", "swift", "dart", "lua",
+    "scala", "groovy", "vue", "svelte", "astro",
+    "html", "htm", "xhtml", "css", "scss", "sass", "less", "styl",
+    "r", "pl", "pm", "tcl", "hs", "fs", "fsx", "clj", "cljs",
+    "ex", "exs", "erl", "v", "zig", "nim", "d", "jl"
+)
+
+/** 脚本与命令行文件扩展名。 */
+private val TERMINAL_EXTS = setOf(
+    "sh", "bash", "zsh", "ksh", "csh", "fish", "bat", "cmd", "ps1", "awk", "sed"
+)
+
+/** 常见无后缀脚本或构建文件。 */
+private val SPECIAL_TERMINAL_FILES = setOf(
+    "dockerfile", "containerfile", "makefile", "rakefile", "vagrantfile", "justfile"
+)
+
+/** 文档、纯文本与各类配置文件（json、yaml、xml、properties、env 等统一作为文本呈现）。 */
+private val TEXT_AND_CONFIG_EXTS = setOf(
+    "md", "markdown", "mdown", "txt", "rst", "asciidoc", "adoc",
+    "doc", "docx", "rtf", "log", "csv", "tsv", "pdf",
+    "json", "jsonc", "json5", "yaml", "yml", "toml", "xml",
+    "ini", "cfg", "conf", "properties", "gradle", "pro", "plist",
+    "lock", "editorconfig"
+)
+
+/** 常见独立文本或配置规则文件名。 */
+private val SPECIAL_TEXT_FILES = setOf(
+    ".gitignore", ".gitattributes", ".gitmodules", ".dockerignore",
+    ".npmrc", ".prettierrc", ".eslintrc", ".clang-format",
+    "license", "notice", "authors", "contributors", "changelog"
+)
+
+/** 图片格式。 */
 private val IMAGE_EXTS = setOf(
     "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico",
     "heic", "heif", "avif", "tif", "tiff"
 )
 
-/** 可识别为代码/标记/配置，但未单独配彩色图标的扩展名，统一用默认“代码”图标。 */
-private val CODE_EXTS = setOf(
-    "cs", "rb", "swift", "dart", "lua", "scala", "groovy", "gradle",
-    "sh", "bash", "zsh", "ksh", "html", "htm", "css", "scss", "less",
-    "json", "jsonc", "json5", "yaml", "yml", "xml", "sql",
-    "md", "markdown", "toml", "ini", "cfg", "conf", "properties", "env", "vue"
+/** 视频媒体格式。 */
+private val VIDEO_EXTS = setOf(
+    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm"
+)
+
+/** 音频格式。 */
+private val AUDIO_EXTS = setOf(
+    "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"
+)
+
+/** 压缩包与安装包。 */
+private val ARCHIVE_EXTS = setOf(
+    "zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "7z", "rar",
+    "apk", "apks", "xapk", "aab", "jar", "war", "ear", "deb", "rpm", "ipa", "dmg", "iso"
+)
+
+/** 数据库文件。 */
+private val DATABASE_EXTS = setOf(
+    "sql", "db", "sqlite", "sqlite3", "mdb"
 )

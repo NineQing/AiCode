@@ -110,7 +110,6 @@ import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.aicode.R
 import java.text.SimpleDateFormat
@@ -1245,31 +1244,22 @@ private fun FileTreeRow(
     }
 }
 
-/** 文件树行的类型图标：目录用文件夹，文件按扩展名。[decorationColor] 非空时统一染色（.gitignore/dotfile 弱化）。 */
+/** 文件树行的类型图标：目录用文件夹，文件按扩展名挑选单色线性图标。[decorationColor] 非空时统一染色（.gitignore/dotfile 弱化）。 */
 @Composable
 private fun FileTreeIcon(node: FileTreeNode, decorationColor: Color?) {
-    val icon = if (node.entry.isDirectory) {
-        FileTypeIcon.Mono(FeatherIcons.Folder)
+    val vector = if (node.entry.isDirectory) {
+        FeatherIcons.Folder
     } else {
         fileTypeIconFor(node.entry.name)
     }
-    when (icon) {
-        is FileTypeIcon.Colored -> Icon(
-            painter = painterResource(icon.res),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            // 常规态保留彩色原色（tint=Unspecified）；.gitignore/dotfile 统一染成弱化色
-            tint = decorationColor ?: Color.Unspecified
-        )
-        is FileTypeIcon.Mono -> Icon(
-            imageVector = icon.vector,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = decorationColor
-                ?: if (node.entry.isDirectory) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    Icon(
+        imageVector = vector,
+        contentDescription = null,
+        modifier = Modifier.size(20.dp),
+        tint = decorationColor
+            ?: if (node.entry.isDirectory) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 /** .gitignore 命中条目的弱化色（橙，类 VSCode）。 */

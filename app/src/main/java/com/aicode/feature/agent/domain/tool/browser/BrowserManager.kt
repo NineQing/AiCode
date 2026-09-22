@@ -3,6 +3,7 @@ package com.aicode.feature.agent.domain.tool.browser
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -20,6 +21,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.model.AgentImage
 import kotlinx.coroutines.CancellationException
@@ -49,19 +52,22 @@ data class BrowserTabState(
     val url: String = "",
     val title: String = "",
     val loading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val devToolsOpen: Boolean = false
 )
 
 data class BrowserState(
     val tabs: List<BrowserTabState> = emptyList(),
     val activeTabId: String = "",
-    val attached: Boolean = false
+    val attached: Boolean = false,
+    val nightMode: Boolean = false
 ) {
     val activeTab: BrowserTabState? get() = tabs.firstOrNull { it.id == activeTabId } ?: tabs.firstOrNull()
     val url: String get() = activeTab?.url.orEmpty()
     val title: String get() = activeTab?.title.orEmpty()
     val loading: Boolean get() = activeTab?.loading == true
     val error: String? get() = activeTab?.error
+    val devToolsOpen: Boolean get() = activeTab?.devToolsOpen == true
 }
 
 data class BrowserDialog(
@@ -100,6 +106,15 @@ class BrowserManager @Inject constructor(
         private const val MAX_CONSOLE_LOGS = 200
         private const val DIALOG_TIMEOUT_MS = 30_000L
         const val MAX_TABS = 10
+
+        private const val NIGHT_STYLE_ID = "__bicode_night_css__"
+        private val NIGHT_BG_COLOR = 0xFF121212.toInt()
+
+        /** 反色夜间样式：整页 invert + hue-rotate，图片/视频二次反色还原原始观感。 */
+        private const val NIGHT_CSS =
+            "html{filter:invert(1) hue-rotate(180deg);background:#fff}" +
+                "img,video,picture,canvas,svg image,[style*=\"background-image\"]" +
+                "{filter:invert(1) hue-rotate(180deg)}"
     }
 
     private class TabHolder(
@@ -109,6 +124,7 @@ class BrowserManager @Inject constructor(
         var title: String = "",
         var loading: Boolean = false,
         var error: String? = null,
+        var devToolsOpen: Boolean = false,
         val consoleLogs: ArrayDeque<BrowserConsoleEntry> = ArrayDeque(),
         var pendingDialog: BrowserDialog? = null,
         var pendingDialogResult: JsResult? = null,
@@ -121,7 +137,8 @@ class BrowserManager @Inject constructor(
             url = url,
             title = title,
             loading = loading,
-            error = error
+            error = error,
+            devToolsOpen = devToolsOpen
         )
     }
 
@@ -131,6 +148,14 @@ class BrowserManager @Inject constructor(
     private var tabSeq = 1
     private var containerView: FrameLayout? = null
     private var hiddenHost: ViewGroup? = null
+
+    /** App 外观是否为深色，由 UI 层通过 [setAppDarkTheme] 推送。 */
+    private var appDarkTheme: Boolean = false
+
+    /** 手动覆盖：null 表示跟随 App 外观，true/false 为用户在浏览器内的显式选择。 */
+    private var nightModeOverride: Boolean? = null
+
+    private val nightMode: Boolean get() = nightModeOverride ?: appDarkTheme
 
     private val _state = MutableStateFlow(BrowserState())
     val state: StateFlow<BrowserState> = _state.asStateFlow()
@@ -235,6 +260,8 @@ class BrowserManager @Inject constructor(
                 tab.url = url.orEmpty()
                 tab.title = ""
                 tab.error = null
+                view?.setBackgroundColor(if (nightMode) NIGHT_BG_COLOR else Color.WHITE)
+                if (view != null && nightMode) applyNightModeTo(view)
                 publishState()
             }
 
@@ -242,6 +269,8 @@ class BrowserManager @Inject constructor(
                 val tab = tabHolderRef() ?: return
                 tab.loading = false
                 tab.url = url.orEmpty()
+                if (view != null && nightMode) applyNightModeTo(view)
+                if (view != null && tab.devToolsOpen) injectEruda(view, autoShow = false)
                 val finish = {
                     tab.loadDeferred?.complete(Result.success(url.orEmpty()))
                     tab.loadDeferred = null
@@ -274,6 +303,12 @@ class BrowserManager @Inject constructor(
         }
 
         wv.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                if (view != null && nightMode && newProgress in 15..30) {
+                    applyNightModeTo(view)
+                }
+            }
+
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
                 val tab = tabHolderRef() ?: return true
                 val level = when (msg.messageLevel()) {
@@ -322,6 +357,8 @@ class BrowserManager @Inject constructor(
         wv.settings.useWideViewPort = true
         wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        wv.setBackgroundColor(if (nightMode) NIGHT_BG_COLOR else Color.WHITE)
+        applyDarkThemeToSettings(wv)
         wv.addJavascriptInterface(BrowserJsBridge(tabId), "__browserBridge__")
 
         // 设置 Headless 默认尺寸，保证后台与离屏测试可用
@@ -376,9 +413,196 @@ class BrowserManager @Inject constructor(
             it.copy(
                 tabs = tabs.map { t -> t.toState() },
                 activeTabId = activeTabId,
-                attached = containerView != null
+                attached = containerView != null,
+                nightMode = nightMode
             )
         }
+    }
+
+    // ================= 夜间模式 =================
+
+    /** App 外观变化时调用，重算并应用到所有标签页。 */
+    fun setAppDarkTheme(dark: Boolean) {
+        if (appDarkTheme == dark) return
+        appDarkTheme = dark
+        applyNightMode()
+    }
+
+    /** 底栏手动切换；切回与 App 外观一致时自动恢复跟随。 */
+    fun toggleNightMode() {
+        val next = !nightMode
+        nightModeOverride = if (next == appDarkTheme) null else next
+        applyNightMode()
+    }
+
+    private fun applyNightMode() {
+        val night = nightMode
+        tabs.forEach { tab ->
+            tab.webView.setBackgroundColor(if (night) NIGHT_BG_COLOR else Color.WHITE)
+            applyDarkThemeToSettings(tab.webView)
+            applyNightModeTo(tab.webView)
+        }
+        publishState()
+    }
+
+    /** 适配内核级暗色模式（开启 prefers-color-scheme: dark 支持）。 */
+    private fun applyDarkThemeToSettings(wv: WebView) {
+        val night = nightMode
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, night)
+            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                WebSettingsCompat.setForceDark(
+                    wv.settings,
+                    if (night) WebSettingsCompat.FORCE_DARK_ON else WebSettingsCompat.FORCE_DARK_OFF
+                )
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK_STRATEGY)) {
+                    WebSettingsCompat.setForceDarkStrategy(
+                        wv.settings,
+                        WebSettingsCompat.DARK_STRATEGY_PREFER_WEB_THEME_OVER_USER_AGENT_DARKENING
+                    )
+                }
+            }
+        } catch (e: Throwable) {
+            FileLogger.w(TAG, "Failed to apply dark theme to WebSettings", e)
+        }
+    }
+
+    /** 注入或移除夜间样式。带原生深色主题保护（对已支持深色的 GitHub 等网站避免反相破坏）。 */
+    private fun applyNightModeTo(wv: WebView) {
+        val js = if (nightMode) {
+            """
+            (function(){
+                try {
+                    var meta = document.querySelector('meta[name="color-scheme"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'color-scheme';
+                        meta.content = 'dark';
+                        (document.head || document.documentElement).appendChild(meta);
+                    } else {
+                        meta.content = 'dark';
+                    }
+                    if (document.documentElement) {
+                        document.documentElement.style.colorScheme = 'dark';
+                    }
+                } catch(e){}
+
+                var bg = '';
+                try {
+                    var el = document.body || document.documentElement;
+                    if (el) bg = window.getComputedStyle(el).backgroundColor;
+                } catch(e){}
+
+                function isDark(c) {
+                    if (!c || c === 'transparent' || c === 'rgba(0, 0, 0, 0)') return false;
+                    var m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                    if (!m) return false;
+                    var r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                    return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
+                }
+
+                var id = '$NIGHT_STYLE_ID';
+                var styleEl = document.getElementById(id);
+
+                if (isDark(bg)) {
+                    if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+                    return;
+                }
+
+                if (!styleEl) {
+                    styleEl = document.createElement('style');
+                    styleEl.id = id;
+                    styleEl.textContent = ${jsStringLiteral(NIGHT_CSS)};
+                    (document.head || document.documentElement).appendChild(styleEl);
+                }
+            })()
+            """.trimIndent()
+        } else {
+            """
+            (function(){
+                var id = '$NIGHT_STYLE_ID';
+                var el = document.getElementById(id);
+                if (el && el.parentNode) el.parentNode.removeChild(el);
+                try {
+                    var meta = document.querySelector('meta[name="color-scheme"]');
+                    if (meta && meta.content === 'dark') meta.content = 'light';
+                    if (document.documentElement) document.documentElement.style.colorScheme = '';
+                } catch(e){}
+            })()
+            """.trimIndent()
+        }
+        wv.evaluateJavascript(js, null)
+    }
+
+    // ================= 开发者工具 =================
+
+    private var erudaScriptCache: String? = null
+
+    private fun loadErudaScript(): String {
+        erudaScriptCache?.let { return it }
+        val script = try {
+            appContext.assets.open("scripts/eruda.min.js").bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "Failed to read eruda.min.js from assets", e)
+            ""
+        }
+        erudaScriptCache = script
+        return script
+    }
+
+    private fun injectEruda(wv: WebView, autoShow: Boolean) {
+        val script = loadErudaScript()
+        if (script.isBlank()) return
+        val showCall = if (autoShow) "try { window.eruda.show(); } catch(e){}" else ""
+        val js = """
+            (function() {
+                if (window.eruda) {
+                    $showCall
+                    return;
+                }
+                try {
+                    $script
+                    window.eruda.init();
+                    $showCall
+                } catch(e) {
+                    console.error('Failed to init Eruda', e);
+                }
+            })()
+        """.trimIndent()
+        wv.evaluateJavascript(js, null)
+    }
+
+    suspend fun toggleDevTools(tabId: String? = null): Boolean = withContext(Dispatchers.Main) {
+        val targetId = tabId ?: activeTabId
+        val tab = findTab(targetId) ?: return@withContext false
+        val next = !tab.devToolsOpen
+        tab.devToolsOpen = next
+
+        try {
+            WebView.setWebContentsDebuggingEnabled(true)
+        } catch (e: Throwable) {
+            FileLogger.w(TAG, "Failed to setWebContentsDebuggingEnabled", e)
+        }
+
+        if (next) {
+            injectEruda(tab.webView, autoShow = true)
+        } else {
+            val hideJs = """
+                (function() {
+                    if (window.eruda) {
+                        try {
+                            window.eruda.destroy();
+                        } catch(e) {
+                            try { window.eruda.hide(); } catch(_){}
+                        }
+                    }
+                })()
+            """.trimIndent()
+            tab.webView.evaluateJavascript(hideJs, null)
+        }
+        publishState()
+        next
     }
 
     private fun updateContainerView() {

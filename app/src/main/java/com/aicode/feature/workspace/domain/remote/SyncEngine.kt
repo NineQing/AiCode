@@ -1,6 +1,5 @@
 package com.aicode.feature.workspace.domain.remote
 
-import android.os.FileObserver
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.GitIgnoreMatcher
 import kotlinx.coroutines.CoroutineScope
@@ -9,7 +8,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,7 +56,6 @@ class SyncEngine(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val fileObservers = mutableListOf<FileObserver>()
     private val retryCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
     
     // 使用 Channel 做缓冲和防抖
@@ -98,26 +95,23 @@ class SyncEngine(
             }
         }
 
-        // 断线自动重连 supervisor：定期探活，断开则按退避重连。本地镜像无网络连接，跳过。
-        if (connection.protocol != com.aicode.feature.workspace.domain.model.RemoteProtocol.LOCAL) {
-            scope.launch {
-                var backoffMs = RECONNECT_BASE_MS
-                while (isActive) {
-                    delay(PING_INTERVAL_MS)
-                    if (!syncClient.ping()) {
-                        FileLogger.w(TAG, "Sync: 连接已断开（${connection.name}），开始自动重连")
-                        while (isActive && !syncClient.ping()) {
-                            delay(backoffMs)
-                            try {
-                                syncClient.disconnect()
-                                syncClient.connect(connection.host, connection.port, connection.username, auth)
-                                startWatching()
-                                backoffMs = RECONNECT_BASE_MS
-                                FileLogger.i(TAG, "Sync: 自动重连成功（${connection.name}）")
-                            } catch (e: Exception) {
-                                FileLogger.e(TAG, "Sync: 自动重连失败（${connection.name}），${backoffMs / 1000}s 后重试: ${e.message}")
-                                backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_MS)
-                            }
+        // 断线自动重连 supervisor：定期探活，断开则按退避重连。
+        scope.launch {
+            var backoffMs = RECONNECT_BASE_MS
+            while (isActive) {
+                delay(PING_INTERVAL_MS)
+                if (!syncClient.ping()) {
+                    FileLogger.w(TAG, "Sync: 连接已断开（${connection.name}），开始自动重连")
+                    while (isActive && !syncClient.ping()) {
+                        delay(backoffMs)
+                        try {
+                            syncClient.disconnect()
+                            syncClient.connect(connection.host, connection.port, connection.username, auth)
+                            backoffMs = RECONNECT_BASE_MS
+                            FileLogger.i(TAG, "Sync: 自动重连成功（${connection.name}）")
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "Sync: 自动重连失败（${connection.name}），${backoffMs / 1000}s 后重试: ${e.message}")
+                            backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_MS)
                         }
                     }
                 }
@@ -202,56 +196,11 @@ class SyncEngine(
     }
 
     /**
-     * 开始监听本地镜像目录的改变
+     * 外部（[com.aicode.feature.workspace.domain.repository.RemoteRepository] 的中心服务订阅）发现
+     * 本地变更后投递进来；与失败重试共用同一队列，保持原有批处理与节流语义。
      */
-    fun startWatching() {
-        // 防止重复监听：重新进入时先清理旧的 observer（目录删除/重建或重复调用可能残留）
-        stopWatching()
-        val mask = FileObserver.CREATE or FileObserver.MODIFY or FileObserver.DELETE or FileObserver.MOVED_TO or FileObserver.MOVED_FROM
-        // 已监听目录去重：动态新建的子目录可能触发重复的 watchDirectory 递归
-        val watchedDirs = mutableSetOf<String>()
-
-        fun watchDirectory(dir: File) {
-            val key = dir.absolutePath
-            if (!dir.exists() || !dir.isDirectory || isIgnored(dir.absolutePath) || key in watchedDirs) return
-            watchedDirs.add(key)
-            // 用 String 构造：File 版本要 API 29，本项目 minSdk 26，低版本设备会 NoSuchMethodError。
-            @Suppress("DEPRECATION")
-            val observer = object : FileObserver(dir.absolutePath, mask) {
-                override fun onEvent(event: Int, path: String?) {
-                    if (path == null) return
-                    val fullLocalPath = File(dir, path).absolutePath
-                    
-                    // 如果新建了子目录，递归增加监听
-                    if ((event and FileObserver.CREATE) != 0) {
-                        val file = File(fullLocalPath)
-                        if (file.isDirectory) {
-                            watchDirectory(file)
-                        }
-                    }
-                    
-                    scope.launch {
-                        syncChannel.send(fullLocalPath)
-                    }
-                }
-            }
-            observer.startWatching()
-            fileObservers.add(observer)
-            
-            // 递归监听已有的子目录
-            dir.listFiles()?.forEach { child ->
-                if (child.isDirectory) {
-                    watchDirectory(child)
-                }
-            }
-        }
-        
-        watchDirectory(File(mount.localMountPath))
-    }
-
-    fun stopWatching() {
-        fileObservers.forEach { it.stopWatching() }
-        fileObservers.clear()
+    fun enqueueLocalChange(localPath: String) {
+        syncChannel.trySend(localPath)
     }
 
     private suspend fun handleLocalChange(localPath: String) {
@@ -297,7 +246,6 @@ class SyncEngine(
     }
 
     fun shutdown() {
-        stopWatching()
         scope.cancel()
     }
 

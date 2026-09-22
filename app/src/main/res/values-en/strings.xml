@@ -1116,11 +1116,8 @@
     <!-- Remote Dialogs -->
     <string name="remote_edit_connection">Edit Connection Channel</string>
     <string name="remote_add_connection">Add Connection Channel</string>
-    <string name="remote_channel_name_hint">Channel name</string>
     <string name="remote_connection_name_hint">Connection name</string>
-    <string name="remote_internal_dir">Internal Storage Target Directory</string>
     <string name="remote_host_address">Host</string>
-    <string name="remote_select_dir">Select Directory</string>
     <string name="remote_port">Port</string>
     <string name="remote_password">Password</string>
     <string name="remote_auth_password">Password</string>
@@ -1130,16 +1127,13 @@
     <string name="remote_no_keys_hint">No keys yet, add one in the SSH Host Keys page</string>
     <string name="remote_key_passphrase">Passphrase (optional)</string>
     <string name="remote_toggle_password">Toggle password visibility</string>
-    <string name="remote_test_dir">Test Directory</string>
     <string name="remote_test_connection">Test Connection</string>
     <string name="remote_edit_workspace">Edit Mount</string>
     <string name="remote_add_workspace">Add Mount</string>
     <string name="remote_select_channel">Select Remote Channel</string>
     <string name="remote_link_channel">Link Remote Connection Channel</string>
-    <string name="remote_mount_subdir">Mount Target Subdirectory</string>
     <string name="remote_target_dir">Remote Target Directory</string>
     <string name="remote_browse_dir">Browse Directory</string>
-    <string name="remote_local_channel_subdir_desc">The local channel\'s mount root comes from the connection config; fill in a subdirectory under the root, usually just /.</string>
     <string name="remote_select_local_workspace">Select Local Workspace</string>
     <string name="remote_mount_already_exists">This mount already exists: same channel, remote directory and workspace combination</string>
     <string name="remote_map_to_local">Map to Local Workspace</string>
@@ -1180,7 +1174,7 @@
     <string name="remote_tab_ftp">Built-in FTP</string>
     <string name="remote_tab_sync">Sync Settings</string>
     <string name="remote_no_connections">No connections yet</string>
-    <string name="remote_no_connections_desc">Add an SFTP / FTP / local channel</string>
+    <string name="remote_no_connections_desc">Add an SFTP / FTP connection</string>
     <string name="remote_no_workspaces">No mounted directories yet</string>
     <string name="remote_no_workspaces_desc">Local changes auto-sync to the remote; remote files can be downloaded manually</string>
     <string name="remote_hint_title">Hint</string>
@@ -1225,7 +1219,6 @@
     <string name="status_connected">Connected</string>
     <string name="status_disconnected">Disconnected</string>
     <string name="status_connection_failed">Connection Failed</string>    <string name="sync_disconnect">Disconnect</string>
-    <string name="sync_all">Sync All</string>
     <string name="sync_upload_all">Upload All</string>
     <string name="sync_download_all">Download All</string>
     <string name="sync_connect_and_sync">Connect and Sync</string>
@@ -1481,4 +1474,7 @@
     <string name="browser_empty_hint">Enter a URL in the address bar above to start browsing</string>
     <string name="browser_tabs_manage">Manage Tabs</string>
     <string name="browser_empty_click_hint">Tap above to enter a URL and start browsing</string>
+    <string name="browser_night_mode_on">Turn off night mode</string>
+    <string name="browser_night_mode_off">Turn on night mode</string>
+    <string name="browser_devtools">Developer tools</string>
 </resources>

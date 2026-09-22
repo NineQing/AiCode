@@ -189,6 +189,15 @@ android {
                 include = false
             }
         }
+        // beta 测试版：继承 release 的全部配置（签名/R8/资源压缩/proguard），仅包名后缀 .beta
+        // → applicationId 变 com.aicode.beta，可与正式版同机共存、互不覆盖。
+        // 由 .github/workflows/beta.yml 在 push main 时构建并上传 Artifacts，供测机验证。
+        create("beta") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".beta"
+            // :terminal-emulator / :terminal-view 无 beta 变体，依赖解析回退到它们的 release 变体。
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {
@@ -381,6 +390,9 @@ dependencies {
     // WorkManager — 保活兜底：周期检查 TerminalKeepaliveService 存活并拉起（KeepaliveWorker）
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.hilt:hilt-work:1.2.0")
+
+    // Android WebKit 扩展（提供现代深色模式 WebSettingsCompat / ForceDark 支持）
+    implementation("androidx.webkit:webkit:1.12.1")
 
     // Shizuku：以 adb shell（uid 2000）身份执行命令。api 提供 Shizuku 类与 UserService 绑定，
     // provider 注册 ShizukuProvider（见 AndroidManifest）以跨进程获取 binder。

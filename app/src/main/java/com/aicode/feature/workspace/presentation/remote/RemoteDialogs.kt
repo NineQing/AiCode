@@ -224,24 +224,13 @@ fun AddRemoteConnectionDialog(
     }
     var passphrase by remember(initialConnection) { mutableStateOf(initialConnection?.passphrase ?: "") }
     var keyExpanded by remember { mutableStateOf(false) }
-    val isLocal = protocol == RemoteProtocol.LOCAL
 
     val currentAuth: RemoteAuth = when {
-        isLocal -> RemoteAuth.Password("")
         protocol == RemoteProtocol.FTP -> RemoteAuth.Password(password)
         authMethod == 1 -> loginKeys.firstOrNull { it.id == selectedKeyId }
             ?.let { RemoteAuth.PrivateKey(it.path, passphrase.ifBlank { null }) }
             ?: RemoteAuth.Password("")
         else -> RemoteAuth.Password(password)
-    }
-
-    val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val path = UriPathResolver.toFilePath(context, uri)
-            if (path != null) host = path
-        }
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -269,30 +258,23 @@ fun AddRemoteConnectionDialog(
                 selected = when (protocol) {
                     RemoteProtocol.SFTP -> 0
                     RemoteProtocol.FTP -> 1
-                    RemoteProtocol.LOCAL -> 2
                 },
                 onSelect = { index ->
-                    val newProtocol = when (index) {
-                        0 -> RemoteProtocol.SFTP
-                        1 -> RemoteProtocol.FTP
-                        else -> RemoteProtocol.LOCAL
-                    }
+                    val newProtocol = if (index == 0) RemoteProtocol.SFTP else RemoteProtocol.FTP
                     // 端口仅在「空白或等于上一协议默认值」时跟随新协议默认值，用户自定义端口切换后保留
                     val oldDefaultPort = when (protocol) {
                         RemoteProtocol.SFTP -> "22"
                         RemoteProtocol.FTP -> "21"
-                        RemoteProtocol.LOCAL -> "0"
                     }
                     if (port.isBlank() || port == oldDefaultPort) {
                         port = when (newProtocol) {
                             RemoteProtocol.SFTP -> "22"
                             RemoteProtocol.FTP -> "21"
-                            RemoteProtocol.LOCAL -> "0"
                         }
                     }
                     protocol = newProtocol
                 },
-                tabs = listOf("SFTP", "FTP", stringResource(R.string.common_local))
+                tabs = listOf("SFTP", "FTP")
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -314,108 +296,94 @@ fun AddRemoteConnectionDialog(
                     SheetOutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text(if (isLocal) stringResource(R.string.remote_channel_name_hint) else stringResource(R.string.remote_connection_name_hint)) },
+                        label = { Text(stringResource(R.string.remote_connection_name_hint)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                     SheetOutlinedTextField(
                         value = host,
                         onValueChange = { host = it },
-                        label = { Text(if (isLocal) stringResource(R.string.remote_internal_dir) else stringResource(R.string.remote_host_address)) },
-                        placeholder = if (isLocal) {
-                            { Text("/storage/emulated/0/AICode/projects") }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = if (isLocal) {
-                            {
-                                IconButton(onClick = { folderPicker.launch(null) }) {
-                                    Icon(FeatherIcons.Folder, contentDescription = stringResource(R.string.remote_select_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        } else null
+                        label = { Text(stringResource(R.string.remote_host_address)) },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (!isLocal) {
-                        SheetOutlinedTextField(value = port, onValueChange = { port = it.filter { char -> char.isDigit() }.take(5) }, label = { Text(stringResource(R.string.remote_port)) }, modifier = Modifier.fillMaxWidth())
-                        SheetOutlinedTextField(value = username, onValueChange = { username = it }, label = { Text(stringResource(R.string.common_username)) }, modifier = Modifier.fillMaxWidth())
+                    SheetOutlinedTextField(value = port, onValueChange = { port = it.filter { char -> char.isDigit() }.take(5) }, label = { Text(stringResource(R.string.remote_port)) }, modifier = Modifier.fillMaxWidth())
+                    SheetOutlinedTextField(value = username, onValueChange = { username = it }, label = { Text(stringResource(R.string.common_username)) }, modifier = Modifier.fillMaxWidth())
 
-                        // 仅 SFTP 支持密钥认证；FTP 只有密码
-                        if (protocol == RemoteProtocol.SFTP) {
-                            CompactSegments(
-                                selected = authMethod,
-                                onSelect = { authMethod = it },
-                                tabs = listOf(
-                                    stringResource(R.string.remote_auth_password),
-                                    stringResource(R.string.remote_auth_key)
-                                )
+                    // 仅 SFTP 支持密钥认证；FTP 只有密码
+                    if (protocol == RemoteProtocol.SFTP) {
+                        CompactSegments(
+                            selected = authMethod,
+                            onSelect = { authMethod = it },
+                            tabs = listOf(
+                                stringResource(R.string.remote_auth_password),
+                                stringResource(R.string.remote_auth_key)
                             )
-                        }
+                        )
+                    }
 
-                        if (protocol == RemoteProtocol.SFTP && authMethod == 1) {
-                            ExposedDropdownMenuBox(
+                    if (protocol == RemoteProtocol.SFTP && authMethod == 1) {
+                        ExposedDropdownMenuBox(
+                            expanded = keyExpanded,
+                            onExpandedChange = { keyExpanded = !keyExpanded }
+                        ) {
+                            val selectedKeyName = loginKeys.firstOrNull { it.id == selectedKeyId }?.name
+                                ?: stringResource(R.string.remote_select_key)
+                            SheetOutlinedTextField(
+                                value = selectedKeyName,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.remote_login_key)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = keyExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            )
+                            ExposedDropdownMenu(
                                 expanded = keyExpanded,
-                                onExpandedChange = { keyExpanded = !keyExpanded }
+                                onDismissRequest = { keyExpanded = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                             ) {
-                                val selectedKeyName = loginKeys.firstOrNull { it.id == selectedKeyId }?.name
-                                    ?: stringResource(R.string.remote_select_key)
-                                SheetOutlinedTextField(
-                                    value = selectedKeyName,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text(stringResource(R.string.remote_login_key)) },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = keyExpanded) },
-                                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = keyExpanded,
-                                    onDismissRequest = { keyExpanded = false },
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                                ) {
-                                    if (loginKeys.isEmpty()) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.remote_no_keys_hint)) },
-                                            onClick = { keyExpanded = false }
-                                        )
-                                    }
-                                    loginKeys.forEach { key ->
-                                        DropdownMenuItem(
-                                            text = { Text(key.name) },
-                                            onClick = {
-                                                selectedKeyId = key.id
-                                                keyExpanded = false
-                                            }
-                                        )
-                                    }
+                                if (loginKeys.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.remote_no_keys_hint)) },
+                                        onClick = { keyExpanded = false }
+                                    )
+                                }
+                                loginKeys.forEach { key ->
+                                    DropdownMenuItem(
+                                        text = { Text(key.name) },
+                                        onClick = {
+                                            selectedKeyId = key.id
+                                            keyExpanded = false
+                                        }
+                                    )
                                 }
                             }
-                            SheetOutlinedTextField(
-                                value = passphrase,
-                                onValueChange = { passphrase = it },
-                                label = { Text(stringResource(R.string.remote_key_passphrase)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                visualTransformation = if (passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    val image = if (passphraseVisible) FeatherIcons.Eye else FeatherIcons.EyeOff
-                                    IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
-                                        Icon(image, stringResource(R.string.remote_toggle_password), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            )
-                        } else {
-                            SheetOutlinedTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = { Text(stringResource(R.string.remote_password)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    val image = if (passwordVisible) FeatherIcons.Eye else FeatherIcons.EyeOff
-                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                        Icon(image, stringResource(R.string.remote_toggle_password), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            )
                         }
+                        SheetOutlinedTextField(
+                            value = passphrase,
+                            onValueChange = { passphrase = it },
+                            label = { Text(stringResource(R.string.remote_key_passphrase)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            visualTransformation = if (passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                val image = if (passphraseVisible) FeatherIcons.Eye else FeatherIcons.EyeOff
+                                IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
+                                    Icon(image, stringResource(R.string.remote_toggle_password), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        )
+                    } else {
+                        SheetOutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text(stringResource(R.string.remote_password)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                val image = if (passwordVisible) FeatherIcons.Eye else FeatherIcons.EyeOff
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(image, stringResource(R.string.remote_toggle_password), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        )
                     }
 
                     OutlinedButton(
@@ -427,13 +395,13 @@ fun AddRemoteConnectionDialog(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isTesting && host.isNotBlank() && (isLocal || username.isNotBlank()) &&
-                            (isLocal || protocol == RemoteProtocol.FTP || authMethod == 0 || selectedKeyId.isNotEmpty())
+                        enabled = !isTesting && host.isNotBlank() && username.isNotBlank() &&
+                            (protocol == RemoteProtocol.FTP || authMethod == 0 || selectedKeyId.isNotEmpty())
                     ) {
                         if (isTesting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Text(if (isLocal) stringResource(R.string.remote_test_dir) else stringResource(R.string.remote_test_connection))
+                            Text(stringResource(R.string.remote_test_connection))
                         }
                     }
 
@@ -442,8 +410,8 @@ fun AddRemoteConnectionDialog(
 
             SheetSaveButton(
                 text = stringResource(if (initialConnection != null) R.string.common_save else R.string.common_add),
-                enabled = name.isNotBlank() && host.isNotBlank() && (isLocal || username.isNotBlank()) &&
-                    (isLocal || protocol == RemoteProtocol.FTP || authMethod == 0 || selectedKeyId.isNotEmpty()),
+                enabled = name.isNotBlank() && host.isNotBlank() && username.isNotBlank() &&
+                    (protocol == RemoteProtocol.FTP || authMethod == 0 || selectedKeyId.isNotEmpty()),
                 onClick = {
                     onAdd(name, host, port, username, currentAuth, protocol)
                 }
@@ -516,7 +484,6 @@ fun AddRemoteMountDialog(
     var wsExpanded by remember { mutableStateOf(false) }
     var showBrowser by remember { mutableStateOf(false) }
     val selectedConnection = connections.find { it.id == selectedConnectionId }
-    val isLocalConnection = selectedConnection?.protocol == RemoteProtocol.LOCAL
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val configuration = LocalConfiguration.current
@@ -576,9 +543,6 @@ fun AddRemoteMountDialog(
                                     text = { Text(conn.name) },
                                     onClick = {
                                         selectedConnectionId = conn.id
-                                        if (conn.protocol == RemoteProtocol.LOCAL && remotePath.isBlank()) {
-                                            remotePath = "/"
-                                        }
                                         connExpanded = false
                                     }
                                 )
@@ -590,12 +554,7 @@ fun AddRemoteMountDialog(
                         SheetOutlinedTextField(
                             value = remotePath,
                             onValueChange = { remotePath = it },
-                            label = { Text(if (isLocalConnection) stringResource(R.string.remote_mount_subdir) else stringResource(R.string.remote_target_dir)) },
-                            placeholder = if (isLocalConnection) {
-                                { Text("/") }
-                            } else {
-                                null
-                            },
+                            label = { Text(stringResource(R.string.remote_target_dir)) },
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -605,14 +564,6 @@ fun AddRemoteMountDialog(
                         ) {
                             Icon(FeatherIcons.Folder, contentDescription = stringResource(R.string.remote_browse_dir), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-
-                    if (isLocalConnection) {
-                        Text(
-                            text = stringResource(R.string.remote_local_channel_subdir_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     ExposedDropdownMenuBox(

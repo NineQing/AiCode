@@ -35,12 +35,23 @@ data class ContainerProfile(
     companion object {
         const val BUILTIN_ID = "builtin-alpine"
 
+        /**
+         * 新容器默认注入的 proot 参数。刻意与用户手动添加走同一条路径（[extraArgs]，追加在 proot argv
+         * 末尾），而不在引擎里硬编码 argv——硬编码的位置与手动添加不同，会导致 --link2symlink 行为异常，
+         * 且无法在编辑页撤销。
+         *  - --link2symlink：Android SELinux 禁止 app 域创建硬链接，dpkg 用 link() 备份文件会 Permission
+         *    denied，proot 以符号链接模拟硬链接绕过；
+         *  - --kill-on-exit：proot 退出时级联杀掉容器内子进程，避免终端仍在运行时重置容器残留孤儿进程致卡死。
+         */
+        val DEFAULT_PROOT_ARGS = listOf("--link2symlink", "--kill-on-exit")
+
         /** 内置 Alpine profile：镜像来自 assets，复用现有安装/provision 全流程。 */
         val BUILTIN_ALPINE = ContainerProfile(
             id = BUILTIN_ID,
             name = "内置 Alpine",
             rootfsSource = RootfsSource.Asset("alpine-rootfs.bin"),
             shellPath = null,
+            extraArgs = DEFAULT_PROOT_ARGS,
             isBuiltin = true
         )
     }

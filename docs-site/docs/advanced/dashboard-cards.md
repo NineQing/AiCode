@@ -92,6 +92,7 @@ AI 助手与开发者可以依据此规范，编写面板脚本（Python / Node 
 - 同名键不区分大小写，冲突时以后添加的为准；
 - 参数值支持引用当前供应商的配置占位符，避免敏感信息（如 API Key）重复填写。
 
+::: v-pre
 | 占位符 | 说明 |
 | :--- | :--- |
 | {{PROVIDER_API_KEY}} | 当前生效的 API Key |
@@ -102,8 +103,9 @@ AI 助手与开发者可以依据此规范，编写面板脚本（Python / Node 
 | {{DEFAULT_MODEL}} | 默认模型 |
 | {{SELECTED_MODEL}} | 当前选中的模型 |
 | {{MODEL}} | 实际生效的模型（优先选中，其次默认） |
+:::
 
-示例：配置参数 KEY=ACCOUNT_ID、VALUE={{PROVIDER_API_KEY}}，脚本中将注入
+示例：配置参数 KEY=ACCOUNT_ID、VALUE=<span v-pre>{{PROVIDER_API_KEY}}</span>，脚本中将注入
 AICODE_KEY_ACCOUNT_ID=<当前 API Key>。
 
 

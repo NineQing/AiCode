@@ -1116,11 +1116,8 @@
     <!-- Remote Dialogs -->
     <string name="remote_edit_connection">编辑连接通道</string>
     <string name="remote_add_connection">添加连接通道</string>
-    <string name="remote_channel_name_hint">通道名称</string>
     <string name="remote_connection_name_hint">连接名称</string>
-    <string name="remote_internal_dir">内部存储目标目录</string>
     <string name="remote_host_address">主机地址</string>
-    <string name="remote_select_dir">选择目录</string>
     <string name="remote_port">端口</string>
     <string name="remote_password">密码</string>
     <string name="remote_auth_password">密码</string>
@@ -1130,16 +1127,13 @@
     <string name="remote_no_keys_hint">暂无密钥，请先到「SSH 主机密钥」页添加</string>
     <string name="remote_key_passphrase">口令（可选）</string>
     <string name="remote_toggle_password">切换密码可见性</string>
-    <string name="remote_test_dir">测试目录</string>
     <string name="remote_test_connection">测试连通性</string>
     <string name="remote_edit_workspace">编辑挂载目录</string>
     <string name="remote_add_workspace">添加挂载目录</string>
     <string name="remote_select_channel">选择远程通道</string>
     <string name="remote_link_channel">关联远程连接通道</string>
-    <string name="remote_mount_subdir">挂载目标子目录</string>
     <string name="remote_target_dir">远程目标目录</string>
     <string name="remote_browse_dir">浏览目录</string>
-    <string name="remote_local_channel_subdir_desc">本地通道的挂载根目录来自连接配置；这里填写根目录下的子目录，通常保持 / 即可。</string>
     <string name="remote_select_local_workspace">选择本地工作区</string>
     <string name="remote_mount_already_exists">该挂载已存在：相同的通道、远程目录与工作区组合</string>
     <string name="remote_map_to_local">映射到本地工作区</string>
@@ -1180,7 +1174,7 @@
     <string name="remote_tab_ftp">内置FTP</string>
     <string name="remote_tab_sync">同步设置</string>
     <string name="remote_no_connections">暂无连接配置</string>
-    <string name="remote_no_connections_desc">添加 SFTP / FTP / 本地通道</string>
+    <string name="remote_no_connections_desc">添加 SFTP / FTP 连接</string>
     <string name="remote_no_workspaces">暂无挂载目录</string>
     <string name="remote_no_workspaces_desc">本地改动自动同步到远程，远程文件可手动下载</string>
     <string name="remote_hint_title">提示</string>
@@ -1224,7 +1218,6 @@
     <string name="sync_path_mapping">%1$s → %2$s</string>    <string name="status_connected">已连接</string>
     <string name="status_disconnected">未连接</string>
     <string name="status_connection_failed">连接失败</string>    <string name="sync_disconnect">断开连接</string>
-    <string name="sync_all">同步全部</string>
     <string name="sync_upload_all">上传全部</string>
     <string name="sync_download_all">下载全部</string>
     <string name="sync_connect_and_sync">连接并同步</string>
@@ -1480,4 +1473,7 @@
     <string name="browser_empty_hint">在上方地址栏输入网址开始浏览</string>
     <string name="browser_tabs_manage">标签页管理</string>
     <string name="browser_empty_click_hint">点击上方输入网址开始浏览</string>
+    <string name="browser_night_mode_on">关闭夜间模式</string>
+    <string name="browser_night_mode_off">开启夜间模式</string>
+    <string name="browser_devtools">开发者工具</string>
 </resources>

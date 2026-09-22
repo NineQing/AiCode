@@ -102,6 +102,16 @@
       "abiNames": { "arm64": "arm64", "x86_64": "amd64" }
     },
     {
+      "id": "ubuntu-26.04",
+      "name": "Ubuntu",
+      "version": "26.04.1",
+      "description": "Ubuntu 26.04 LTS (Resolute Raccoon) base rootfs，最新 LTS，生态完整",
+      "sizeBytes": 33000000,
+      "distro": "ubuntu",
+      "path": "ubuntu-base/releases/26.04/release/ubuntu-base-26.04.1-base-{abi}.tar.gz",
+      "abiNames": { "arm64": "arm64", "x86_64": "amd64" }
+    },
+    {
       "id": "debian-12",
       "name": "Debian",
       "version": "12 (bookworm)",

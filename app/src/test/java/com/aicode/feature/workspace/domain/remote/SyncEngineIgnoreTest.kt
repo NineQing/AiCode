@@ -38,7 +38,7 @@ class SyncEngineIgnoreTest {
         client: FakeSyncClient
     ): SyncEngine {
         val connection = RemoteConnection(
-            id = "c1", name = "test", protocol = RemoteProtocol.LOCAL,
+            id = "c1", name = "test", protocol = RemoteProtocol.SFTP,
             host = "example.com", port = 22, username = "u"
         )
         val mount = RemoteMount(

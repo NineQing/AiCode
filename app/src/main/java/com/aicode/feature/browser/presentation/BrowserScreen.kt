@@ -1,11 +1,13 @@
 package com.aicode.feature.browser.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +55,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -72,9 +77,12 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.ChevronLeft
 import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Code
 import compose.icons.feathericons.Globe
+import compose.icons.feathericons.Moon
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
+import compose.icons.feathericons.Sun
 import compose.icons.feathericons.X
 import kotlinx.coroutines.launch
 
@@ -92,18 +100,38 @@ fun BrowserScreen(
     var showTabsSheet by rememberSaveable { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    var isEditingAddress by rememberSaveable { mutableStateOf(false) }
+
+    // 标签页切换时退出编辑态
+    LaunchedEffect(state.activeTabId) {
+        isEditingAddress = false
+    }
+
+    // 拦截物理/手势返回键：若处于地址栏编辑态，优先退出编辑态
+    BackHandler(enabled = isEditingAddress) {
+        isEditingAddress = false
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             BrowserTopBar(
+                tabId = state.activeTabId,
                 title = activeTab?.title.orEmpty(),
                 url = activeTab?.url.orEmpty(),
                 loading = activeTab?.loading == true,
+                devToolsOpen = state.devToolsOpen,
+                isEditing = isEditingAddress,
+                onEditingChange = { isEditingAddress = it },
                 embedded = embedded,
                 onNavigateBack = onNavigateBack,
                 onReload = { scope.launch { browserManager.reload() } },
-                onNavigate = { url -> scope.launch { browserManager.navigate(url) } }
+                onToggleDevTools = { scope.launch { browserManager.toggleDevTools() } },
+                onNavigate = { url ->
+                    isEditingAddress = false
+                    scope.launch { browserManager.navigate(url) }
+                }
             )
         },
         bottomBar = {
@@ -111,10 +139,12 @@ fun BrowserScreen(
                 canGoBack = activeTab?.loading == false,
                 canGoForward = activeTab?.loading == false,
                 tabsCount = state.tabs.size,
+                nightMode = state.nightMode,
                 embedded = embedded,
                 onGoBack = { scope.launch { browserManager.goBack() } },
                 onGoForward = { scope.launch { browserManager.goForward() } },
                 onNewTab = { scope.launch { browserManager.newTab() } },
+                onToggleNightMode = { browserManager.toggleNightMode() },
                 onOpenTabs = { showTabsSheet = true }
             )
         }
@@ -130,6 +160,21 @@ fun BrowserScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            // 当地址栏处于编辑态时覆盖遮罩，拦截手势并支持轻点任意空白区域退出编辑态
+            if (isEditingAddress) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.08f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            isEditingAddress = false
+                        }
+                )
+            }
 
             // 错误提示
             if (activeTab?.error != null) {
@@ -270,32 +315,48 @@ fun BrowserScreen(
  */
 @Composable
 private fun BrowserTopBar(
+    tabId: String,
     title: String,
     url: String,
     loading: Boolean,
+    devToolsOpen: Boolean,
+    isEditing: Boolean,
+    onEditingChange: (Boolean) -> Unit,
     embedded: Boolean,
     onNavigateBack: () -> Unit,
     onReload: () -> Unit,
+    onToggleDevTools: () -> Unit,
     onNavigate: (String) -> Unit
 ) {
-    var isEditing by rememberSaveable { mutableStateOf(false) }
     var addressInput by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(url))
     }
     val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    LaunchedEffect(url) {
+    // 标签页切换或新建时，重置输入框内容
+    LaunchedEffect(tabId) {
+        addressInput = TextFieldValue(url, selection = TextRange(0, url.length))
+    }
+
+    // 当非编辑态下 URL 变更时同步
+    LaunchedEffect(url, isEditing) {
         if (!isEditing) {
             addressInput = TextFieldValue(url, selection = TextRange(0, url.length))
         }
     }
 
+    // 处理编辑态切换聚焦与键盘
     LaunchedEffect(isEditing) {
         if (isEditing) {
             addressInput = TextFieldValue(url, selection = TextRange(0, url.length))
             try {
                 focusRequester.requestFocus()
             } catch (_: Exception) {}
+        } else {
+            focusManager.clearFocus()
+            keyboardController?.hide()
         }
     }
 
@@ -319,7 +380,7 @@ private fun BrowserTopBar(
                 // 左侧：返回 / 取消编辑
                 IconButton(onClick = {
                     if (isEditing) {
-                        isEditing = false
+                        onEditingChange(false)
                     } else {
                         onNavigateBack()
                     }
@@ -339,7 +400,7 @@ private fun BrowserTopBar(
                         .height(40.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f))
-                        .clickable(!isEditing) { isEditing = true }
+                        .clickable(!isEditing) { onEditingChange(true) }
                         .padding(horizontal = Spacing.sm),
                     contentAlignment = Alignment.CenterStart
                 ) {
@@ -401,7 +462,7 @@ private fun BrowserTopBar(
                                 keyboardActions = KeyboardActions(onGo = {
                                     val input = addressInput.text.trim()
                                     if (input.isNotEmpty()) {
-                                        isEditing = false
+                                        onEditingChange(false)
                                         onNavigate(input)
                                     }
                                 }),
@@ -433,23 +494,42 @@ private fun BrowserTopBar(
                     }
                 }
 
-                // 右侧：刷新按钮靠右
-                IconButton(
-                    onClick = onReload,
-                    enabled = !loading
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
+                // 右侧：开发者工具 + 刷新按钮
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onToggleDevTools,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
-                            FeatherIcons.RefreshCw,
-                            contentDescription = stringResource(R.string.browser_reload),
-                            modifier = Modifier.size(18.dp)
+                            FeatherIcons.Code,
+                            contentDescription = stringResource(R.string.browser_devtools),
+                            tint = if (devToolsOpen) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(19.dp)
                         )
+                    }
+
+                    IconButton(
+                        onClick = onReload,
+                        enabled = !loading,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                FeatherIcons.RefreshCw,
+                                contentDescription = stringResource(R.string.browser_reload),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -478,10 +558,12 @@ private fun BrowserBottomBar(
     canGoBack: Boolean,
     canGoForward: Boolean,
     tabsCount: Int,
+    nightMode: Boolean,
     embedded: Boolean,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
     onNewTab: () -> Unit,
+    onToggleNightMode: () -> Unit,
     onOpenTabs: () -> Unit
 ) {
     Surface(
@@ -540,7 +622,19 @@ private fun BrowserBottomBar(
                     )
                 }
 
-                // 4. 标签页管理按钮（数字方框徽标）
+                // 4. 夜间模式切换
+                IconButton(onClick = onToggleNightMode) {
+                    Icon(
+                        if (nightMode) FeatherIcons.Sun else FeatherIcons.Moon,
+                        contentDescription = stringResource(
+                            if (nightMode) R.string.browser_night_mode_on else R.string.browser_night_mode_off
+                        ),
+                        tint = if (nightMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // 5. 标签页管理按钮（数字方框徽标）
                 Box(
                     modifier = Modifier
                         .size(28.dp)

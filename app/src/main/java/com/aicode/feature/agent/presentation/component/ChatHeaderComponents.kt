@@ -129,12 +129,6 @@ internal fun ChatHeader(
                     onClick = onNavigateToGit
                 )
                 WorkbenchIconButton(
-                    icon = FeatherIcons.Globe,
-                    contentDescription = stringResource(R.string.chat_open_browser),
-                    active = browserActive,
-                    onClick = onNavigateToBrowser
-                )
-                WorkbenchIconButton(
                     icon = FeatherIcons.Terminal,
                     contentDescription = stringResource(R.string.chat_open_terminal),
                     active = terminalActive,

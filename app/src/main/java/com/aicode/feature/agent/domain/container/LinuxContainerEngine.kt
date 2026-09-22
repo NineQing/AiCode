@@ -733,8 +733,7 @@ class LinuxContainerEngine @Inject constructor(
             "-b", "/proc",
             "-b", "/sys",
             "-b", "/system",  // 绑定 /system 让宿主动态库可用
-            "-0",              // 伪 root，apk 等需要
-            "--link2symlink"    // 硬链接转符号链接，兼容 Android 文件系统
+            "-0"              // 伪 root，apk 等需要
         )
 
         // 把当前工作区目录绑定到容器内 ~/workspace（即 /root/workspace），使命令与文件工具作用于同一目录
@@ -754,7 +753,8 @@ class LinuxContainerEngine @Inject constructor(
         argv.add("-b")
         argv.add("${aicodeDir.absolutePath}:/root/.aicode")
 
-        // 自定义 profile 的额外绑定与参数（内置 profile 这俩为空，此段无操作，等价于改动前）
+        // profile 的额外绑定与参数：内置与导入容器默认也在此注入（见 ContainerProfile.DEFAULT_PROOT_ARGS），
+        // 与用户手动添加同一条路径，保证参数落在 argv 末尾。
         for (b in profile.extraBindings) {
             argv.add("-b")
             argv.add(b)

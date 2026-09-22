@@ -36,6 +36,7 @@ import com.aicode.feature.agent.domain.skill.SkillImportReport
 import com.aicode.feature.agent.domain.skill.SkillRepository
 import com.aicode.feature.agent.domain.skill.SkillSaveError
 import com.aicode.feature.agent.domain.skill.SkillScope
+import com.aicode.feature.agent.domain.subagent.AgentDefinitionConfigRepository
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionForm
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionRepository
 import com.aicode.feature.agent.domain.subagent.AgentDefinitionScope
@@ -312,6 +313,7 @@ class SettingsViewModel @Inject constructor(
     private val toolSafetySettingsRepository: ToolSafetySettingsRepository,
     private val skillRepository: SkillRepository,
     private val agentDefinitionRepository: AgentDefinitionRepository,
+    private val agentDefinitionConfigRepository: AgentDefinitionConfigRepository,
     private val toolRegistry: ToolRegistry,
     private val skillConfigRepository: SkillConfigRepository,
     private val visionModelSettingsRepository: VisionModelSettingsRepository,
@@ -895,6 +897,12 @@ class SettingsViewModel @Inject constructor(
             launch {
                 skillConfigRepository.changes.collectLatest {
                     refreshSkills()
+                }
+            }
+
+            launch {
+                agentDefinitionConfigRepository.changes.collectLatest {
+                    refreshSubAgents()
                 }
             }
 
@@ -1781,7 +1789,6 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 把已下载的镜像作为自定义 profile 导入容器列表（可重复导入，每次新建 profile），后续流程与手动导入一致。
-     * 默认追加 `--link2symlink` proot 参数（硬链接模拟为符号链接，Android 上常见），与内置 Alpine 一致。
      */
     fun importDownloadedImage(entryId: String, fileUri: String) {
         val entry = _imageCatalog.value.firstOrNull { it.id == entryId } ?: return
@@ -1791,7 +1798,7 @@ class SettingsViewModel @Inject constructor(
                 name = "${entry.name} ${entry.version}",
                 rootfsSource = RootfsSource.LocalFile(fileUri),
                 shellPath = null,
-                extraArgs = listOf("--link2symlink"),
+                extraArgs = ContainerProfile.DEFAULT_PROOT_ARGS,
                 isBuiltin = false
             )
             containerSettingsRepository.upsertCustomProfile(profile)

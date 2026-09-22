@@ -208,8 +208,7 @@ class AIEditorApp : Application(), Configuration.Provider {
             registerBouncyCastle()
         }
         createNotificationChannels()
-        // 主线程启动凭据请求监听（FileObserver 必须主线程创建与 startWatching），
-        // 监听容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
+        // 启动凭据请求监听：容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
         credentialRequestBridge.start()
         // 启动即把最新的内置指南手册提取到私有配置目录
         appScope.launch {
@@ -293,10 +292,9 @@ class AIEditorApp : Application(), Configuration.Provider {
         }
         // 连接已配置的 MCP server，把其工具注册进 ToolRegistry（内部自有 scope，失败不影响启动）。
         mcpManager.start()
-        // 启动即监听 mcp.json / permissions.json 的外部直接编辑：改动数秒内刷新设置页列表并重连。
-        appScope.launch { mcpConfigRepository.startWatching() }
+        // 权限规则由 App 启动即常驻订阅（AI 评估随时要读到最新规则）；MCP 配置与技能列表
+        // 改由各自消费方（McpManager / 设置页）按需订阅，无需在这里拉起。
         appScope.launch { permissionRulesRepository.startWatching() }
-        appScope.launch { skillConfigRepository.startWatching() }
         // 持续同步工作区模式缓存，崩溃时随报告带出
         appScope.launch {
             executionModeRepository.executionModeFlow.collect { mode ->

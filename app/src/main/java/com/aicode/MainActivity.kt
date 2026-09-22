@@ -61,6 +61,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aicode.core.theme.AIEditorTheme
 import com.aicode.core.theme.AppThemePreset
+import com.aicode.core.ui.BetaWatermark
 import com.aicode.core.ui.ImageSource
 import com.aicode.core.ui.ImageViewerHost
 import com.aicode.core.ui.ImageViewerRequest
@@ -240,6 +241,10 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
 
+            LaunchedEffect(darkTheme) {
+                browserManager.setAppDarkTheme(darkTheme)
+            }
+
             AIEditorTheme(
                 darkTheme = darkTheme,
                 preset = AppThemePreset.findById(themePresetId),
@@ -281,6 +286,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                        // beta 包全局水印，置于最上层，不拦截触摸。
+                        BetaWatermark()
                     }
                 }
             }
@@ -580,6 +587,10 @@ fun AppNavigation(
                 pendingExportSessionId = session.id
                 val safeTitle = session.title.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
                 sessionExportLauncher.launch("aicode-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
+            },
+            onNavigateToBrowser = {
+                openWorkbench(WorkbenchPaneKind.BROWSER)
+                if (!permanentDrawer) scope.launch { drawerState.close() }
             },
             onNavigateToSettings = {
                 navController.navigate("settings")

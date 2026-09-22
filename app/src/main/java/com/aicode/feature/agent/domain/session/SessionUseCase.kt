@@ -81,6 +81,15 @@ class SessionUseCase @Inject constructor(
         return deleted
     }
 
+    /** 删除某工作区下的全部会话（含子代理会话）及其消息，返回删除的会话数。 */
+    suspend fun deleteSessionsByWorkspace(workspacePath: String): Int {
+        val sessions = chatSessionDao.getAllSessionsByWorkspaceOnce(workspacePath)
+        if (sessions.isEmpty()) return 0
+        sessions.forEach { session -> agentMessageDao.deleteBySession(session.id) }
+        chatSessionDao.deleteByWorkspace(workspacePath)
+        return sessions.size
+    }
+
     suspend fun getFirstSessionOfWorkspace(workspacePath: String): ChatSessionEntity? {
         return chatSessionDao.getRootSessionsByWorkspaceOnce(workspacePath).firstOrNull()
     }

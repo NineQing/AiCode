@@ -11,14 +11,17 @@ import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.container.ConnectionState
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
+import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.settings.data.repository.ExecutionMode
 import com.aicode.feature.settings.data.repository.ExecutionModeHolder
+import com.aicode.feature.settings.data.repository.GeneralSettingsRepository
 import com.aicode.feature.workspace.domain.PathHomeResolver
 import com.aicode.feature.workspace.domain.UriPathResolver
 import com.aicode.feature.workspace.domain.model.Workspace
 import com.aicode.feature.workspace.domain.model.WorkspaceType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,7 +56,9 @@ class WorkspaceRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val executionModeHolder: ExecutionModeHolder,
     private val remoteSshConnection: RemoteSshConnection,
-    private val pathHomeResolver: PathHomeResolver
+    private val pathHomeResolver: PathHomeResolver,
+    private val sessionUseCase: SessionUseCase,
+    private val generalSettingsRepository: GeneralSettingsRepository
 ) {
     /** 校验失败时给 UI 的提示文案（如目录不可写/无法解析），消费后置 null。 */
     private val _addError = MutableStateFlow<String?>(null)
@@ -116,6 +121,10 @@ class WorkspaceRepository @Inject constructor(
 
     private val _workspaces = MutableStateFlow<List<Workspace>>(emptyList())
     val workspaces: StateFlow<List<Workspace>> = _workspaces.asStateFlow()
+
+    /** 移除外部本地工作区时是否一并删除其聊天记录（供删除确认文案判断）。 */
+    val deleteExternalWorkspaceSessionsFlow: Flow<Boolean> =
+        generalSettingsRepository.deleteExternalWorkspaceSessionsFlow
 
     private val _current = MutableStateFlow<Workspace?>(null)
     val current: StateFlow<Workspace?> = _current.asStateFlow()
@@ -421,7 +430,8 @@ class WorkspaceRepository @Inject constructor(
         runCatching { context.contentResolver.releasePersistableUriPermission(uri, flags) }
     }
 
-    /** 删除工作区。内部/远程工作区连同文件删除；外部本地工作区只解除关联，不删除物理目录。
+    /** 删除工作区。内部/远程工作区连同文件与会话记录删除；外部本地工作区只解除关联，不删除物理目录，
+     *  其会话记录是否一并删除由「偏好设置」中的开关决定。
      *  若删的是当前工作区，则自动切到剩余的第一个。 */
     suspend fun deleteWorkspace(name: String) = withContext(Dispatchers.IO) {
         val target = _workspaces.value.firstOrNull { it.name == name }
@@ -438,9 +448,13 @@ class WorkspaceRepository @Inject constructor(
                     )
                 }
             }
+            if (generalSettingsRepository.deleteExternalWorkspaceSessions()) {
+                sessionUseCase.deleteSessionsByWorkspace(target.path)
+            }
             FileLogger.i(TAG, "移除外部工作区关联: $name")
         } else if (isLocal()) {
             File(projectsRoot, name).deleteRecursively()
+            target?.let { sessionUseCase.deleteSessionsByWorkspace(it.path) }
         } else {
             val cfg = remoteSshConnection.config
             if (cfg != null) {
@@ -448,6 +462,7 @@ class WorkspaceRepository @Inject constructor(
                 runCatching { execRemoteExit("rm -rf ${shellQuote(remotePath)}") }
                     .onFailure { FileLogger.e(TAG, "远程删除工作区失败: $remotePath", it) }
             }
+            target?.let { sessionUseCase.deleteSessionsByWorkspace(it.path) }
         }
         refreshWorkspaces()
         FileLogger.i(TAG, "删除工作区: $name")

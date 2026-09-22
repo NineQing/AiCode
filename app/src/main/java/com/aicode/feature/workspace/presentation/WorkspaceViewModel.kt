@@ -39,6 +39,10 @@ class WorkspaceViewModel @Inject constructor(
     val externalWarningDismissed: StateFlow<Boolean> = repository.externalWarningDismissed
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /** 移除外部本地工作区时是否一并删除其聊天记录（用于删除确认文案）。 */
+    val deleteExternalWorkspaceSessions: StateFlow<Boolean> = repository.deleteExternalWorkspaceSessionsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** 消费初始化错误提示，避免重复弹 Toast。 */
     fun consumeInitError() {
         repository.consumeInitError()

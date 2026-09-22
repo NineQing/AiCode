@@ -16,13 +16,17 @@ import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.GitIgnoreMatcher
 import com.aicode.core.util.toUserMessage
+import com.aicode.core.util.formatCostUsd
 import com.aicode.feature.agent.data.local.dao.AgentMessageDao
 import com.aicode.feature.agent.domain.checkpoint.CheckpointManager
 import com.aicode.feature.agent.data.local.dao.CheckpointDao
 import com.aicode.feature.agent.data.local.dao.ChatSessionDao
+import com.aicode.feature.agent.data.local.dao.LlmCallRecordDao
 import com.aicode.feature.agent.data.local.entity.ChatSessionEntity
 import com.aicode.feature.agent.domain.container.ContainerInitState
 import com.aicode.feature.agent.domain.container.LinuxContainerEngine
+import com.aicode.feature.settings.domain.model.ProviderType
+import com.aicode.feature.settings.domain.service.ModelCostCalculator
 import com.aicode.feature.settings.domain.repository.AIProviderRepository
 import com.aicode.feature.settings.data.repository.AgentSoundSettingsRepository
 import com.aicode.feature.settings.data.repository.DefaultModelSettingsRepository
@@ -73,9 +77,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import com.aicode.feature.backup.domain.BackupManager
+import com.aicode.feature.agent.domain.command.SlashCommand
 import com.aicode.feature.agent.domain.command.SlashCommandContext
 import com.aicode.feature.agent.domain.command.SlashCommandRegistry
-import com.aicode.feature.agent.domain.command.SlashCommandHandler
+import com.aicode.feature.agent.domain.command.SlashCommandRegistry.ResolvedCommand
+import com.aicode.feature.agent.domain.skill.Skill
 import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.agent.presentation.component.RewindOption
 import com.aicode.feature.agent.presentation.component.formatTokenCount
@@ -94,6 +100,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
@@ -105,6 +112,7 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.OutputStream
+import java.util.Calendar
 import java.util.UUID
 import javax.inject.Inject
 
@@ -115,6 +123,8 @@ class AIAgentViewModel @Inject constructor(
     private val toolRegistry: ToolRegistry,
     private val agentMessageDao: AgentMessageDao,
     private val chatSessionDao: ChatSessionDao,
+    private val llmCallRecordDao: LlmCallRecordDao,
+    private val modelCostCalculator: ModelCostCalculator,
     private val aiProviderRepository: AIProviderRepository,
     private val defaultModelSettingsRepository: DefaultModelSettingsRepository,
     private val modelReasoningEffortRepository: ModelReasoningEffortRepository,
@@ -948,6 +958,11 @@ class AIAgentViewModel @Inject constructor(
             sessionUseCase.initColdStartCleanup()
         }
 
+        // 启动与工作区切换时重新扫描技能（项目级技能随工作区变化），刷新 `/` 命令菜单。
+        viewModelScope.launch {
+            _currentWorkspace.collect { slashCommandRegistry.refresh() }
+        }
+
         viewModelScope.launch {
             _currentWorkspace.collectLatest { path ->
                 if (path.isBlank()) return@collectLatest
@@ -1267,16 +1282,20 @@ class AIAgentViewModel @Inject constructor(
     }
 
     /**
-     * 执行斜杠命令：先把命令文本作为用户消息落库（进入对话上下文），再执行 handler。
+     * 执行斜杠命令：先把命令文本作为用户消息落库（进入对话上下文），再按类型派发——
+     * 内置命令走本地动作，技能则把其正文作为本轮指令触发 agent 回合。
      * 执行期间标记为命令占用（防新消息并行执行），结束后接续队列中排队的下一条。
      */
-    private fun runSlashCommand(command: SlashCommandHandler, input: String, sessionId: String) {
+    private fun runResolvedCommand(resolved: ResolvedCommand, input: String, sessionId: String) {
         viewModelScope.launch {
             _runningCommandSessions.value = _runningCommandSessions.value + sessionId
             try {
                 messagePersistenceUseCase.persist(sessionId, MessageRole.USER, input)
                 sessionUseCase.touch(sessionId, messagePersistenceUseCase.nextTimestamp())
-                command.execute(this@AIAgentViewModel)
+                when (resolved) {
+                    is ResolvedCommand.Action -> resolved.handler.execute(this@AIAgentViewModel, resolved.args)
+                    is ResolvedCommand.SkillCommand -> runSkill(resolved.skill, resolved.args)
+                }
             } finally {
                 _runningCommandSessions.value = _runningCommandSessions.value - sessionId
                 processNextInQueue(sessionId)
@@ -1302,12 +1321,14 @@ class AIAgentViewModel @Inject constructor(
             FileLogger.w(TAG, "工作区未就绪，跳过请求")
             return@launch
         }
-        // 命令分流：完全相等匹配到斜杠命令时，不走 agent workflow，直接执行命令操作
+        // 命令分流：命中斜杠命令（内置命令或技能）时，不走 agent workflow，直接执行命令操作
         // （命令文本已作为用户消息落库，进入对话上下文）。不注册 sessionJobs，
         // 因此 isRunning 保持 false，/compress 等命令内部的自检可以正常工作。
-        slashCommandRegistry.findExact(request)?.let { command ->
-            runSlashCommand(command, request, sessionId)
-            return@launch
+        if (request.startsWith("/")) {
+            slashCommandRegistry.resolve(request)?.let { command ->
+                runResolvedCommand(command, request, sessionId)
+                return@launch
+            }
         }
         // 兼容历史会话：若会话尚未持久化绑定 providerId/model，发消息时将其固化，避免后续默认模型变动影响已有会话
         val currentSession = sessionUseCase.getSessionById(sessionId)
@@ -1614,7 +1635,7 @@ class AIAgentViewModel @Inject constructor(
         // 同步注册 job：launch 内的 sessionJobs 赋值是异步的，finally 中 flushPendingNotifications
         // 与 processNextInQueue 会在赋值前都看到 isActive=false 而双消费启动两个 job，
         // 先结束的 job 把状态置 Idle/Result 覆盖仍在跑的 job 的 Streaming。
-        if (targetSessionId != null && slashCommandRegistry.findExact(request) == null) {
+        if (targetSessionId != null && slashCommandRegistry.resolve(request) == null) {
             sessionJobs[targetSessionId] = job
         }
     }
@@ -1828,31 +1849,89 @@ class AIAgentViewModel @Inject constructor(
         }
     }
 
-    /** 暴露给 UI：输入框下拉菜单展示的命令列表。 */
-    val slashCommands: List<SlashCommandHandler> get() = slashCommandRegistry.all
+    /** 暴露给 UI：输入框 `/` 菜单展示的命令列表（内置命令 + 已启用技能）。 */
+    val slashCommands: StateFlow<List<SlashCommand>> get() = slashCommandRegistry.commands
 
-    /** /status —— 以 Markdown 表格作为 AI 气泡输出当前会话状态。 */
-    override fun showSessionStatus() {
+    /** 重新扫描技能并刷新命令菜单；进入 `/` 菜单时调用，反映技能的增删改。 */
+    fun refreshSlashCommands() {
+        viewModelScope.launch { slashCommandRegistry.refresh() }
+    }
+
+    /** /init —— 触发 agent 回合，分析代码库并生成/改进项目规则文件。 */
+    override fun initProject(prompt: String) {
         val sid = _currentSessionId.value ?: return
-        // 用 currentSessionState 而非 sessions（仅含根会话）：子代理会话内也能正常输出状态
-        val session = currentSessionState.value?.takeIf { it.id == sid } ?: return
-        val msgCount = messagesState.value.messages.size
-        val model = session.model ?: sessionProviderModelDisplay(sid)
-        val table = buildString {
-            appendLine("| 项目 | 值 |")
-            appendLine("|---|---|")
-            appendLine("| 会话 | ${escapeMd(session.title)} |")
-            appendLine("| 模型 | ${escapeMd(model)} |")
-            appendLine("| 模式 | ${session.mode.name} |")
-            appendLine("| 工作区 | ${escapeMd(session.workspacePath)} |")
-            appendLine("| 消息数 | $msgCount |")
-            appendLine("| 输入 tokens | ${formatTokenCount(session.totalInputTokens.toLong())} |")
-            appendLine("| 输出 tokens | ${formatTokenCount(session.totalOutputTokens.toLong())} |")
-        }
+        executeAgentRequestStream(
+            request = prompt,
+            projectRoot = _currentWorkspace.value,
+            targetSessionId = sid,
+            isAutoTrigger = true
+        )
+    }
+
+    /** 技能触发 —— 把技能正文作为本轮指令执行。 */
+    override fun runSkill(skill: Skill, args: String) {
+        val sid = _currentSessionId.value ?: return
+        executeAgentRequestStream(
+            request = SlashCommandRegistry.buildSkillPrompt(skill, args),
+            projectRoot = _currentWorkspace.value,
+            targetSessionId = sid,
+            isAutoTrigger = true
+        )
+    }
+
+    /** /usage —— 以 Markdown 表格输出今日与累计的调用次数、token 用量与预估费用。 */
+    override fun showUsage() {
+        val sid = _currentSessionId.value ?: return
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val todayStart = Calendar.getInstance().apply {
+                timeInMillis = now
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val today = loadUsageSummary(todayStart)
+            val allTime = loadUsageSummary(0L)
+            val table = buildString {
+                appendLine("| 项目 | 今日 | 累计 |")
+                appendLine("|---|---|---|")
+                appendLine("| 调用次数 | ${today.calls} | ${allTime.calls} |")
+                appendLine("| 输入 tokens | ${formatTokenCount(today.inputTokens)} | ${formatTokenCount(allTime.inputTokens)} |")
+                appendLine("| 输出 tokens | ${formatTokenCount(today.outputTokens)} | ${formatTokenCount(allTime.outputTokens)} |")
+                appendLine("| 缓存命中 tokens | ${formatTokenCount(today.cachedInputTokens)} | ${formatTokenCount(allTime.cachedInputTokens)} |")
+                appendLine("| 预估费用 | ${formatCostUsd(today.costUsd)} | ${formatCostUsd(allTime.costUsd)} |")
+            }
             sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
             messagePersistenceUseCase.persist(sid, MessageRole.ASSISTANT, table.trimEnd(), isCompacted = true)
         }
+    }
+
+    private data class UsageSummary(
+        val calls: Int,
+        val inputTokens: Long,
+        val outputTokens: Long,
+        val cachedInputTokens: Long,
+        val costUsd: Double
+    )
+
+    /** 汇总自 [start] 起的调用次数、token 与预估费用；费用按「渠道 + 模型」分组逐组估算，才取得到自定义单价。 */
+    private suspend fun loadUsageSummary(start: Long): UsageSummary = withContext(Dispatchers.IO) {
+        val summary = llmCallRecordDao.getSummary(start).first()
+        val providerTypes = aiProviderRepository.getAllProviders().first().associate { it.id to it.type }
+        val cost = llmCallRecordDao.getModelProviderCostStats(start).first().sumOf { stat ->
+            val model = stat.model ?: return@sumOf 0.0
+            modelCostCalculator.costUsd(
+                providerId = stat.providerId.orEmpty(),
+                providerType = stat.providerId?.let { providerTypes[it] } ?: ProviderType.OPENAI,
+                model = model,
+                inputTokens = stat.inputTokens,
+                cachedInputTokens = stat.cachedInputTokens,
+                outputTokens = stat.outputTokens,
+                cacheCreationTokens = stat.cacheCreationTokens
+            ) ?: 0.0
+        }
+        UsageSummary(summary.calls, summary.inputTokens, summary.outputTokens, summary.cachedInputTokens, cost)
     }
 
     /** /compress —— 手动触发当前会话的上下文压缩。 */
@@ -1909,15 +1988,6 @@ class AIAgentViewModel @Inject constructor(
         }
         sessionJobs[sid] = job
     }
-
-    private fun sessionProviderModelDisplay(sid: String): String {
-        val pair = currentSessionProviderModel.value ?: return context.getString(R.string.agent_model_not_selected)
-        val (_, model) = pair
-        return model?.takeIf { it.isNotBlank() } ?: context.getString(R.string.agent_model_not_selected)
-    }
-
-    private fun escapeMd(text: String): String = text.replace("|", "\\|").replace("\n", " ")
-
 
     /** 用户批准计划，唤醒 workflow 继续在 BUILD 模式执行。 */
     fun approvePlanAndBuild() {

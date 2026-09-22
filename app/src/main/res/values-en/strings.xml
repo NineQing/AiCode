@@ -614,6 +614,9 @@
     <string name="chat_retrying">Retrying %1$s/%2$s</string>
     <string name="chat_key_switched">Switched to key %1$d of %2$d</string>
     <string name="chat_error_title">Request failed</string>
+    <string name="slash_command_compress_desc">Manually compact this session context</string>
+    <string name="slash_command_init_desc">Analyze the workspace codebase and generate or improve the AGENTS.md project rules</string>
+    <string name="slash_command_usage_desc">View today and all-time call count, token usage and estimated cost</string>
     <string name="retry_error_rate_limit">Rate limit</string>
     <string name="retry_error_server_overloaded">Server overloaded</string>
     <string name="retry_error_server">Server error</string>

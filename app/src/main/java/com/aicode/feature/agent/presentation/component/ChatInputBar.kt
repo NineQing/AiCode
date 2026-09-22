@@ -68,8 +68,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -86,7 +88,8 @@ import com.aicode.core.theme.semanticColors
 import com.aicode.core.ui.rememberImeBottomInset
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
-import com.aicode.feature.agent.domain.command.SlashCommandHandler
+import com.aicode.feature.agent.domain.command.SlashCommand
+import com.aicode.feature.agent.domain.command.SlashCommandKind
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.domain.model.ReasoningEffort
 import com.aicode.feature.agent.domain.permission.PermissionChoice
@@ -154,7 +157,7 @@ internal fun ChatInputBar(
     onUploadFile: () -> Unit,
     onUploadImage: () -> Unit,
     onTakePhoto: () -> Unit,
-    slashCommands: List<SlashCommandHandler> = emptyList(),
+    slashCommands: List<SlashCommand> = emptyList(),
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
     tokenProgress: Float = 0f,
@@ -174,11 +177,19 @@ internal fun ChatInputBar(
     val canSend = hasContent
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showFullScreenInput by remember { mutableStateOf(false) }
+    // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
+    // 这里自持 TextFieldValue：外部改值时把光标移到末尾。
+    var inputFieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    LaunchedEffect(value) {
+        if (inputFieldValue.text != value) {
+            inputFieldValue = TextFieldValue(value, TextRange(value.length))
+        }
+    }
     val showSlashMenu = !isBusy && slashCommands.isNotEmpty() &&
         value.startsWith("/") && !value.contains("\n")
     val filteredCommands = if (showSlashMenu) {
         if (value == "/") slashCommands
-        else slashCommands.filter { it.trigger.startsWith(value) }
+        else slashCommands.filter { "/${it.name}".startsWith(value) }
     } else emptyList()
 
     // 文本是否已经超出输入框高度（超出后框内滚动，展开按钮才有意义）。
@@ -266,12 +277,16 @@ internal fun ChatInputBar(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(Radius.sm))
-                                    .clickable { onValueChange(command.trigger) }
+                                    .clickable {
+                                        onValueChange(
+                                            if (command.acceptsArgs) "/${command.name} " else "/${command.name}"
+                                        )
+                                    }
                                     .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    command.trigger,
+                                    "/${command.name}",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -285,6 +300,14 @@ internal fun ChatInputBar(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                if (command.kind == SlashCommandKind.SKILL) {
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(
+                                        stringResource(R.string.settings_skills),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
@@ -331,8 +354,11 @@ internal fun ChatInputBar(
                     verticalAlignment = Alignment.Top
                 ) {
                     TextField(
-                        value = value,
-                        onValueChange = onValueChange,
+                        value = inputFieldValue,
+                        onValueChange = { new ->
+                            inputFieldValue = new
+                            onValueChange(new.text)
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = INPUT_FIELD_MIN_HEIGHT, max = INPUT_FIELD_MAX_HEIGHT)

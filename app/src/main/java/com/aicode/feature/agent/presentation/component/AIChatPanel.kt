@@ -476,11 +476,16 @@ fun AIChatPanel(
     val currentWorkspace = workspaceViewModel?.current?.collectAsStateWithLifecycle()?.value
     val projectRoot = currentWorkspace?.path ?: ""
     val currentMode by viewModel.currentSessionMode.collectAsStateWithLifecycle()
+    val slashCommands by viewModel.slashCommands.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     val inputDraft by viewModel.inputDraft.collectAsStateWithLifecycle()
     LaunchedEffect(inputDraft) {
         if (inputText != inputDraft) inputText = inputDraft
+    }
+    // 输入 "/" 打开命令菜单时重扫技能，反映磁盘上技能的增删改。
+    LaunchedEffect(inputText) {
+        if (inputText == "/") viewModel.refreshSlashCommands()
     }
     var pendingAttachments by remember { mutableStateOf<List<PendingUploadAttachment>>(emptyList()) }
     var uploadingCount by remember { mutableStateOf(0) }
@@ -1328,7 +1333,7 @@ fun AIChatPanel(
                     )
                 },
                 onTakePhoto = ::takePhoto,
-                slashCommands = viewModel.slashCommands,
+                slashCommands = slashCommands,
                 queuedRequests = queuedRequests,
                 onRemoveQueued = { viewModel.removeQueuedRequest(it) },
                 dashboardState = currentDashboardState,

@@ -8,25 +8,25 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * /compress 命令：菜单元数据与执行行为。
+ * /usage 命令：菜单元数据与执行行为。
  */
-class CompressCommandHandlerTest {
+class UsageCommandHandlerTest {
 
-    private val handler = CompressCommandHandler()
+    private val handler = UsageCommandHandler()
 
     @Test
     fun metadata_valuesAreCorrect() {
-        assertEquals("compress", handler.name)
-        assertEquals(R.string.slash_command_compress_desc, handler.descriptionRes)
+        assertEquals("usage", handler.name)
+        assertEquals(R.string.slash_command_usage_desc, handler.descriptionRes)
         assertFalse("默认不接受参数", handler.acceptsArgs)
     }
 
     @Test
-    fun execute_compactsCurrentSession() {
+    fun execute_showsUsage() {
         val context = mockk<SlashCommandContext>(relaxed = true)
 
         handler.execute(context, "")
 
-        verify { context.compactCurrentSession() }
+        verify { context.showUsage() }
     }
 }

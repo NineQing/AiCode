@@ -72,7 +72,7 @@
   - `closeTab`：关闭标签页（可选 `tabId`，缺省关闭当前激活标签页），返回 `{closedTabId,success,activeTabId,tabs}`。
   - `selectTab`：切换激活标签页（必填 `tabId`），返回 `{activeTabId,success,url,title}`。
   - `listTabs`：列出所有标签页，返回 `{tabs:[{id,url,title,loading,active}],activeTabId}`。
-  - `navigate`：导航到 URL（`url`，可选 `tabId`；无协议头时优先 https，SSL/连接失败自动回退 http），等待加载完成，返回 finalUrl+title。
+  - `navigate`：导航到 URL（`url`，可选 `tabId`；支持 `http(s)://`，本地文件支持 `file://` 或容器路径（如 `~/workspace/x.html`、`/etc/...`），无协议头时优先 https，SSL/连接失败自动回退 http），等待加载完成，返回 finalUrl+title。
   - `evaluate`：执行 JS（`script`，可选 `tabId`），支持 Promise/async，返回**原生 JSON**（保留 number/boolean/null 类型，不再字符串化）。
   - `click`：点击元素（`selector`，可选 `tabId`），完整事件链，返回 {matched,tag,text,href,navigatedTo}。
   - `fill`：填充表单（`selector`+`value`，可选 `tabId`），native setter + React valueTracker hack，返回 {matched,tag,type,value}。

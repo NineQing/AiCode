@@ -13,6 +13,17 @@ App 内置了一个 WebView 浏览器，支持 AI 自动化操作网页。AI 可
 
 在地址栏输入网址按回车即可导航。地址栏右侧提供开发者工具开关与刷新按钮，下方底栏包含后退、前进、新建标签页、夜间模式切换与多标签管理。页面加载时地址栏下方显示线性进度条。
 
+## 本地文件预览
+
+地址栏支持本地文件地址，可直接打开设备上的 HTML 文件：
+
+- 设备真实路径：`file:///storage/emulated/0/Download/index.html`
+- 容器路径（AI 在容器里看到的路径，自动映射为真实文件）：`~/workspace/index.html`、`/etc/xxx.html`
+
+AI 也可通过 `browser` 工具的 `navigate` 打开本地页面并截图分析。
+
+**注意**：远程工作区模式下工作区文件在远端，只能加载页面本身，HTML 引用的相对资源（CSS/JS/图片）会失效；本地工作区不受影响。
+
 ## 开发者工具
 
 点击地址栏右侧的 `</>`（代码图标）可随时开启或收起移动端开发者工具（基于 Eruda）：
@@ -34,7 +45,7 @@ AI 可通过 `browser` 工具控制浏览器执行以下操作：
 
 | 操作 | 说明 |
 | --- | --- |
-| `navigate` | 导航到指定 URL，等待页面加载完成 |
+| `navigate` | 导航到指定 URL（支持 `http(s)`，本地文件支持 `file://` 或容器路径），等待页面加载完成 |
 | `evaluate` | 执行任意 JavaScript（支持 Promise/async，返回原生 JSON） |
 | `click` | 点击元素（完整事件链，兼容 React/Vue） |
 | `fill` | 填充表单字段（native setter + React valueTracker hack） |

@@ -84,6 +84,7 @@ import com.aicode.feature.settings.domain.model.ModelMetadata
 import com.aicode.feature.settings.domain.model.modelMetadataKey
 import com.aicode.feature.settings.domain.model.ProviderDashboardResult
 import com.aicode.feature.settings.domain.model.ProviderDashboardState
+import com.aicode.feature.settings.domain.service.ModelCostCalculator
 import com.aicode.feature.settings.domain.service.ProviderDashboardRunner
 import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.domain.model.ProxyType
@@ -331,6 +332,7 @@ class SettingsViewModel @Inject constructor(
     private val remoteSshConnection: RemoteSshConnection,
     private val remoteRepository: RemoteRepository,
     private val llmCallRecordDao: LlmCallRecordDao,
+    private val modelCostCalculator: ModelCostCalculator,
     private val updateCheckSettingsRepository: UpdateCheckSettingsRepository,
     private val updateCheckService: UpdateCheckService,
     private val providerDashboardRunner: ProviderDashboardRunner,
@@ -341,10 +343,6 @@ class SettingsViewModel @Inject constructor(
         const val MAX_LOG_LINES = 1200
         const val CALLS_PAGE_SIZE = 10
         const val STATS_PAGE_SIZE = 5
-        /** 缓存读价缺失时按输入价的折扣估算。 */
-        const val CACHE_READ_DISCOUNT = 0.1
-        /** 缓存写入单价缺失时相对输入价的倍率（Anthropic 官方为 1.25×）。 */
-        const val CACHE_WRITE_MARKUP = 1.25
         /** 背景透明度停止拖动后的落盘延迟。 */
         const val BACKGROUND_ALPHA_WRITE_DEBOUNCE_MS = 80L
 
@@ -1917,7 +1915,7 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * 单次调用的预估费用（USD）；模型无单价返回 null。
-     * 缓存读价缺失时按输入价 10% 估算，缓存写价缺失时按输入价 [CACHE_WRITE_MARKUP] 倍估算。
+     * 单价解析与缓存价回退统一在 [ModelCostCalculator]。
      */
     private suspend fun callCostUsd(
         providerId: String?,
@@ -1928,16 +1926,16 @@ class SettingsViewModel @Inject constructor(
         cacheCreationTokens: Long = 0
     ): Double? {
         val modelId = model ?: return null
-        // 统一走元数据解析入口（自动拉取/内置 → 自定义 三级回退），与编辑页回显价格一致。
         val provider = _providers.value.firstOrNull { it.id == providerId }
-        val meta = modelMetadataService.resolve(providerId.orEmpty(), provider?.type ?: ProviderType.OPENAI, modelId)
-        val inputPrice = meta.inputCostUsdPerM ?: return null
-        val outputPrice = meta.outputCostUsdPerM ?: 0.0
-        val cachePrice = meta.cacheReadCostUsdPerM ?: inputPrice * CACHE_READ_DISCOUNT
-        val cacheWritePrice = meta.cacheWriteCostUsdPerM ?: inputPrice * CACHE_WRITE_MARKUP
-        val uncached = (inputTokens - cachedInputTokens).coerceAtLeast(0)
-        return (uncached * inputPrice + cachedInputTokens * cachePrice +
-            cacheCreationTokens * cacheWritePrice + outputTokens * outputPrice) / 1_000_000.0
+        return modelCostCalculator.costUsd(
+            providerId = providerId.orEmpty(),
+            providerType = provider?.type ?: ProviderType.OPENAI,
+            model = modelId,
+            inputTokens = inputTokens,
+            cachedInputTokens = cachedInputTokens,
+            outputTokens = outputTokens,
+            cacheCreationTokens = cacheCreationTokens
+        )
     }
 
     /** 调用明细翻页；越界时钳制到合法范围。 */

@@ -51,6 +51,7 @@ import com.aicode.R
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.TokenStatsPalette
 import com.aicode.core.theme.semanticColors
+import com.aicode.core.util.formatCostUsd
 import com.aicode.feature.agent.data.local.dao.CallSummary
 import com.aicode.feature.agent.data.local.dao.DayCallStats
 import com.aicode.feature.agent.data.local.dao.ModelCallStats
@@ -975,14 +976,6 @@ private fun formatCacheHitRate(s: CallSummary): String {
     if (s.inputTokens <= 0) return "-"
     val rate = min(s.cachedInputTokens * 100.0 / s.inputTokens, 100.0)
     return String.format(Locale.getDefault(), "%.1f%%", rate)
-}
-
-/** 费用展示：小额保留 4 位小数，极小值折叠为 <$0.0001。 */
-private fun formatCostUsd(cost: Double): String = when {
-    cost <= 0.0 -> "$0.00"
-    cost < 0.0001 -> "<$0.0001"
-    cost < 0.01 -> String.format(Locale.getDefault(), "$%.4f", cost)
-    else -> String.format(Locale.getDefault(), "$%.2f", cost)
 }
 
 private fun formatDuration(ms: Double?): String {

@@ -16,8 +16,9 @@ import kotlinx.serialization.json.put
  *
  * 两种形态共用同一份措辞与 XML 结构，保证 AI 无论从哪条路径收到通知，理解方式一致。
  *
- * 支持三类通知：后台任务完成（`task-notification`）、子代理完成（`subagent-notification`）、
- * 代理间消息（`agent-message`，主会话与子代理双向）。消息的 `<status>` 取 `message`，UI 提示条据此按非失败渲染。
+ * 支持四类通知：后台任务完成（`task-notification`）、子代理完成（`subagent-notification`）、
+ * 代理间消息（`agent-message`，主会话与子代理双向）、模式切换（`mode-change`）。
+ * 消息的 `<status>` 取 `message`、模式切换取 `changed`，UI 提示条据此按非失败渲染。
  */
 object AgentNotificationFormatter {
 
@@ -36,6 +37,8 @@ object AgentNotificationFormatter {
                         appendLine("这是一条子代理完成事件，不是来自用户的消息。")
                     AgentNotificationKind.AGENT_MESSAGE ->
                         appendLine("这是一条来自其它代理会话的消息，不是用户输入。")
+                    AgentNotificationKind.MODE_CHANGE ->
+                        appendLine("这是一条模式切换事件，不是来自用户的消息。")
                 }
                 appendLine("不要将其视为用户的确认、同意或对任何待处理问题的回答。")
             } else {
@@ -61,6 +64,7 @@ object AgentNotificationFormatter {
             AgentNotificationKind.BACKGROUND_TASK -> "task-notification"
             AgentNotificationKind.SUBAGENT -> "subagent-notification"
             AgentNotificationKind.AGENT_MESSAGE -> "agent-message"
+            AgentNotificationKind.MODE_CHANGE -> "mode-change"
         }
         appendLine("<$tag>")
         when (kind) {
@@ -79,6 +83,9 @@ object AgentNotificationFormatter {
                 appendLine("  <from-title>$title</from-title>")
                 message?.takeIf { it.isNotBlank() }?.let { appendLine("  <message>${escapeXml(it)}</message>") }
             }
+            AgentNotificationKind.MODE_CHANGE -> {
+                appendLine("  <new-mode>${newMode?.name ?: "UNKNOWN"}</new-mode>")
+            }
         }
         appendLine("  <status>${statusText()}</status>")
         appendLine("  <summary>${summaryText()}</summary>")
@@ -93,6 +100,7 @@ object AgentNotificationFormatter {
             AgentNotificationKind.BACKGROUND_TASK -> "background_task"
             AgentNotificationKind.SUBAGENT -> "subagent"
             AgentNotificationKind.AGENT_MESSAGE -> "agent_message"
+            AgentNotificationKind.MODE_CHANGE -> "mode_change"
         })
         put("notice", NOTICE)
         when (kind) {
@@ -111,6 +119,9 @@ object AgentNotificationFormatter {
                 put("from_title", title)
                 message?.takeIf { it.isNotBlank() }?.let { put("message", JsonPrimitive(it)) }
             }
+            AgentNotificationKind.MODE_CHANGE -> {
+                put("new_mode", newMode?.name ?: "UNKNOWN")
+            }
         }
         put("status", statusText())
         put("summary", summaryText())
@@ -119,13 +130,15 @@ object AgentNotificationFormatter {
         put("hint", singleHint())
     }
 
-    private fun PendingNotification.statusText(): String =
-        if (kind == AgentNotificationKind.AGENT_MESSAGE) "message"
-        else when (outcome) {
+    private fun PendingNotification.statusText(): String = when (kind) {
+        AgentNotificationKind.AGENT_MESSAGE -> "message"
+        AgentNotificationKind.MODE_CHANGE -> "changed"
+        else -> when (outcome) {
             NotificationOutcome.COMPLETED -> "completed"
             NotificationOutcome.FAILED -> "failed"
             NotificationOutcome.STOPPED -> "stopped"
         }
+    }
 
     private fun PendingNotification.summaryText(): String = when (kind) {
         AgentNotificationKind.BACKGROUND_TASK ->
@@ -137,6 +150,8 @@ object AgentNotificationFormatter {
         }
         AgentNotificationKind.AGENT_MESSAGE ->
             if (fromParent) "主会话发来一条消息" else "子代理「$title」发来一条消息"
+        AgentNotificationKind.MODE_CHANGE ->
+            "用户已将模式切换为 ${newMode?.name ?: "UNKNOWN"}"
     }
 
     private fun PendingNotification.singleHint(): String = when (kind) {
@@ -154,12 +169,15 @@ object AgentNotificationFormatter {
             } else {
                 "可用 task(action=\"send\", id=\"$sourceId\", message=\"...\") 回复该子代理；若无需回复可忽略。"
             }
+        AgentNotificationKind.MODE_CHANGE ->
+            "请立即按新模式约束继续手头任务，无需回复本条通知。"
     }
 
     private fun buildHint(items: List<PendingNotification>): String {
         val tasks = items.filter { it.kind == AgentNotificationKind.BACKGROUND_TASK }
         val subAgents = items.filter { it.kind == AgentNotificationKind.SUBAGENT }
         val messages = items.filter { it.kind == AgentNotificationKind.AGENT_MESSAGE }
+        val modeChanges = items.filter { it.kind == AgentNotificationKind.MODE_CHANGE }
         val lines = mutableListOf<String>()
         when (tasks.size) {
             0 -> {}
@@ -177,6 +195,9 @@ object AgentNotificationFormatter {
             0 -> {}
             1 -> lines.add(messages.first().singleHint())
             else -> lines.add("你收到了多条代理消息，请按上文各自的回复方式处理；无需回复的可忽略，不要逐条回执。")
+        }
+        if (modeChanges.isNotEmpty()) {
+            lines.add(modeChanges.last().singleHint())
         }
         return lines.joinToString("\n")
     }

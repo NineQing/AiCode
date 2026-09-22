@@ -72,7 +72,9 @@ import javax.inject.Singleton
 
 import com.aicode.core.db.MigrationLoader
 import com.aicode.feature.agent.domain.checkpoint.CheckpointManager
+import com.aicode.feature.agent.domain.notification.AgentEventInjector
 import com.aicode.feature.agent.domain.notification.AgentNotificationCenter
+import com.aicode.feature.agent.domain.notification.DefaultAgentEventInjector
 import com.aicode.feature.agent.domain.session.MessagePersistenceUseCase
 import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.domain.tool.mcp.ManageMcpTool
@@ -317,6 +319,10 @@ object AgentModule {
 
     @Provides
     @Singleton
+    fun provideAgentEventInjector(): AgentEventInjector = DefaultAgentEventInjector()
+
+    @Provides
+    @Singleton
     fun provideAgentWorkflow(
         toolRegistry: ToolRegistry,
         aiProviderRepository: AIProviderRepository,
@@ -340,6 +346,7 @@ object AgentModule {
         llmCallRecordDao: LlmCallRecordDao,
         keyRotator: ProviderKeyRotator,
         agentNotificationCenter: AgentNotificationCenter,
+        eventInjector: AgentEventInjector,
         fileAccess: FileAccessProvider
     ): AgentWorkflow {
         return StatefulAgentWorkflow(
@@ -365,6 +372,7 @@ object AgentModule {
             llmCallRecordDao,
             keyRotator,
             agentNotificationCenter,
+            eventInjector,
             fileAccess
         )
     }

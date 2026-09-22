@@ -1,5 +1,6 @@
 package com.aicode.feature.agent.domain.notification
 
+import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.agent.presentation.BACKGROUND_NOTIFICATION_PREFIX
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +38,14 @@ class AgentNotificationFormatterTest {
         title = "重构缓存层",
         outcome = NotificationOutcome.STOPPED,
         detail = "用户在界面上手动停止了这个子代理，任务未完成。"
+    )
+
+    private val modeChange = PendingNotification(
+        kind = AgentNotificationKind.MODE_CHANGE,
+        sourceId = "user",
+        title = "AUTO",
+        outcome = NotificationOutcome.COMPLETED,
+        newMode = AgentMode.AUTO
     )
 
     @Test
@@ -143,5 +152,27 @@ class AgentNotificationFormatterTest {
         val obj = array[0] as JsonObject
 
         assertEquals(null, obj["detail"])
+    }
+
+    /** 模式切换通知：XML 用 <mode-change>，status 取 changed（UI 据此按非失败渲染）。 */
+    @Test
+    fun message_modeChangeUsesModeChangeTag() {
+        val text = AgentNotificationFormatter.buildMessage(listOf(modeChange))
+
+        assertTrue(text.contains("<mode-change>"))
+        assertTrue(text.contains("<new-mode>AUTO</new-mode>"))
+        assertTrue(text.contains("<status>changed</status>"))
+        assertTrue(text.contains("<summary>用户已将模式切换为 AUTO</summary>"))
+    }
+
+    @Test
+    fun jsonArray_modeChangeCarriesNewMode() {
+        val array = AgentNotificationFormatter.buildJsonArray(listOf(modeChange))
+        val obj = array[0] as JsonObject
+
+        assertEquals("mode_change", (obj["kind"] as JsonPrimitive).content)
+        assertEquals("AUTO", (obj["new_mode"] as JsonPrimitive).content)
+        assertEquals("changed", (obj["status"] as JsonPrimitive).content)
+        assertTrue((obj["hint"] as JsonPrimitive).content.contains("新模式"))
     }
 }

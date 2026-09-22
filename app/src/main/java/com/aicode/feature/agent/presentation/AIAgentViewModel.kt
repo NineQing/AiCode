@@ -1100,15 +1100,7 @@ class AIAgentViewModel @Inject constructor(
             message = message,
             fromParent = fromParent
         )
-        if (sessionJobs[recipientSessionId]?.isActive == true) {
-            agentNotificationCenter.enqueue(recipientSessionId, item)
-            return
-        }
-        enqueueAgentRequest(
-            request = AgentNotificationFormatter.buildMessage(listOf(item)),
-            projectRoot = _currentWorkspace.value,
-            targetSessionId = recipientSessionId
-        )
+        deliverSystemEvent(recipientSessionId, item)
     }
 
     /**
@@ -1129,15 +1121,7 @@ class AIAgentViewModel @Inject constructor(
             outcome = outcome,
             detail = detail
         )
-        if (sessionJobs[parentSessionId]?.isActive == true) {
-            agentNotificationCenter.enqueue(parentSessionId, item)
-            return
-        }
-        enqueueAgentRequest(
-            request = AgentNotificationFormatter.buildMessage(listOf(item)),
-            projectRoot = _currentWorkspace.value,
-            targetSessionId = parentSessionId
-        )
+        deliverSystemEvent(parentSessionId, item)
     }
 
     /**
@@ -1163,11 +1147,19 @@ class AIAgentViewModel @Inject constructor(
         val currentSid = _currentSessionId.value
         FileLogger.d(TAG, "handleBgFinished: eventSid=$sessionId currentSid=$currentSid jobActive=$jobActive state=${_agentStates.value[sessionId]}")
         val item = event.toPendingNotification()
-        if (jobActive) {
+        deliverSystemEvent(sessionId, item)
+    }
+
+    /**
+     * 统一投递一条系统事件给指定会话：忙碌则入 [agentNotificationCenter]，由本轮内工具结果搭车送达；
+     * 空闲则以一条系统通知消息触发新一轮。后台任务完成、子代理结束、代理间消息、模式切换共用此分发，
+     * 避免各处重复判断忙碌/空闲。
+     */
+    private fun deliverSystemEvent(sessionId: String, item: PendingNotification) {
+        if (sessionJobs[sessionId]?.isActive == true) {
             agentNotificationCenter.enqueue(sessionId, item)
             return
         }
-        // 会话空闲：立即发送，保持及时响应
         viewModelScope.launch {
             enqueueAgentRequest(
                 request = AgentNotificationFormatter.buildMessage(listOf(item)),
@@ -1794,6 +1786,20 @@ class AIAgentViewModel @Inject constructor(
         val sid = _currentSessionId.value ?: return
         viewModelScope.launch {
             sessionUseCase.updateMode(sid, mode.name)
+            // 工作期间切换：把新模式作为系统事件投递给运行中的 agent，本轮即时生效（见 StatefulAgentWorkflow）。
+            // 空闲时无需投递——下一轮开轮会按新模式注入一次提醒。
+            if (sessionJobs[sid]?.isActive == true) {
+                agentNotificationCenter.enqueue(
+                    sid,
+                    PendingNotification(
+                        kind = AgentNotificationKind.MODE_CHANGE,
+                        sourceId = "user",
+                        title = mode.name,
+                        outcome = NotificationOutcome.COMPLETED,
+                        newMode = mode
+                    )
+                )
+            }
         }
     }
 

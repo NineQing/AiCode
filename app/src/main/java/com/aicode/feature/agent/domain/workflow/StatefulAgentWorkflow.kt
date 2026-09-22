@@ -12,8 +12,9 @@ import com.aicode.feature.agent.domain.model.AgentContext
 import com.aicode.feature.agent.domain.model.AgentImage
 import com.aicode.feature.agent.domain.model.AgentMessage
 import com.aicode.feature.agent.domain.model.AgentMode
+import com.aicode.feature.agent.domain.notification.AgentEventInjector
 import com.aicode.feature.agent.domain.notification.AgentNotificationCenter
-import com.aicode.feature.agent.domain.notification.AgentNotificationFormatter
+import com.aicode.feature.agent.domain.notification.AgentNotificationKind
 import com.aicode.feature.agent.domain.notification.PendingNotification
 import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.domain.session.MessagePersistenceUseCase
@@ -62,7 +63,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
@@ -70,7 +70,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.util.UUID
@@ -104,6 +103,7 @@ class StatefulAgentWorkflow @Inject constructor(
     private val llmCallRecordDao: LlmCallRecordDao,
     private val keyRotator: ProviderKeyRotator,
     private val agentNotificationCenter: AgentNotificationCenter,
+    private val eventInjector: AgentEventInjector,
     private val fileAccess: FileAccessProvider
 ) : AgentWorkflow {
 
@@ -122,6 +122,13 @@ class StatefulAgentWorkflow @Inject constructor(
         const val GENERATED_IMAGE_DIR = "~/.aicode/generated-images"
         const val MAX_GENERATED_IMAGE_BYTES = 20L * 1024 * 1024
     }
+
+    /**
+     * 每会话「上次已注入模式提醒的模式」。模式提醒只在变化时注入，避免每轮把同一段文本
+     * 重复拼到最新用户消息上——那样下一轮重建历史时该位置（Anthropic 缓存断点）内容不一致，
+     * 会白白丢掉一段前缀缓存。进程内缓存，重启后首轮再注入一次（无害）。
+     */
+    private val lastInjectedMode = java.util.concurrent.ConcurrentHashMap<String, AgentMode>()
 
     /** 不可变状态树 */
     data class AgentSessionState(
@@ -466,8 +473,8 @@ class StatefulAgentWorkflow @Inject constructor(
         var state = AgentSessionState()
         var currentTools = tools
         val actionQueue = ArrayDeque<AgentAction>()
-        // 模式提醒随最新用户消息注入（不进 system，避免切换时 system 前缀变化打断缓存）。
-        val modeReminder = buildModeReminder(currentContext.mode)
+        // 模式提醒仅在模式变化时随最新用户消息注入一次（不进 system，避免切换时 system 前缀变化打断缓存）。
+        val modeReminder = takeModeReminderIfChanged(currentContext.sessionId, currentContext.mode)
         actionQueue.addLast(
             AgentAction.InitRequest(
                 currentContext.history + AgentMessage.UserMessage(
@@ -790,9 +797,19 @@ class StatefulAgentWorkflow @Inject constructor(
                             emptyList()
                         }
                         if (notifications.isNotEmpty()) {
+                            val modeChange = notifications.lastOrNull { it.kind == AgentNotificationKind.MODE_CHANGE }
+                            val newMode = modeChange?.newMode
+                            if (newMode != null) {
+                                // 用户在工作期间切换模式：本轮后续批次的权限判定立即改用新模式。
+                                currentContext = currentContext.copy(mode = newMode)
+                            }
                             val last = batchResults.last()
-                            batchResults[batchResults.lastIndex] =
-                                last.copy(result = injectNotifications(last.result, notifications))
+                            var injected = eventInjector.inject(last.result, notifications)
+                            if (newMode != null) {
+                                // 模式约束提示随工具结果落库，留在历史里供后续轮沿用。
+                                injected += buildExternalModeSwitchNotice(newMode)
+                            }
+                            batchResults[batchResults.lastIndex] = last.copy(result = injected)
                         }
 
                         // 逐个推送完成事件（保持与 batchToolCalls 一致顺序），并进入收尾。
@@ -1060,10 +1077,14 @@ class StatefulAgentWorkflow @Inject constructor(
      * UI 的 formatToolResult（只读 data/message）与各类结构化解析不受影响。
      * raw 已被模式切换提示等纯文本追加过、不再是合法 JSON 时，退化为文本追加。
      */
-    private fun injectNotifications(raw: String, items: List<PendingNotification>): String {
-        val obj = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
-            ?: return raw + "\n\n" + AgentNotificationFormatter.buildMessage(items)
-        return JsonObject(obj + ("notifications" to AgentNotificationFormatter.buildJsonArray(items))).toString()
+    /**
+     * 取本次应注入的模式提醒：仅当模式与上次注入时不同（含首次）才返回文本并记录，否则为 null。
+     */
+    private fun takeModeReminderIfChanged(sessionId: String?, mode: AgentMode): String? {
+        if (sessionId == null) return buildModeReminder(mode)
+        if (lastInjectedMode[sessionId] == mode) return null
+        lastInjectedMode[sessionId] = mode
+        return buildModeReminder(mode)
     }
 
     /** 工具切换成功后拼进 switchMode 工具结果的模式状态通知（当轮即可见，无需等下一条用户消息）。 */
@@ -1073,6 +1094,15 @@ class StatefulAgentWorkflow @Inject constructor(
             .trim()
         AgentMode.BUILD -> "\n\n【模式切换】计划已获用户批准，你已切换到 BUILD（构建）模式，可以开始执行计划。"
         AgentMode.AUTO -> "\n\n【模式切换】你已切换到 AUTO（自动）模式。"
+    }
+
+    /** 用户在外部（界面）手动切换模式时拼进工具结果的提示；与 AI 自切的 [buildModeSwitchNotice] 区分，避免误称「计划已获批准」。 */
+    private fun buildExternalModeSwitchNotice(mode: AgentMode): String = when (mode) {
+        AgentMode.PLAN -> "\n\n" + promptProvider.resolvePrompt(MODE_REMINDER_PLAN_FILE)
+            .replace(LEADING_COMMENT, "")
+            .trim()
+        AgentMode.BUILD -> "\n\n【模式切换】用户已将模式切换为 BUILD（构建）模式，可以正常执行写操作。"
+        AgentMode.AUTO -> "\n\n【模式切换】用户已将模式切换为 AUTO（自动）模式。"
     }
 
     /**

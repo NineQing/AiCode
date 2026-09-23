@@ -149,6 +149,15 @@ class RepoDataFetcher(
         "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
     )
 
+    /**
+     * 同步读取磁盘缓存（不发网络）：存在则返回文本，否则 null。
+     * 供「纯只读链路」复用统一缓存目录，避免调用方硬编码缓存路径。
+     */
+    fun readLocalCache(pathInRepo: String): String? {
+        val file = getCacheFile(pathInRepo.trim().removePrefix("/"))
+        return if (file.isFile) runCatching { file.readText(Charsets.UTF_8) }.getOrNull() else null
+    }
+
     fun clearCache(pathInRepo: String? = null) {
         val dir = File(context.filesDir, CACHE_DIR_NAME)
         if (!dir.exists()) return

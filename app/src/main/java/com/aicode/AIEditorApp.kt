@@ -179,7 +179,7 @@ class AIEditorApp : Application(), Configuration.Provider {
     @Inject
     lateinit var remoteRepository: com.aicode.feature.workspace.domain.repository.RemoteRepository
 
-    /** 模型元数据服务：启动即异步刷新 models.dev 目录（24h 缓存，失败静默，兜底内置数据）。 */
+    /** 模型元数据服务：启动即异步从本仓库拉取模型目录（12h 缓存，失败静默，兜底内置数据）。 */
     @Inject
     lateinit var modelMetadataService: ModelMetadataService
 
@@ -231,7 +231,7 @@ class AIEditorApp : Application(), Configuration.Provider {
         appScope.launch {
             legacyCredentialMigrator.migrateIfNeeded()
         }
-        // 启动即异步刷新 models.dev 模型元数据（24h 缓存；失败静默，resolve 兜底内置 assets 数据）。
+        // 启动即异步刷新本仓库模型元数据（12h 缓存；失败静默，resolve 兜底内置 assets 数据）。
         appScope.launch {
             modelMetadataService.refreshFromNetworkIfStale()
         }

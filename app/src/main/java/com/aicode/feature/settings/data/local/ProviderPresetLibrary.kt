@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.io.File
 
 /** 内置/动态 provider 的展示预设：包含 name/type/baseUrl 及推荐与推广扩展属性。 */
 @Serializable
@@ -87,21 +86,18 @@ object ProviderPresetLibrary {
         cached?.let { return it }
 
         // 1. 尝试直接读取本地磁盘缓存文件（由 RepoDataFetcher 写入）
-        val diskFile = File(File(context.filesDir, "repo_data_cache"), REMOTE_PROVIDERS_PATH.replace('/', '_'))
-        if (diskFile.isFile) {
-            val diskContent = runCatching { diskFile.readText(Charsets.UTF_8) }.getOrNull()
-            if (!diskContent.isNullOrBlank()) {
-                val parsed = runCatching {
-                    json.decodeFromString<List<ProviderPreset>>(diskContent)
-                }.getOrNull()
-                if (!parsed.isNullOrEmpty()) {
-                    val sorted = parsed.sortedWith(
-                        compareByDescending<ProviderPreset> { it.isRecommended }
-                            .thenBy { it.name.lowercase() }
-                    )
-                    cached = sorted
-                    return sorted
-                }
+        val diskContent = RepoDataFetcher(context).readLocalCache(REMOTE_PROVIDERS_PATH)
+        if (!diskContent.isNullOrBlank()) {
+            val parsed = runCatching {
+                json.decodeFromString<List<ProviderPreset>>(diskContent)
+            }.getOrNull()
+            if (!parsed.isNullOrEmpty()) {
+                val sorted = parsed.sortedWith(
+                    compareByDescending<ProviderPreset> { it.isRecommended }
+                        .thenBy { it.name.lowercase() }
+                )
+                cached = sorted
+                return sorted
             }
         }
 

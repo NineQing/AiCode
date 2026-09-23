@@ -227,11 +227,9 @@
     <string name="provider_script_params_count">已配置 %1$d 个参数</string>
     <string name="provider_add_sheet_title">添加供应商</string>
     <string name="provider_custom">自定义供应商</string>
-    <string name="provider_add_tab_configured">需配置</string>
-    <string name="provider_add_tab_instant">开箱即用</string>
-    <string name="provider_add_instant_placeholder">开箱即用的免费供应商即将开放</string>
     <string name="provider_preset_loading">正在加载预设库…</string>
     <string name="provider_preset_empty">未找到匹配的预设</string>
+    <string name="provider_register_now">立即注册</string>
     <string name="settings_keepalive_title">后台运行保活</string>
     <string name="settings_keepalive_subtitle">显示前台通知，防止后台被杀</string>
     <string name="settings_screen_on_title">屏幕常亮</string>

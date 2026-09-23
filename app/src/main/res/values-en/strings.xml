@@ -227,11 +227,9 @@
     <string name="provider_script_params_count">%1$d parameters configured</string>
     <string name="provider_add_sheet_title">Add Vendor</string>
     <string name="provider_custom">Custom Vendor</string>
-    <string name="provider_add_tab_configured">Configured</string>
-    <string name="provider_add_tab_instant">Instant</string>
-    <string name="provider_add_instant_placeholder">Instant free vendors coming soon</string>
     <string name="provider_preset_loading">Loading presets…</string>
     <string name="provider_preset_empty">No matching presets</string>
+    <string name="provider_register_now">Register</string>
     <string name="settings_keepalive_title">Background keepalive</string>
     <string name="settings_keepalive_subtitle">Foreground notification prevents background kill</string>
     <string name="settings_screen_on_title">Keep screen on</string>

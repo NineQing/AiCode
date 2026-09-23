@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -28,6 +29,9 @@ class SyncEngine(
         private const val RECONNECT_BASE_MS = 5_000L
         private const val RECONNECT_MAX_MS = 60_000L
         private const val FILE_SYNC_DELAY_MS = 50L
+
+        /** 待同步路径队列上限；超出时丢弃最旧项，防止大量改动时内存无界增长。 */
+        private const val MAX_PENDING_SYNC = 4096
     }
 
     private val customIgnores = ignoredPatternsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -58,8 +62,11 @@ class SyncEngine(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val retryCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
     
-    // 使用 Channel 做缓冲和防抖
-    private val syncChannel = Channel<String>(Channel.UNLIMITED)
+    // 使用 Channel 做缓冲和防抖（上限内堆积，满则丢弃最旧项）
+    private val syncChannel = Channel<String>(
+        capacity = MAX_PENDING_SYNC,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     init {
         if (useGitIgnore) {

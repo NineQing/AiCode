@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -72,6 +73,12 @@ class FileChangeHub @Inject constructor(
 
         /** 单订阅可持有 inotify 句柄的目录数上限，防止大仓库把 inotify watch 用尽。 */
         private const val MAX_WATCHED_DIRS = 512
+
+        /** 待处理原始事件队列上限；超出时丢弃最旧事件（有快照轮询兜底），防止文件暴增时内存无界增长。 */
+        private const val MAX_PENDING_EVENTS = 4096
+
+        /** 待广播批次队列上限；超出时丢弃最旧批次。 */
+        private const val MAX_PENDING_BATCHES = 256
 
         /** AI 看到的工作区根路径。 */
         const val CONTAINER_ROOT = WorkspacePathMapper.CONTAINER_ROOT
@@ -203,8 +210,14 @@ class FileChangeHub @Inject constructor(
         private val fallbackPoll: Boolean,
         private val windowMs: Int
     ) {
-        private val events = Channel<RawEvent>(Channel.UNLIMITED)
-        private val batchesChannel = Channel<FileChangeBatch>(Channel.UNLIMITED)
+        private val events = Channel<RawEvent>(
+            capacity = MAX_PENDING_EVENTS,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
+        private val batchesChannel = Channel<FileChangeBatch>(
+            capacity = MAX_PENDING_BATCHES,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
         val batches: Flow<FileChangeBatch> = batchesChannel.receiveAsFlow()
 
         private val myDirs = ConcurrentHashMap.newKeySet<String>()

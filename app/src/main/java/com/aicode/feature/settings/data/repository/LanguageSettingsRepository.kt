@@ -24,8 +24,7 @@ private const val PREFS_KEY = "language_tag"
  * 持久化用户选择的应用语言。
  *
  * 存储值为 BCP-47 language tag（如 "zh"、"en"），null 表示跟随系统。
- * 切换时由 [AIEditorApp] 监听并调用 [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]
- * 通知系统重新解析资源，无需重启 Activity。
+ * 切换时写入同步 prefs，[com.aicode.MainActivity] 在 attachBaseContext 中读取并 recreate 生效。
  */
 @Singleton
 class LanguageSettingsRepository @Inject constructor(

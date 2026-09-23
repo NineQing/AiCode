@@ -325,7 +325,6 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     // HTML 解析与清洗 (用于 WebFetchTool)
     implementation("org.jsoup:jsoup:1.18.1")
@@ -401,8 +400,6 @@ dependencies {
 
     // Core Android
     implementation("androidx.core:core:1.16.0")
-    // AppCompat — 提供 AppCompatDelegate.setApplicationLocales 实现 per-app 语言切换
-    implementation("androidx.appcompat:appcompat:1.7.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
@@ -415,11 +412,6 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     // MockK：Kotlin 原生 mock（coEvery/coVerify 协程支持），用于 ViewModel/Repository 依赖打桩
     testImplementation("io.mockk:mockk:1.14.11")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(composeBom)
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 ksp {

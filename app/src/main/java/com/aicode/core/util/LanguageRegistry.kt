@@ -6,7 +6,7 @@ package com.aicode.core.util
  * 扩展新语言时只需在此列表追加一项，并新建对应的 res/values-xx/strings.xml，
  * 同步更新 res/xml/locales_config.xml 即可，无需改动其他代码。
  *
- * @property tag BCP-47 language tag，传给 [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]。
+ * @property tag BCP-47 language tag。
  * @property displayName 该语言的自述名（用其自身语言书写），用于语言选择列表的展示。
  */
 data class SupportedLanguage(

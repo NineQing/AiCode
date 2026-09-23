@@ -42,8 +42,8 @@ import urllib.request
 UA = "aicode-gitcode-sync"
 
 GH_REPO = os.environ.get("GH_REPO", "jieapi/aicode")
-GITCODE_OWNER = os.environ.get("GITCODE_OWNER", GH_REPO.split("/")[0])
-GITCODE_REPO = os.environ.get("GITCODE_REPO", GH_REPO.split("/")[1])
+GITCODE_OWNER = os.environ.get("GITCODE_OWNER") or GH_REPO.split("/")[0]
+GITCODE_REPO = os.environ.get("GITCODE_REPO") or GH_REPO.split("/")[1]
 GITCODE_TOKEN = os.environ.get("GITCODE_TOKEN", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 RELEASE_FILTER = os.environ.get("RELEASE_FILTER", "")

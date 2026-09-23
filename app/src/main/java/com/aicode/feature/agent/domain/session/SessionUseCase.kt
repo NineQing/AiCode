@@ -172,7 +172,15 @@ class SessionUseCase @Inject constructor(
 
     suspend fun updateMode(sessionId: String, mode: String) {
         val s = chatSessionDao.getById(sessionId) ?: return
-        chatSessionDao.upsert(s.copy(mode = mode))
+        val newMode = runCatching { AgentMode.valueOf(mode) }.getOrNull() ?: return
+        val currentMode = runCatching { AgentMode.valueOf(s.mode) }.getOrNull()
+        // 用户手动进入 PLAN 时同样记下进入前的模式，退出 PLAN 时恢复（与 AI 自切保持同一套语义）。
+        val modeBeforePlan = when {
+            newMode == AgentMode.PLAN && currentMode != AgentMode.PLAN -> currentMode?.name
+            newMode == AgentMode.PLAN -> s.modeBeforePlan
+            else -> null
+        }
+        chatSessionDao.upsert(s.copy(mode = newMode.name, modeBeforePlan = modeBeforePlan))
     }
 
     suspend fun updateProviderModel(sessionId: String, providerId: String?, model: String?) {

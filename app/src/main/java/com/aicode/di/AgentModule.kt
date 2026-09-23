@@ -80,7 +80,7 @@ import com.aicode.feature.agent.domain.session.SessionUseCase
 import com.aicode.feature.agent.domain.tool.mcp.ManageMcpTool
 import com.aicode.feature.agent.domain.tool.memory.MemoryTool
 import com.aicode.feature.agent.domain.tool.mode.PlanApprovalManager
-import com.aicode.feature.agent.domain.tool.mode.SwitchModeTool
+import com.aicode.feature.agent.domain.tool.mode.PlanModeTool
 import com.aicode.feature.agent.domain.tool.search.WebFetchTool
 import com.aicode.feature.agent.domain.tool.search.WebSearchTool
 import com.aicode.feature.agent.domain.tool.browser.BrowserTool
@@ -284,7 +284,7 @@ object AgentModule {
         manageMcpTool: ManageMcpTool,
         webSearchTool: WebSearchTool,
         webFetchTool: WebFetchTool,
-        switchModeTool: SwitchModeTool,
+        planModeTool: PlanModeTool,
         todoTool: TodoTool,
         memoryTool: MemoryTool,
         taskTool: TaskTool,
@@ -308,7 +308,7 @@ object AgentModule {
             register("manageMcp", manageMcpTool)
             register("websearch", webSearchTool)
             register("webfetch", webFetchTool)
-            register("switchMode", switchModeTool)
+            register("planMode", planModeTool)
             register("todo", todoTool)
             register("memory", memoryTool)
             register("task", taskTool)

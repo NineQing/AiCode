@@ -106,7 +106,6 @@ object AgentModule {
             AgentDatabase::class.java,
             AgentDatabase.DATABASE_NAME
         ).addMigrations(*MigrationLoader.loadMigrations(context))
-            .fallbackToDestructiveMigration(dropAllTables = false)
             .build()
     }
 

@@ -153,35 +153,38 @@ class RemoteServerViewModel @Inject constructor(
     /** 添加登录密钥：读取所选私钥文件复制到应用私有目录，解析公钥指纹后入库。 */
     fun addLoginKey(uri: Uri) {
         viewModelScope.launch {
-            val bytes = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            }.getOrNull() ?: return@launch
-            if (bytes.isEmpty()) return@launch
-            val displayName = runCatching {
-                context.contentResolver.query(uri, null, null, null, null)?.use { c ->
-                    if (c.moveToFirst()) {
-                        val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (idx >= 0) c.getString(idx) else null
-                    } else null
+            val staged = withContext(Dispatchers.IO) {
+                val bytes = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }.getOrNull() ?: return@withContext null
+                if (bytes.isEmpty()) return@withContext null
+                val displayName = runCatching {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                        if (c.moveToFirst()) {
+                            val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (idx >= 0) c.getString(idx) else null
+                        } else null
+                    }
+                }.getOrNull() ?: "ssh_key"
+                val dir = File(context.filesDir, "ssh_keys").apply { mkdirs() }
+                var target = File(dir, displayName)
+                var n = 1
+                while (target.exists()) {
+                    val dot = displayName.lastIndexOf('.')
+                    val base = if (dot > 0) displayName.substring(0, dot) else displayName
+                    val ext = if (dot > 0) displayName.substring(dot) else ""
+                    target = File(dir, "${base}_$n$ext")
+                    n++
                 }
-            }.getOrNull() ?: "ssh_key"
-            val dir = File(context.filesDir, "ssh_keys").apply { mkdirs() }
-            var target = File(dir, displayName)
-            var n = 1
-            while (target.exists()) {
-                val dot = displayName.lastIndexOf('.')
-                val base = if (dot > 0) displayName.substring(0, dot) else displayName
-                val ext = if (dot > 0) displayName.substring(dot) else ""
-                target = File(dir, "${base}_$n$ext")
-                n++
-            }
-            runCatching { target.writeBytes(bytes) }.getOrElse { return@launch }
-            val fingerprint = withContext(Dispatchers.IO) { sshLoginKeyFingerprint(target.absolutePath) }
+                runCatching { target.writeBytes(bytes) }.getOrNull() ?: return@withContext null
+                target
+            } ?: return@launch
+            val fingerprint = withContext(Dispatchers.IO) { sshLoginKeyFingerprint(staged.absolutePath) }
             loginKeyStore.add(
                 SshLoginKey(
                     id = UUID.randomUUID().toString(),
-                    name = target.name,
-                    path = target.absolutePath,
+                    name = staged.name,
+                    path = staged.absolutePath,
                     fingerprint = fingerprint
                 )
             )

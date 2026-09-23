@@ -188,7 +188,7 @@ class AIEditorApp : Application(), Configuration.Provider {
     lateinit var providerProxyRegistry: com.aicode.feature.settings.data.repository.ProviderProxyRegistry
 
     /** 长驻作用域：持续把持久化的日志等级同步到 FileLogger。 */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         if (isCrashProcess(this)) {

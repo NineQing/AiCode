@@ -612,15 +612,15 @@ class AIAgentViewModel @Inject constructor(
 
     /** 把剪切板内容粘贴到 [targetDir]。目标已存在同名项时，发 [pasteConflict] 让 UI 弹窗询问是否覆盖，
      *  不执行粘贴；否则直接粘贴。粘贴成功即清空剪切板（无论复制/剪切，一次粘贴后失效），失败保留供重试。 */
-    fun pasteBrowseEntry(targetDir: String, onResult: (Boolean) -> Unit) {
-        val clip = _browseClipboard.value ?: return onResult(false)
-        if (clip.sourcePath == targetDir) return onResult(false)
+    fun pasteBrowseEntry(targetDir: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        val clip = _browseClipboard.value ?: return@launch onResult(false)
+        if (clip.sourcePath == targetDir) return@launch onResult(false)
         val name = clip.sourceName
-        if (!isValidFileEntryName(name)) return onResult(false)
+        if (!isValidFileEntryName(name)) return@launch onResult(false)
         val target = "$targetDir/$name"
-        if (fileAccess.exists(target)) {
+        if (withContext(Dispatchers.IO) { fileAccess.exists(target) }) {
             _pasteConflict.value = clip.sourcePath to target
-            return
+            return@launch
         }
         performPaste(clip, target, overwrite = false, onResult)
     }

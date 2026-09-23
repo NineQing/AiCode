@@ -48,8 +48,11 @@ fun rememberSheetFlingFix(sheetState: SheetState): NestedScrollConnection =
     remember(sheetState) {
         object : NestedScrollConnection {
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
-                if (sheetState.currentValue == SheetValue.Expanded && available.y > 0f) available
-                else Velocity.Zero
+                if ((sheetState.currentValue == SheetValue.Expanded || sheetState.targetValue == SheetValue.Expanded) && available.y < 0f) {
+                    available
+                } else {
+                    Velocity.Zero
+                }
         }
     }
 

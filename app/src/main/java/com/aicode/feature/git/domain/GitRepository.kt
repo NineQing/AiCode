@@ -8,6 +8,7 @@ import com.aicode.feature.git.domain.model.GitFileChange
 import com.aicode.feature.git.domain.model.GitGraph
 import com.aicode.feature.git.domain.model.GitGraphRef
 import com.aicode.feature.git.domain.model.GraphCommit
+import com.aicode.feature.git.domain.model.GitStash
 import com.aicode.feature.git.domain.model.GitStatus
 import com.aicode.feature.git.domain.model.GitTag
 import com.aicode.feature.workspace.data.repository.WorkspaceRepository
@@ -111,6 +112,7 @@ class GitRepository @Inject constructor(
         val staged = mutableListOf<GitFileChange>()
         val unstaged = mutableListOf<GitFileChange>()
         val untracked = mutableListOf<String>()
+        val conflicted = mutableListOf<GitFileChange>()
 
         for (line in lines) {
             if (line.isBlank()) continue
@@ -146,6 +148,12 @@ class GitRepository @Inject constructor(
                 untracked.add(path)
                 continue
             }
+            // 未合并冲突（Unmerged）：UU, AA, DD, AU, UD, UA, DU 等
+            val isConflict = x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D')
+            if (isConflict) {
+                conflicted.add(GitFileChange(path, "$x$y", staged = false))
+                continue
+            }
             if (x != ' ' && x != '?') {
                 staged.add(GitFileChange(path, x.toString(), staged = true))
             }
@@ -153,7 +161,8 @@ class GitRepository @Inject constructor(
                 unstaged.add(GitFileChange(path, y.toString(), staged = false))
             }
         }
-        return GitStatus(branch, ahead, behind, staged, unstaged, untracked, upstream, isDetached)
+        val isMerging = hasMergeHead() || conflicted.isNotEmpty()
+        return GitStatus(branch, ahead, behind, staged, unstaged, untracked, conflicted, isMerging, upstream, isDetached)
     }
 
     /** 本地 + 远程分支列表，当前分支高亮。 */
@@ -326,7 +335,20 @@ class GitRepository @Inject constructor(
     suspend fun unstage(path: String) = gitChecked("reset", "HEAD", "--", path)
     suspend fun stageAll() = gitChecked("add", "-A")
     suspend fun unstageAll() = gitChecked("reset")
-    suspend fun commit(message: String) = gitChecked("commit", "-m", message)
+    suspend fun commit(message: String, amend: Boolean = false) =
+        if (amend) gitChecked("commit", "--amend", "-m", message)
+        else gitChecked("commit", "-m", message)
+
+    /**
+     * 获取用于 AI 生成提交信息的差异文本。
+     * 优先获取暂存区差异（`git diff --cached`）；如果暂存区为空，则获取工作区差异（`git diff`）。
+     */
+    suspend fun diffForCommitMessage(): String {
+        val staged = gitRaw(arrayOf("diff", "--cached", "--no-color", "--no-ext-diff"))
+        if (staged.isNotBlank() && !staged.startsWith("fatal:")) return staged
+        val worktree = gitRaw(arrayOf("diff", "--no-color", "--no-ext-diff"))
+        return if (!worktree.startsWith("fatal:")) worktree else ""
+    }
 
     /**
      * 回退单个文件的未暂存改动：把工作区还原成暂存区内容（`git checkout -- <path>`），
@@ -442,10 +464,39 @@ class GitRepository @Inject constructor(
         gitChecked("branch", "-m", oldName, newName)
 
     /**
-     * 创建轻量标签（`git tag <name>`），指向当前 HEAD。附注标签需消息且交互复杂，暂只做轻量标签；
-     * 名字非法或已存在时由 [gitChecked] 据退出码抛 [GitCommandFailureException]，上层 toast。
+     * 创建轻量标签（`git tag <name>`），指向当前 HEAD 或指定提交。
      */
-    suspend fun createTag(name: String): String = gitChecked("tag", name)
+    suspend fun createTag(name: String, commitHash: String? = null): String =
+        if (commitHash.isNullOrBlank()) gitChecked("tag", name)
+        else gitChecked("tag", name, commitHash)
+
+    /**
+     * 重置当前分支到指定提交。
+     * [mode] 可以是 "soft" 或 "mixed"。
+     */
+    suspend fun resetToCommit(commitHash: String, mode: String = "mixed"): String =
+        gitChecked("reset", "--$mode", commitHash)
+
+    /**
+     * 将忽略规则追加到工作区的 .gitignore 文件中。
+     * 无论 .gitignore 是否已存在均可自动创建与追加；通过 engine 执行以同时兼容本地与远程模式。
+     */
+    suspend fun addToGitignore(pattern: String): String {
+        val normalized = pattern.trim()
+        if (normalized.isBlank()) return ""
+        // 先检查 .gitignore 是否已有该规则
+        val checkCmd = "grep -F -x -- ${shellQuote(normalized)} .gitignore"
+        val checkResult = engine.runCommandSyncUnbounded(checkCmd, workspaceRepository.currentPath())
+        if (checkResult.exitCode == 0) return normalized // 已存在，无需重复追加
+
+        // 不存在则通过 printf 安全追加（如果文件不存在则自动创建）
+        val appendCmd = "printf '%s\\n' ${shellQuote(normalized)} >> .gitignore"
+        val appendResult = engine.runCommandSyncUnbounded(appendCmd, workspaceRepository.currentPath())
+        if (appendResult.exitCode != 0) {
+            throw GitCommandFailureException(appendResult.output.ifBlank { "写入 .gitignore 失败" })
+        }
+        return normalized
+    }
 
     /**
      * 删除本地标签（`git tag -d <name>`）。不存在时由 [gitChecked] 据退出码抛 [GitCommandFailureException]，上层 toast。
@@ -462,6 +513,12 @@ class GitRepository @Inject constructor(
         return gitChecked("push", remote, "--delete", branch)
     }
 
+    /** 是否正在处于未完成的合并状态（MERGE_HEAD 存在）。 */
+    private suspend fun hasMergeHead(): Boolean =
+        runCatching { git("rev-parse", "-q", "--verify", "MERGE_HEAD").trim() }
+            .getOrDefault("")
+            .let { it.isNotBlank() && !it.startsWith("fatal") }
+
     /**
      * 切换到指定分支或标签。branch 可以是本地分支名、远程分支名或 tag 名。
      * 远程分支用 `git checkout -b <local> <remote>` 创建本地跟踪分支，去掉远程前缀（如 origin/）。
@@ -474,6 +531,75 @@ class GitRepository @Inject constructor(
             gitChecked("checkout", branch)
         }
     }
+
+    /**
+     * 合并指定分支到当前分支。
+     * [branch] 为目标分支名。
+     * [noFf] 为 true 时即使可快进也强制生成合并提交（`--no-ff`）。
+     * 遇到冲突或脏工作区时由 [gitChecked] 抛 [GitCommandFailureException]。
+     */
+    suspend fun mergeBranch(branch: String, noFf: Boolean = false): String {
+        return if (noFf) gitChecked("merge", "--no-ff", branch)
+        else gitChecked("merge", branch)
+    }
+
+    /**
+     * 中止当前进行中的合并（`git merge --abort`）。
+     */
+    suspend fun abortMerge(): String = gitChecked("merge", "--abort")
+
+    /**
+     * 列出所有储藏记录。
+     */
+    suspend fun stashList(): List<GitStash> = withContext(Dispatchers.Default) {
+        val raw = runCatching { git("stash", "list", "--pretty=format:%gd%x1f%s%x1f%ar") }
+            .getOrDefault("")
+        if (raw.isBlank() || raw.startsWith("fatal:")) return@withContext emptyList()
+        raw.split('\n').mapNotNull { line ->
+            val l = line.removeSuffix("\r").trim()
+            if (l.isBlank()) return@mapNotNull null
+            val parts = l.split('\u001f')
+            if (parts.size < 3) null
+            else GitStash(index = parts[0], message = parts[1], date = parts[2])
+        }
+    }
+
+    /**
+     * 储藏工作区改动。
+     * [message] 可选说明；[includeUntracked] 为 true 时包含未跟踪文件（`-u`）。
+     */
+    suspend fun stashSave(message: String? = null, includeUntracked: Boolean = false): String {
+        val args = mutableListOf("stash", "push")
+        if (includeUntracked) args.add("-u")
+        if (!message.isNullOrBlank()) {
+            args.add("-m")
+            args.add(message.trim())
+        }
+        return gitChecked(*args.toTypedArray())
+    }
+
+    /**
+     * 弹出指定储藏（应用并删除），默认为最近的一条 `stash@{0}`。
+     */
+    suspend fun stashPop(index: String = "stash@{0}"): String =
+        gitChecked("stash", "pop", index)
+
+    /**
+     * 应用指定储藏（保留记录），默认为最近的一条 `stash@{0}`。
+     */
+    suspend fun stashApply(index: String = "stash@{0}"): String =
+        gitChecked("stash", "apply", index)
+
+    /**
+     * 丢弃指定储藏，默认为 `stash@{0}`。
+     */
+    suspend fun stashDrop(index: String = "stash@{0}"): String =
+        gitChecked("stash", "drop", index)
+
+    /**
+     * 清空所有储藏记录。
+     */
+    suspend fun stashClear(): String = gitChecked("stash", "clear")
 
     /**
      * 写入提交署名，**优先项目级**：当前工作区（~/workspace/.git/config）已有项目级署名时写 local，

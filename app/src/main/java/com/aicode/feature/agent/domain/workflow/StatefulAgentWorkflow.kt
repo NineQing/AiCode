@@ -114,6 +114,7 @@ class StatefulAgentWorkflow @Inject constructor(
         const val USER_REJECTED_CODE = "USER_REJECTED"
         const val TITLE_GENERATOR_FILE = "agent/title-generator.md"
         const val TITLE_MAX_CHARS = 50
+        const val COMMIT_GENERATOR_FILE = "agent/commit-generator.md"
         /** 模式提醒提示词：复用 prompts 目录文件（用户可自定义覆盖），切换时随消息注入而非进 system。 */
         const val MODE_REMINDER_PLAN_FILE = "agent/plan-mode.md"
         const val MODE_REMINDER_AUTO_FILE = "agent/auto-mode.md"
@@ -960,6 +961,27 @@ class StatefulAgentWorkflow @Inject constructor(
         response.content.trim().take(TITLE_MAX_CHARS).ifBlank { null }
     }.onFailure { e ->
         FileLogger.w(TAG, "生成会话标题失败", e)
+    }.getOrNull()
+
+    override suspend fun generateCommitMessage(diff: String): String? = runCatching {
+        if (diff.isBlank()) return@runCatching null
+        val provider = getEffectiveProvider(sessionId = null)
+        val prompt = promptProvider.resolvePrompt(COMMIT_GENERATOR_FILE)
+            .replace(LEADING_COMMENT, "")
+        val truncatedDiff = diff.take(12000)
+        val resp = provider.complete(
+            systemPrompt = prompt,
+            messages = listOf(AgentMessage.UserMessage(content = "git diff:\n```diff\n$truncatedDiff\n```")),
+            tools = emptyList()
+        )
+        val line = resp.content.lines().firstOrNull { it.isNotBlank() }?.trim()
+            ?.removeSurrounding("`")
+            ?.removePrefix("\"")
+            ?.removeSuffix("\"")
+            ?.trim()
+        line?.take(100)?.ifBlank { null }
+    }.onFailure { e ->
+        FileLogger.w(TAG, "生成提交信息失败", e)
     }.getOrNull()
 
     private suspend fun runToolStream(

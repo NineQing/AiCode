@@ -72,6 +72,7 @@ import compose.icons.feathericons.Cloud
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.GitCommit
+import compose.icons.feathericons.GitMerge
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Tag
 import compose.icons.feathericons.Trash2
@@ -91,6 +92,7 @@ internal fun BranchesTab(
     onDeleteBranch: (String) -> Unit,
     onDeleteRemoteBranch: (String) -> Unit,
     onRenameBranch: (String, String) -> Unit,
+    onMergeBranch: (String, Boolean) -> Unit = { _, _ -> },
     onCreateTag: (String) -> Unit,
     onDeleteTag: (String) -> Unit
 ) {
@@ -134,6 +136,8 @@ internal fun BranchesTab(
     var pendingRename by remember { mutableStateOf<String?>(null) }
     var showCreateTagDialog by remember { mutableStateOf(false) }
     var pendingDeleteTag by remember { mutableStateOf<String?>(null) }
+    var pendingMerge by remember { mutableStateOf<String?>(null) }
+    var mergeNoFf by remember { mutableStateOf(false) }
 
     pendingCheckout?.let { (ref, isRemote) ->
         val isTag = tags.any { it.name == ref }
@@ -369,6 +373,47 @@ internal fun BranchesTab(
         )
     }
 
+    pendingMerge?.let { targetBranch ->
+        val currentBranch = branches.firstOrNull { it.current }?.name ?: "HEAD"
+        AlertDialog(
+            onDismissRequest = { pendingMerge = null },
+            title = { Text(stringResource(R.string.git_action_merge)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(stringResource(R.string.git_merge_confirm, targetBranch, currentBranch))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { mergeNoFf = !mergeNoFf },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            stringResource(R.string.git_merge_no_ff),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        AppSwitch(
+                            checked = mergeNoFf,
+                            onCheckedChange = { mergeNoFf = it }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val b = targetBranch
+                    pendingMerge = null
+                    onMergeBranch(b, mergeNoFf)
+                }) {
+                    Text(stringResource(R.string.git_action_merge))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMerge = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
     val localTree = remember(localBranches) { buildBranchTree(localBranches) }
     val remoteTree = remember(remoteBranches) { buildBranchTree(remoteBranches) }
 
@@ -417,6 +462,7 @@ internal fun BranchesTab(
                             isRemote = false,
                             checkoutLoading = checkoutLoading,
                             onCheckout = { ref, remote -> pendingCheckout = ref to remote },
+                            onMergeBranch = { pendingMerge = it },
                             onRenameBranch = { pendingRename = it },
                             onDeleteBranch = { pendingDelete = it to false },
                             onDeleteRemoteBranch = {}
@@ -443,6 +489,7 @@ internal fun BranchesTab(
                             isRemote = true,
                             checkoutLoading = checkoutLoading,
                             onCheckout = { ref, remote -> pendingCheckout = ref to remote },
+                            onMergeBranch = { pendingMerge = it },
                             onRenameBranch = {},
                             onDeleteBranch = {},
                             onDeleteRemoteBranch = { pendingDelete = it to true }
@@ -631,6 +678,7 @@ private sealed class RefAction(
     val onClick: () -> Unit
 ) {
     class Switch(onClick: () -> Unit) : RefAction(R.string.common_switch, FeatherIcons.GitCommit, false, onClick)
+    class Merge(onClick: () -> Unit) : RefAction(R.string.git_action_merge, FeatherIcons.GitMerge, false, onClick)
     class Rename(onClick: () -> Unit) : RefAction(R.string.common_rename, FeatherIcons.Edit2, false, onClick)
     class Delete(onClick: () -> Unit) : RefAction(R.string.common_delete, FeatherIcons.Trash2, true, onClick)
 }
@@ -824,6 +872,7 @@ private fun ColumnScope.renderBranchTree(
     isRemote: Boolean,
     checkoutLoading: String?,
     onCheckout: (String, Boolean) -> Unit,
+    onMergeBranch: (String) -> Unit,
     onRenameBranch: (String) -> Unit,
     onDeleteBranch: (String) -> Unit,
     onDeleteRemoteBranch: (String) -> Unit
@@ -845,11 +894,15 @@ private fun ColumnScope.renderBranchTree(
                 val actions = if (isRemote) {
                     listOf(
                         RefAction.Switch(onClick = { onCheckout(b.name, true) }),
+                        RefAction.Merge(onClick = { onMergeBranch(b.name) }),
                         RefAction.Delete(onClick = { onDeleteRemoteBranch(b.name) })
                     )
                 } else {
                     buildList {
-                        if (!b.current) add(RefAction.Switch(onClick = { onCheckout(b.name, false) }))
+                        if (!b.current) {
+                            add(RefAction.Switch(onClick = { onCheckout(b.name, false) }))
+                            add(RefAction.Merge(onClick = { onMergeBranch(b.name) }))
+                        }
                         add(RefAction.Rename(onClick = { onRenameBranch(b.name) }))
                         if (!b.current) add(RefAction.Delete(onClick = { onDeleteBranch(b.name) }))
                     }
@@ -866,7 +919,7 @@ private fun ColumnScope.renderBranchTree(
             }
         }
         if (isFolder && isOpen) {
-            renderBranchTree(node.children, depth + 1, expanded, isRemote, checkoutLoading, onCheckout, onRenameBranch, onDeleteBranch, onDeleteRemoteBranch)
+            renderBranchTree(node.children, depth + 1, expanded, isRemote, checkoutLoading, onCheckout, onMergeBranch, onRenameBranch, onDeleteBranch, onDeleteRemoteBranch)
         }
     }
 }

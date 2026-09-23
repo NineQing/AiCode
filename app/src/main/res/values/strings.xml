@@ -842,6 +842,58 @@
     <string name="git_revert_all_confirm">丢弃全部未暂存的改动（%1$d 个文件），还原到上次暂存或提交的内容？已暂存的内容不受影响，但丢弃的改动无法找回。</string>
     <string name="git_delete_untracked_confirm">删除 %1$s？它从未被提交过，删除后无法通过 Git 恢复。</string>
 
+    <!-- Git Merge -->
+    <string name="git_action_merge">合并分支</string>
+    <string name="git_merge_into">合并到 %1$s</string>
+    <string name="git_merge_confirm">确定将分支 %1$s 合并到当前分支（%2$s）吗？</string>
+    <string name="git_merge_no_ff">创建合并提交（--no-ff）</string>
+
+    <!-- Git Stash -->
+    <string name="git_tab_stash">储藏</string>
+    <string name="git_stash_title">储藏箱</string>
+    <string name="git_action_stash">储藏改动</string>
+    <string name="git_stash_message_hint">储藏说明（可选）</string>
+    <string name="git_stash_include_untracked">包含未跟踪文件（-u）</string>
+    <string name="git_stash_empty">暂无储藏记录</string>
+    <string name="git_stash_pop">弹出 (Pop)</string>
+    <string name="git_stash_apply">应用 (Apply)</string>
+    <string name="git_stash_drop">丢弃 (Drop)</string>
+    <string name="git_stash_drop_confirm">确定丢弃储藏 %1$s 吗？该操作不可撤销。</string>
+    <string name="git_stash_clear">清空全部</string>
+    <string name="git_stash_clear_confirm">确定清空所有储藏记录吗？该操作不可撤销。</string>
+    <string name="git_stash_count">储藏 (%1$d)</string>
+
+    <!-- Git Conflict -->
+    <string name="git_conflicted_count">存在冲突 (%1$s)</string>
+    <string name="git_conflict_detected">检测到合并冲突</string>
+    <string name="git_conflict_hint">请在编辑器中解决冲突后暂存文件，或中止本次合并。</string>
+    <string name="git_action_abort_merge">中止合并</string>
+    <string name="git_abort_merge_confirm">确定中止当前合并吗？未解决的冲突改动将被放弃，工作区将还原到合并前的状态。</string>
+
+    <!-- Git Commit Enhancements -->
+    <string name="git_commit_ai_generate">AI 生成</string>
+    <string name="git_commit_generating">正在生成…</string>
+    <string name="git_commit_amend">追加到上次提交 (--amend)</string>
+    <string name="git_toast_no_diff_for_commit">暂存区与工作区均无差异，无法生成提交信息</string>
+    <string name="git_toast_generate_commit_failed">AI 生成提交信息失败，请检查模型或网络</string>
+    <string name="git_open_in_editor">在编辑器中打开</string>
+
+    <!-- Git Log & Commit Detail Actions -->
+    <string name="git_create_branch_from_commit">基于此提交创建分支</string>
+    <string name="git_create_tag_at_commit">在此提交创建标签</string>
+    <string name="git_reset_to_commit">重置到此提交 (Reset)</string>
+    <string name="git_reset_soft">Soft（保留工作区与暂存区）</string>
+    <string name="git_reset_mixed">Mixed（保留工作区，清空暂存区）</string>
+    <string name="git_reset_confirm">确定将当前分支重置到提交 %1$s 吗？</string>
+    <string name="git_search_commits_hint">搜索提交说明或作者…</string>
+
+    <!-- Gitignore -->
+    <string name="git_add_to_gitignore">添加到 .gitignore</string>
+    <string name="git_ignore_file">忽略此文件 (%1$s)</string>
+    <string name="git_ignore_dir">忽略整个目录 (%1$s/)</string>
+    <string name="git_ignore_extension">忽略同类型文件 (*.%1$s)</string>
+    <string name="git_toast_added_to_gitignore">已添加到 .gitignore</string>
+
     <!-- Git Identity -->
     <string name="git_tab_identity">署名</string>
     <string name="git_tab_credentials">凭据</string>

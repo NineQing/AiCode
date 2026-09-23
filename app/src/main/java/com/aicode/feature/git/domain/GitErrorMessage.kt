@@ -53,6 +53,15 @@ object GitErrorMessage {
         // 未配置署名（提交时）
         if (raw.contains("Please tell me who you are") || raw.contains("Author identity unknown"))
             return "尚未配置提交署名，请在设置中填写用户名和邮箱"
+        // 合并冲突
+        if (raw.contains("CONFLICT") || raw.contains("Automatic merge failed"))
+            return "合并产生冲突，请前往状态页查看并解决冲突"
+        // 合并/拉取时本地有未提交改动
+        if (raw.contains("Your local changes to the following files would be overwritten by merge"))
+            return "本地有未提交的改动，请先提交或储藏（Stash）后再合并"
+        // 储藏相关
+        if (raw.contains("No local changes to save"))
+            return "当前没有需要储藏的改动"
         return raw
     }
 }

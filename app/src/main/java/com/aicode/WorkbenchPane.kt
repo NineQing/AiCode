@@ -36,6 +36,7 @@ internal fun WorkbenchPaneContent(
     editorPath: String,
     editorLine: Int,
     onClose: () -> Unit,
+    onOpenFile: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
@@ -73,6 +74,7 @@ internal fun WorkbenchPaneContent(
                         viewModel = gitViewModel,
                         onNavigateToCredentials = { showCredentials = true },
                         onNavigateBack = onClose,
+                        onOpenFile = onOpenFile,
                         embedded = true
                     )
                 }

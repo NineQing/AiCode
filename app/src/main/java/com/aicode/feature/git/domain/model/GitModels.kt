@@ -35,6 +35,12 @@ data class GitTag(
     val shortHash: String
 )
 
+data class GitStash(
+    val index: String,
+    val message: String,
+    val date: String
+)
+
 /** `git status` 的聚合视图：分支跟踪信息 + 分组后的文件改动。 */
 data class GitStatus(
     val branch: String,
@@ -43,11 +49,13 @@ data class GitStatus(
     val staged: List<GitFileChange>,
     val unstaged: List<GitFileChange>,
     val untracked: List<String>,
+    val conflicted: List<GitFileChange> = emptyList(),
+    val isMerging: Boolean = false,
     val upstream: String? = null,
     val isDetached: Boolean = false
 ) {
     val hasChanges: Boolean
-        get() = staged.isNotEmpty() || unstaged.isNotEmpty() || untracked.isNotEmpty()
+        get() = staged.isNotEmpty() || unstaged.isNotEmpty() || untracked.isNotEmpty() || conflicted.isNotEmpty()
 }
 
 enum class GitTab { STATUS, BRANCHES, LOG }

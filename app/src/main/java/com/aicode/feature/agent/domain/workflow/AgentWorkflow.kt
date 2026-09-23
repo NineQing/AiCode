@@ -113,4 +113,12 @@ interface AgentWorkflow {
      * 生成失败或取不到标题时返回 null（调用方保留临时标题）。
      */
     suspend fun generateTitle(sessionId: String, request: String): String?
+
+    /**
+     * 根据 Git 差异文本生成符合 Conventional Commits 规范的提交信息。
+     * 默认使用全局生效的 AI 供应商及默认模型。
+     * @param diff 变更内容差异文本（`git diff --cached` 或工作区差异）
+     * @return 建议的提交说明，失败返回 null。
+     */
+    suspend fun generateCommitMessage(diff: String): String?
 }

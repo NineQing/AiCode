@@ -24,8 +24,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,8 +41,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -73,9 +77,14 @@ import compose.icons.feathericons.Cloud
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Tag
+import compose.icons.feathericons.RotateCcw
+import compose.icons.feathericons.Search
+import compose.icons.feathericons.X
 
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.graphics.RectangleShape
+import com.aicode.core.ui.AppTextField
+import com.aicode.core.ui.dialogTextFieldColors
 import kotlinx.coroutines.launch
 
 @Composable
@@ -89,13 +98,31 @@ internal fun LogTab(
     onOpenCommit: (String) -> Unit,
     onCloseCommit: () -> Unit,
     onFileDiff: (String, String) -> Unit,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    onCreateBranchAtCommit: (String, String) -> Unit = { _, _ -> },
+    onCreateTagAtCommit: (String, String) -> Unit = { _, _ -> },
+    onResetToCommit: (String, String) -> Unit = { _, _ -> }
 ) {
-    val commits = graph.commits
-    if (commits.isEmpty()) {
+    val allCommits = graph.commits
+    if (allCommits.isEmpty()) {
         EmptyState(stringResource(R.string.git_no_commits))
         return
     }
+
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredCommits = remember(allCommits, searchQuery) {
+        if (searchQuery.isBlank()) allCommits
+        else {
+            val q = searchQuery.trim().lowercase()
+            allCommits.filter {
+                it.message.lowercase().contains(q) ||
+                    it.author.lowercase().contains(q) ||
+                    it.shortHash.lowercase().contains(q)
+            }
+        }
+    }
+    val commits = filteredCommits
+
     // 泳道调色板：按列号循环取色，分支越多颜色越丰富。
     val laneColors = rememberLaneColors(graph.maxLane + 1)
     // 每个提交到其父提交的边列表（按提交索引分组），供 Canvas 绘制连线。
@@ -115,10 +142,34 @@ internal fun LogTab(
         }
     }
     LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && graph.hasMore && !graphLoadingMore) onLoadMore()
+        if (shouldLoadMore && graph.hasMore && !graphLoadingMore && searchQuery.isBlank()) onLoadMore()
     }
     val cardColor = MaterialTheme.semanticColors.cardSurface
     Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = stringResource(R.string.git_search_commits_hint),
+                leadingIcon = {
+                    Icon(FeatherIcons.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(FeatherIcons.X, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                } else null,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
         SectionHeader(stringResource(R.string.git_commit_count, commits.size))
         // 滚动容器占满整屏（与状态/分支页一致）：白色卡片是滚动内容的一部分——
         // 内容少时卡片收缩在顶部；滚动时整卡可滚过 tab 被渐变蒙版渐隐，
@@ -132,9 +183,9 @@ internal fun LogTab(
         ) {
             itemsIndexed(commits, key = { _, c -> c.hash }) { index, c ->
                 val shape = when {
-                    index == 0 && commits.size == 1 && !graph.hasMore -> RoundedCornerShape(Radius.lg)
+                    index == 0 && commits.size == 1 && (!graph.hasMore || searchQuery.isNotBlank()) -> RoundedCornerShape(Radius.lg)
                     index == 0 -> RoundedCornerShape(topStart = Radius.lg, topEnd = Radius.lg)
-                    index == commits.lastIndex && !graph.hasMore -> RoundedCornerShape(bottomStart = Radius.lg, bottomEnd = Radius.lg)
+                    index == commits.lastIndex && (!graph.hasMore || searchQuery.isNotBlank()) -> RoundedCornerShape(bottomStart = Radius.lg, bottomEnd = Radius.lg)
                     else -> RectangleShape
                 }
                 Surface(
@@ -142,51 +193,54 @@ internal fun LogTab(
                     shape = shape,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    val origIndex = allCommits.indexOfFirst { it.hash == c.hash }
                     GraphCommitRow(
                         commit = c,
                         lane = graph.lanes[c.hash] ?: 0,
-                        edges = edgesByCommit[index].orEmpty(),
-                        activeTopLanes = graph.activeTopLanes[c.hash].orEmpty(),
-                        activeBottomLanes = graph.activeBottomLanes[c.hash].orEmpty(),
+                        edges = if (searchQuery.isBlank()) edgesByCommit[origIndex].orEmpty() else emptyList(),
+                        activeTopLanes = if (searchQuery.isBlank()) graph.activeTopLanes[c.hash].orEmpty() else emptyList(),
+                        activeBottomLanes = if (searchQuery.isBlank()) graph.activeBottomLanes[c.hash].orEmpty() else emptyList(),
                         laneColors = laneColors,
-                        canvasWidth = canvasWidth,
-                        laneWidth = laneWidth,
+                        canvasWidth = if (searchQuery.isBlank()) canvasWidth else 0.dp,
+                        laneWidth = if (searchQuery.isBlank()) laneWidth else 0.dp,
                         rowHeight = rowHeight,
                         refs = graph.refs[c.hash].orEmpty(),
-                        isTopTerminal = index == 0,
+                        isTopTerminal = origIndex == 0,
                         onOpen = { onOpenCommit(c.hash) }
                     )
                 }
             }
 
-            item(key = "footer") {
-                Surface(
-                    color = cardColor,
-                    shape = RoundedCornerShape(bottomStart = Radius.lg, bottomEnd = Radius.lg),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Spacing.md),
-                        contentAlignment = Alignment.Center
+            if (searchQuery.isBlank()) {
+                item(key = "footer") {
+                    Surface(
+                        color = cardColor,
+                        shape = RoundedCornerShape(bottomStart = Radius.lg, bottomEnd = Radius.lg),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (graph.hasMore) {
-                            if (graphLoadingMore) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = Spacing.md),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (graph.hasMore) {
+                                if (graphLoadingMore) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text(
+                                        stringResource(R.string.git_load_more_commits),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             } else {
                                 Text(
-                                    stringResource(R.string.git_load_more_commits),
+                                    stringResource(R.string.git_no_more_commits),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        } else {
-                            Text(
-                                stringResource(R.string.git_no_more_commits),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -203,7 +257,10 @@ internal fun LogTab(
                 files = commitFiles[hash],
                 loading = loadingCommit == hash && commitFiles[hash] == null,
                 onDismiss = onCloseCommit,
-                onFileDiff = onFileDiff
+                onFileDiff = onFileDiff,
+                onCreateBranch = { name -> onCreateBranchAtCommit(name, commit.hash) },
+                onCreateTag = { name -> onCreateTagAtCommit(name, commit.hash) },
+                onReset = { mode -> onResetToCommit(commit.hash, mode) }
             )
         }
     }
@@ -637,11 +694,145 @@ private fun CommitDetailSheet(
     files: List<GitFileChange>?,
     loading: Boolean,
     onDismiss: () -> Unit,
-    onFileDiff: (String, String) -> Unit
+    onFileDiff: (String, String) -> Unit,
+    onCreateBranch: (String) -> Unit = {},
+    onCreateTag: (String) -> Unit = {},
+    onReset: (String) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+
+    var showCreateBranchDialog by remember { mutableStateOf(false) }
+    var showCreateTagDialog by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var newBranchName by remember { mutableStateOf("") }
+    var newTagName by remember { mutableStateOf("") }
+    var resetMode by remember { mutableStateOf("mixed") }
+
+    if (showCreateBranchDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateBranchDialog = false },
+            title = { Text(stringResource(R.string.git_create_branch_from_commit)) },
+            text = {
+                AppTextField(
+                    value = newBranchName,
+                    onValueChange = { newBranchName = it },
+                    label = stringResource(R.string.git_branch_name),
+                    singleLine = true,
+                    colors = dialogTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = newBranchName.trim()
+                        if (name.isNotBlank()) {
+                            showCreateBranchDialog = false
+                            newBranchName = ""
+                            onCreateBranch(name)
+                            onDismiss()
+                        }
+                    },
+                    enabled = newBranchName.isNotBlank()
+                ) { Text(stringResource(R.string.git_action_create_branch)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateBranchDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (showCreateTagDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateTagDialog = false },
+            title = { Text(stringResource(R.string.git_create_tag_at_commit)) },
+            text = {
+                AppTextField(
+                    value = newTagName,
+                    onValueChange = { newTagName = it },
+                    label = stringResource(R.string.git_tag_name),
+                    singleLine = true,
+                    colors = dialogTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = newTagName.trim()
+                        if (name.isNotBlank()) {
+                            showCreateTagDialog = false
+                            newTagName = ""
+                            onCreateTag(name)
+                        }
+                    },
+                    enabled = newTagName.isNotBlank()
+                ) { Text(stringResource(R.string.git_action_create_tag)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateTagDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text(stringResource(R.string.git_reset_to_commit)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(stringResource(R.string.git_reset_confirm, commit.shortHash))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { resetMode = "soft" },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = resetMode == "soft",
+                            onClick = { resetMode = "soft" }
+                        )
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_reset_soft), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { resetMode = "mixed" },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = resetMode == "mixed",
+                            onClick = { resetMode = "mixed" }
+                        )
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_reset_mixed), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetDialog = false
+                        onReset(resetMode)
+                        onDismiss()
+                    }
+                ) { Text(stringResource(R.string.git_reset_to_commit), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
     AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -683,7 +874,6 @@ private fun CommitDetailSheet(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                // 文本按钮而非两个相同图标：短/完整哈希一眼可辨
                 TextButton(onClick = {
                     scope.launch {
                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("commit-short", commit.shortHash)))
@@ -699,6 +889,44 @@ private fun CommitDetailSheet(
                     Text(stringResource(R.string.git_copy_full_hash), style = MaterialTheme.typography.labelMedium)
                 }
             }
+
+            // 深度操作按钮行：基于此提交建分支 / 打标签 / 重置
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                FilledTonalButton(
+                    onClick = { showCreateBranchDialog = true },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    shape = RoundedCornerShape(Radius.sm),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(FeatherIcons.GitBranch, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(stringResource(R.string.git_tab_branches), style = MaterialTheme.typography.labelSmall)
+                }
+                FilledTonalButton(
+                    onClick = { showCreateTagDialog = true },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    shape = RoundedCornerShape(Radius.sm),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(FeatherIcons.Tag, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(stringResource(R.string.git_tags), style = MaterialTheme.typography.labelSmall)
+                }
+                FilledTonalButton(
+                    onClick = { showResetDialog = true },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    shape = RoundedCornerShape(Radius.sm),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(FeatherIcons.RotateCcw, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text("Reset", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
             if (commit.isMerge) {
                 Text(
                     text = stringResource(R.string.git_merge_commit),

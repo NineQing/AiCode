@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -487,6 +488,8 @@ private fun ProfileEditSheet(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val flingFix = rememberSheetFlingFix(sheetState)
+    val localScrollState = rememberScrollState()
+    val remoteScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     var importing by remember { mutableStateOf(false) }
     // SFTP 通道才适合 SSH exec（FTP/LOCAL 不走 sshj）
@@ -542,9 +545,8 @@ private fun ProfileEditSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = screenHeight * 0.88f)
-                .nestedScroll(flingFix)
-                .verticalScroll(rememberScrollState())
+                .heightIn(max = screenHeight * 0.85f)
+                .imePadding()
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl)
                 .navigationBarsPadding(),
@@ -595,152 +597,181 @@ private fun ProfileEditSheet(
                 onSelect = { mode = modes[it] }
             )
 
-            ContainerField(
-                value = name,
-                onValueChange = { name = it },
-                label = stringResource(R.string.common_name)
-            )
-
-            if (mode == ExecutionMode.LOCAL_PROOT) {
-                ContainerField(
-                    value = shellPath,
-                    onValueChange = { shellPath = it },
-                    label = stringResource(R.string.container_shell_path)
-                )
-
-                MountListEditor(
-                    title = stringResource(R.string.container_extra_bindings),
-                    items = bindingsList,
-                    emptyText = stringResource(R.string.container_no_bindings),
-                    addText = stringResource(R.string.container_add_binding)
-                )
-
-                StringListEditor(
-                    title = stringResource(R.string.container_extra_proot_args),
-                    items = argsList,
-                    itemLabel = stringResource(R.string.container_arg_value),
-                    itemHint = "-k",
-                    emptyText = stringResource(R.string.container_no_args),
-                    addText = stringResource(R.string.container_add_arg)
-                )
-
-                PairListEditor(
-                    title = stringResource(R.string.container_env_vars),
-                    items = envList,
-                    keyLabel = stringResource(R.string.container_env_name),
-                    keyHint = "MY_VAR",
-                    valueLabel = stringResource(R.string.container_env_value),
-                    valueHint = "value",
-                    emptyText = stringResource(R.string.container_no_env_vars),
-                    addText = stringResource(R.string.container_add_env_var)
-                )
-
-                // 内置镜像固定为内置来源，不支持导入覆盖，隐藏文件选择
-                if (initial?.rootfsSource !is RootfsSource.Asset) {
-                    Spacer(modifier = Modifier.size(Spacing.xs))
-                    Surface(
-                        onClick = { pickLauncher.launch(arrayOf("*/*")) },
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            // 中间可滚动表单区域：通过 weight(1f) 撑满剩余高度，杜绝左右 tab 切换时高度跳动
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .nestedScroll(flingFix)
+            ) {
+                if (mode == ExecutionMode.LOCAL_PROOT) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(localScrollState),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                FeatherIcons.HardDrive,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = pickedName
-                                    ?: if (pickedUri != null) stringResource(R.string.container_file_selected)
-                                    else stringResource(R.string.container_select_image_file),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
+                        ContainerField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = stringResource(R.string.common_name)
+                        )
 
-                // 设为默认容器：远程工作区模式下本地 MCP 等服务的运行容器
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            RoundedCornerShape(12.dp)
+                        ContainerField(
+                            value = shellPath,
+                            onValueChange = { shellPath = it },
+                            label = stringResource(R.string.container_shell_path)
                         )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.container_set_as_default),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurface
+
+                        MountListEditor(
+                            title = stringResource(R.string.container_extra_bindings),
+                            items = bindingsList,
+                            emptyText = stringResource(R.string.container_no_bindings),
+                            addText = stringResource(R.string.container_add_binding)
                         )
-                        Text(
-                            text = stringResource(R.string.container_default_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp)
+
+                        StringListEditor(
+                            title = stringResource(R.string.container_extra_proot_args),
+                            items = argsList,
+                            itemLabel = stringResource(R.string.container_arg_value),
+                            itemHint = "-k",
+                            emptyText = stringResource(R.string.container_no_args),
+                            addText = stringResource(R.string.container_add_arg)
                         )
-                    }
-                    AppSwitch(
-                        checked = setAsDefault,
-                        onCheckedChange = { setAsDefault = it }
-                    )
-                }
-            } else {
-                ExposedDropdownMenuBox(
-                    expanded = connExpanded,
-                    onExpandedChange = { connExpanded = !connExpanded }
-                ) {
-                    val selectedName = sshConnections.firstOrNull { it.id == selectedConnId }?.name
-                        ?: stringResource(R.string.container_select_ssh_channel)
-                    ContainerField(
-                        value = selectedName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = stringResource(R.string.container_ssh_channel),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = connExpanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = connExpanded,
-                        onDismissRequest = { connExpanded = false }
-                    ) {
-                        if (sshConnections.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.container_no_sftp_channel)) },
-                                onClick = { connExpanded = false }
-                            )
-                        } else {
-                            sshConnections.forEach { conn ->
-                                DropdownMenuItem(
-                                    text = { Text("${conn.name} (${conn.host}:${conn.port})") },
-                                    onClick = {
-                                        selectedConnId = conn.id
-                                        if (remotePath.isBlank()) {
-                                            remotePath = DEFAULT_REMOTE_WORKSPACE_ROOT
-                                        }
-                                        connExpanded = false
-                                    }
-                                )
+
+                        PairListEditor(
+                            title = stringResource(R.string.container_env_vars),
+                            items = envList,
+                            keyLabel = stringResource(R.string.container_env_name),
+                            keyHint = "MY_VAR",
+                            valueLabel = stringResource(R.string.container_env_value),
+                            valueHint = "value",
+                            emptyText = stringResource(R.string.container_no_env_vars),
+                            addText = stringResource(R.string.container_add_env_var)
+                        )
+
+                        // 内置镜像固定为内置来源，不支持导入覆盖，隐藏文件选择
+                        if (initial?.rootfsSource !is RootfsSource.Asset) {
+                            Spacer(modifier = Modifier.size(Spacing.xs))
+                            Surface(
+                                onClick = { pickLauncher.launch(arrayOf("*/*")) },
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        FeatherIcons.HardDrive,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = pickedName
+                                            ?: if (pickedUri != null) stringResource(R.string.container_file_selected)
+                                            else stringResource(R.string.container_select_image_file),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
+
+                        // 设为默认容器：远程工作区模式下本地 MCP 等服务的运行容器
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.container_set_as_default),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = stringResource(R.string.container_default_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            AppSwitch(
+                                checked = setAsDefault,
+                                onCheckedChange = { setAsDefault = it }
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(remoteScrollState),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ContainerField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = stringResource(R.string.common_name)
+                        )
+
+                        ExposedDropdownMenuBox(
+                            expanded = connExpanded,
+                            onExpandedChange = { connExpanded = !connExpanded }
+                        ) {
+                            val selectedName = sshConnections.firstOrNull { it.id == selectedConnId }?.name
+                                ?: stringResource(R.string.container_select_ssh_channel)
+                            ContainerField(
+                                value = selectedName,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = stringResource(R.string.container_ssh_channel),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = connExpanded) },
+                                modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = connExpanded,
+                                onDismissRequest = { connExpanded = false }
+                            ) {
+                                if (sshConnections.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.container_no_sftp_channel)) },
+                                        onClick = { connExpanded = false }
+                                    )
+                                } else {
+                                    sshConnections.forEach { conn ->
+                                        DropdownMenuItem(
+                                            text = { Text("${conn.name} (${conn.host}:${conn.port})") },
+                                            onClick = {
+                                                selectedConnId = conn.id
+                                                if (remotePath.isBlank()) {
+                                                    remotePath = DEFAULT_REMOTE_WORKSPACE_ROOT
+                                                }
+                                                connExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        ContainerField(
+                            value = remotePath,
+                            onValueChange = { remotePath = it },
+                            label = stringResource(R.string.container_remote_workspace_path),
+                            placeholder = DEFAULT_REMOTE_WORKSPACE_ROOT
+                        )
                     }
                 }
-                ContainerField(
-                    value = remotePath,
-                    onValueChange = { remotePath = it },
-                    label = stringResource(R.string.container_remote_workspace_path),
-                    placeholder = DEFAULT_REMOTE_WORKSPACE_ROOT
-                )
             }
 
             Spacer(modifier = Modifier.size(Spacing.xs))

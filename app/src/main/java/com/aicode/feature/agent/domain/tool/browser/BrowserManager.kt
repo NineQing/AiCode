@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -25,6 +26,8 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.model.AgentImage
+import com.aicode.feature.workspace.domain.FileAccessProvider
+import com.aicode.feature.workspace.domain.PathHomeResolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +44,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -85,7 +89,9 @@ data class BrowserConsoleEntry(
 
 @Singleton
 class BrowserManager @Inject constructor(
-    @ApplicationContext private val appContext: Context
+    @ApplicationContext private val appContext: Context,
+    private val fileAccess: FileAccessProvider,
+    private val pathHomeResolver: PathHomeResolver
 ) {
 
     companion object {
@@ -350,6 +356,8 @@ class BrowserManager @Inject constructor(
 
         wv.settings.javaScriptEnabled = true
         wv.settings.domStorageEnabled = true
+        // 支持导航/渲染 file:// 本地页面；该默认值随 targetSdk 变化，显式开启避免被静默关闭
+        wv.settings.allowFileAccess = true
         wv.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         wv.settings.builtInZoomControls = true
         wv.settings.displayZoomControls = false
@@ -763,20 +771,64 @@ class BrowserManager @Inject constructor(
 
     // ================= 浏览器操作 API =================
 
-    suspend fun navigate(url: String, tabId: String? = null): String = withContext(Dispatchers.Main) {
-        val tab = resolveTab(tabId)
-        if (url.startsWith("http://") || url.startsWith("https://")) {
-            loadInto(tab, url)
-        } else {
-            // 无协议头：优先 https，SSL/连接失败再回退 http（部分站点未配置 SSL）
-            try {
-                loadInto(tab, "https://$url")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                loadInto(tab, "http://$url")
+    suspend fun navigate(url: String, tabId: String? = null): String {
+        val target = url.trim()
+        val resolved: String? = when {
+            target.startsWith("http://") || target.startsWith("https://") -> target
+            // 本地文件：file:// 或裸容器路径，映射为宿主真实文件后再交给 WebView
+            isLocalPathInput(target) -> withContext(Dispatchers.IO) { resolveLocalFileUrl(target) }
+            else -> null
+        }
+        return withContext(Dispatchers.Main) {
+            val tab = resolveTab(tabId)
+            if (resolved != null) {
+                loadInto(tab, resolved)
+            } else {
+                // 无协议头：优先 https，SSL/连接失败再回退 http（部分站点未配置 SSL）
+                try {
+                    loadInto(tab, "https://$target")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    loadInto(tab, "http://$target")
+                }
             }
         }
+    }
+
+    /** 输入是否为本地文件路径：`file://`，或以 `/`、`~`、`./`、`../` 开头的裸路径。 */
+    private fun isLocalPathInput(input: String): Boolean =
+        input.startsWith("file://") ||
+            input.startsWith("/") ||
+            input.startsWith("~") ||
+            input.startsWith("./") ||
+            input.startsWith("../")
+
+    /**
+     * 把本地文件输入解析为 WebView 可加载的 `file://` URL。
+     *
+     * WebView 跑在 App 宿主进程，只能读设备真实文件系统，看不到容器的 PRoot 视图。因此这里先按宿主真实路径
+     * 查找（如 `/storage/emulated/0/...`），命中即用；否则经 [FileAccessProvider] 把容器路径（`~/workspace/...`、
+     * `/etc/...`）映射为宿主真实文件——本地模式直接落到真实文件（相对子资源可正常加载），远程模式下载到临时文件
+     * （仅页面本身可加载，相对子资源会失效）。解析失败时回退为原路径的 `file://`，交由 WebView 报错。
+     */
+    private fun resolveLocalFileUrl(input: String): String {
+        val rawPath = if (input.startsWith("file://")) Uri.decode(input.removePrefix("file://")) else input
+        if (rawPath.isBlank()) return input
+        val expanded = pathHomeResolver.expandHome(rawPath)
+        if (expanded.startsWith("/")) {
+            val direct = File(expanded)
+            if (direct.exists()) return Uri.fromFile(direct).toString()
+        }
+        val host = try {
+            fileAccess.copyToLocal(rawPath)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "本地文件路径解析失败，按原路径加载: $rawPath", e)
+            return Uri.fromFile(File(expanded)).toString()
+        }
+        return Uri.fromFile(host).toString()
     }
 
     private suspend fun loadInto(tab: TabHolder, finalUrl: String): String {

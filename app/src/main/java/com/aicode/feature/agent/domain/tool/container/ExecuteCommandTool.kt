@@ -48,7 +48,7 @@ class ExecuteCommandTool @Inject constructor(
     }
 
     override val name = "Bash"
-    override val description = "在当前执行环境（本地 Linux 容器或远程 SSH 服务器）中执行 Shell 命令。支持 npm、git 等绝大多数终端操作。对于耗时任务（如安装大量依赖、启动服务器等），请不要在此命令末尾加 '&' 挂后台，而是强烈建议改用 `terminal` 工具（action=\"start\"）来创建常驻终端页面，这样才能方便后续查看实时输出结果和管理进程。"
+    override val description = "在当前执行环境（本地容器或远程 SSH）中执行一次性 Shell 命令，同步返回输出。耗时或常驻任务（安装依赖、启动服务等）请改用 `terminal`，不要用 `&` 挂后台。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.EXECUTE_COMMANDS)
 
@@ -56,7 +56,7 @@ class ExecuteCommandTool @Inject constructor(
         "command" to ToolParameter(
             name = "command",
             type = ParameterType.STRING,
-            description = "The shell command to execute",
+            description = "要执行的 shell 命令",
             required = true
         ),
         "timeout" to ToolParameter(
@@ -68,7 +68,7 @@ class ExecuteCommandTool @Inject constructor(
         "elevate" to ToolParameter(
             name = "elevate",
             type = ParameterType.BOOLEAN,
-            description = "提权重试：仅当命令因内置安全防护（灾难性删除，如 rm 根目录/系统目录/工作区整体）被拒、且确有必要执行时，置为 true 重试。届时系统会弹窗请求用户一次性授权，用户同意才执行，且不可记忆。仅非 AUTO 模式有效。",
+            description = "提权重试：命令因内置安全防护（灾难性删除等）被拒且确有必要时，置为 true 重试，会弹窗请用户一次性授权（不可记忆）。PLAN 模式下无效。",
             required = false
         )
     )

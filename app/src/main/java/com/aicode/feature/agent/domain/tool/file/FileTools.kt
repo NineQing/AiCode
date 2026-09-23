@@ -28,7 +28,7 @@ class ReadFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider
 ) : AgentTool() {
     override val name = "readFile"
-    override val description = "读取指定路径的文件内容。支持工作区文件或容器绝对路径的系统文件。单次读取受文件大小限制，超大文件可通过 start_line 分段读取。"
+    override val description = "读取文件内容（工作区文件或容器绝对路径的系统文件）。单次读取有行数与字节上限，超出可用 start_line 分段续读。"
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val parameters = mapOf(
         "path" to ToolParameter("path", ParameterType.STRING, "文件路径：~/workspace/... 为项目文件；其它绝对路径（如 /etc/...、/root/...）为容器系统文件。", required = true),
@@ -133,7 +133,7 @@ class WriteFileTool @Inject constructor(
     private val fileAccess: FileAccessProvider
 ) : AgentTool() {
     override val name = "writeFile"
-    override val description = "向指定路径写入完整文件内容。若文件存在则根据 overwrite 决定是否覆盖。支持写入工作区文件或容器系统文件。局部修改推荐使用 editFile。"
+    override val description = "写入完整文件内容，文件不存在时自动创建（含父目录）。局部修改请用 editFile。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.WRITE_WORKSPACE)
     override val parameters = mapOf(

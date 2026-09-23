@@ -32,15 +32,9 @@ class BrowserTool @Inject constructor(
     }
 
     override val name = "browser"
-    override val description = "控制内置浏览器执行自动化操作。支持多标签页（Multi-tab）与后台运行。" +
-        "所有操作支持可选参数 tabId（缺省时作用于当前激活的标签页）。" +
-        "常规操作不会自动截图，需查看页面视觉内容时请显式调用 action=\"screenshot\"，截图将自动保存到项目 .aicode 目录。" +
-        "newTab 新建标签页，closeTab 关闭标签页，selectTab 切换标签页，listTabs 列出所有标签页。" +
-        "evaluate 支持 async/Promise，返回原生 JSON（保留 number/boolean/null 类型）。" +
-        "click 使用完整事件链，兼容 React/Vue。fill 使用 native setter + React valueTracker hack。" +
-        "selector 支持 ref= / text= / text*= / role=button[name=xxx] / xpath= / CSS。每次返回 tabId+url+title。" +
-        "getBackbone 返回无障碍树（role/name/ref，已过滤 script/style 与不可见元素），ref 可传给 selector 直接操作元素。" +
-        "select 选原生下拉，dialog 处理 confirm/prompt 对话框，console 取页面控制台日志。"
+    override val description = "控制内置浏览器执行自动化操作，支持多标签与后台运行。所有操作可带 tabId（缺省作用于当前激活标签）。" +
+        "selector 支持 ref= / text= / text*= / role=button[name=xxx] / xpath= / CSS；getBackbone 返回无障碍树（role/name/ref），ref 可直接用作 selector。" +
+        "需查看页面视觉内容时显式调用 action=\"screenshot\"。"
     override val capabilities = setOf(ToolCapability.NETWORK_READ, ToolCapability.NETWORK_WRITE)
 
     private val actionEnum = listOf(
@@ -53,7 +47,7 @@ class BrowserTool @Inject constructor(
     private val actionSchema: Map<String, Any> = mapOf(
         "type" to "string",
         "enum" to actionEnum,
-        "description" to "navigate=导航URL(支持http(s)、file://与容器路径如~/workspace/x.html); evaluate=执行JS(支持Promise,返回原生JSON); click=点击(完整事件链); fill=填充表单(React兼容); select=下拉选择; hover=悬停; press=按键; getText=提取文本; getHtml=提取HTML; getBackbone=无障碍树(role/name/ref); screenshot=截图; console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt对话框; back=后退; forward=前进; reload=刷新; newTab=新建标签页; closeTab=关闭标签页; selectTab=切换激活标签页; listTabs=列出所有标签页"
+        "description" to "操作类型。navigate=导航URL(支持 http(s)/file:// 与容器路径); evaluate=执行JS(支持 Promise); click/fill/hover/press=交互(兼容 React); select=下拉选择; getText/getHtml=提取内容; getBackbone=无障碍树(role/name/ref); screenshot=截图; console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt; back/forward/reload=导航控制; newTab/closeTab/selectTab/listTabs=标签页管理"
     )
 
     override val parameters = mapOf(

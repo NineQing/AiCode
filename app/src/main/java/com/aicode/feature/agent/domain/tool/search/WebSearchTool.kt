@@ -43,7 +43,7 @@ class WebSearchTool @Inject constructor() : AgentTool() {
     }
 
     override val name = "websearch"
-    override val description = "通过互联网搜索引擎获取实时信息，突破大模型的知识库时间截断限制。适用于需要最新资料或时效性信息的任务。"
+    override val description = "通过互联网搜索获取实时信息。适用于需要最新资料或时效性信息的任务。"
     override val capabilities = setOf(ToolCapability.NETWORK_READ)
 
     override val parameters: Map<String, ToolParameter> = mapOf(

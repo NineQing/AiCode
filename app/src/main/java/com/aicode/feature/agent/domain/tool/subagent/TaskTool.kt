@@ -76,7 +76,7 @@ class TaskTool @Inject constructor(
         }
     }
 
-    override val description = "管理子代理的生命周期：创建、发消息、读取结果、停止、删除、列表。子代理拥有独立上下文与完整工具能力，可并行工作。最多同时运行 5 个。子代理完成后你会收到一条后台通知，不要主动轮询。用 send 可在运行中反复向其追加指令/纠偏，或对已完成的子代理继续追问；子代理运行中也可能主动发消息给你。create 可用 agent 参数指定自定义子代理（专属提示词/模型/工具集）。"
+    override val description = "管理子代理：创建、发消息、读取结果、停止、删除、列表。子代理拥有独立上下文与完整工具能力，可并行工作，最多同时运行 5 个。完成后会收到后台通知，不要轮询。用 send 可反复追加指令或对已完成子代理继续追问；子代理运行中也可能主动发消息。create 可用 agent 指定自定义子代理。"
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "action" to ToolParameter(
@@ -88,7 +88,7 @@ class TaskTool @Inject constructor(
         "id" to ToolParameter(
             name = "id",
             type = ParameterType.STRING,
-            description = "子会话 id（read/stop 必填，task 返回的 id）",
+            description = "子会话 id（read/send/stop/del 必填，取自 task 返回的 id）",
             required = false
         ),
         "description" to ToolParameter(

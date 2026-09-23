@@ -38,7 +38,7 @@ class WebFetchTool @Inject constructor() : AgentTool() {
         "format" to ToolParameter(
             name = "format",
             type = ParameterType.STRING,
-            description = "返回格式: 'text' (默认，去除了广告、脚本和样式，仅保留正文) 或 'html' (原始 HTML 源码)",
+            description = "返回格式：text（默认，去除广告/脚本/样式，仅保留正文）或 html（原始 HTML 源码）",
             enum = listOf("text", "html"),
             required = false
         )

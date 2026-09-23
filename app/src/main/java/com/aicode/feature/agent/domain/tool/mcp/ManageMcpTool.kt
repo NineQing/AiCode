@@ -43,7 +43,7 @@ class ManageMcpTool @Inject constructor(
         "action" to ToolParameter(
             name = "action",
             type = ParameterType.STRING,
-            description = "执行的操作类型，必填",
+            description = "操作类型：list=列出服务器；add_stdio=添加本地 stdio 服务；add_http=添加远程 HTTP 服务；remove=移除服务器",
             enum = listOf("list", "add_stdio", "add_http", "remove")
         ),
         "server_name" to ToolParameter(

@@ -35,7 +35,7 @@ class MessageParentTool @Inject constructor(
 
     override val name = "messageParent"
 
-    override val description = "向主会话（父代理）发送一条消息：汇报进展、求助、或提交需要主会话协调/决策的事项。异步发送、不阻塞你继续执行；主会话的回复会作为后续消息送达，无需等待。"
+    override val description = "向主会话发送消息（汇报进展、求助或需协调/决策的事项）；异步不阻塞，回复作为后续消息送达。"
 
     override val parameters: Map<String, ToolParameter> = mapOf(
         "message" to ToolParameter(

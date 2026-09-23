@@ -44,7 +44,7 @@ class EditFileTool @Inject constructor(
 ) : AgentTool() {
     override val name = "editFile"
     override val description =
-        "通过精确的字符串匹配替换修改已存在的文件内容。作为局部修改文件的首选工具。支持通过 edits 数组一次性应用多处修改，整批编辑是原子的——任一处匹配失败将整批回滚，文件不会处于改了一半的状态。整文件重写请用 writeFile。"
+        "按精确字符串匹配局部修改已有文件，是修改文件的首选。edits 可一次提交多处修改，整批原子生效（任一处失败则全部回滚）。整文件重写用 writeFile。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.WRITE_WORKSPACE)
 

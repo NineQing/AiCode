@@ -41,10 +41,8 @@ class ShizukuTool @Inject constructor(
     override val name = "Shizuku"
 
     override val description =
-        "通过 Shizuku 以 adb shell（uid 2000）身份在 Android 系统上执行 Shell 命令，等价于 `adb shell`。" +
-            "适用于需要 shell 权限的系统操作：`pm`/`am`/`cmd` 等系统命令、读写 /sdcard、查询系统状态等。" +
-            "与 `Bash`（在本地容器或远程 SSH 中执行）不同，它直接作用于宿主 Android 系统本身。" +
-            "使用前用户需已安装 Shizuku 并在本应用中授权，未就绪时会返回错误提示。"
+        "通过 Shizuku 以 adb shell（uid 2000）身份在宿主 Android 系统上执行命令（等价 `adb shell`），用于 `pm`/`am`/`cmd` 等系统操作与读写 /sdcard。" +
+            "需用户已安装并授权 Shizuku，且每次调用都会弹窗确认。"
 
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.EXECUTE_COMMANDS)

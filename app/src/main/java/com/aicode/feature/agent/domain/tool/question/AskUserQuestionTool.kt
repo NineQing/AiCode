@@ -40,8 +40,7 @@ class AskUserQuestionTool @Inject constructor(
     override val capabilities = setOf(ToolCapability.USER_INTERACTION)
 
     override val description =
-        "向用户提出结构化的选择题并阻塞等待其选择结果。用于涉及用户决策的场景（如方案选择、环境确认等）。" +
-            "支持同时发起 1-4 个问题，每题 2-4 个选项。返回包含用户选中的预设选项或自定义文本的详情。"
+        "向用户提出结构化选择题并阻塞等待选择，用于需要用户决策的场景。可一次提 1-4 个问题，每题 2-4 个选项（UI 自动追加「其他」）。"
 
     /** 单个选项的 JSON Schema */
     private val optionItemSchema: Map<String, Any> = mapOf(

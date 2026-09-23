@@ -19,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
 /**
- * rg 风格的项目搜索工具。参数原样传给容器内的 ripgrep；支持 `| head [-n N]` 截断输出，
+ * ripgrep 搜索工具：参数原样传给容器内的 ripgrep；支持 `| head [-n N]` 截断输出，
  * 其余管道命令一律拒绝（见 [buildSearchCommand]），容器未就绪则报错。
  */
 class SearchCodeTool @Inject constructor(
@@ -34,7 +34,7 @@ class SearchCodeTool @Inject constructor(
     }
 
     override val name = "search"
-    override val description = "按 rg 风格搜索文本。例：args=\"-n \\\"fun main\\\" ~/workspace/app\"。支持追加 `| head [-n N]` 截断输出。"
+    override val description = "使用 ripgrep（rg）搜索文本内容。例：args=\"-n \\\"fun main\\\" ~/workspace/app\"。支持追加 `| head [-n N]` 截断输出。"
     override val permissionPolicy = ToolPermissionPolicy.AUTO_APPROVE
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
 
@@ -42,7 +42,7 @@ class SearchCodeTool @Inject constructor(
         "args" to ToolParameter(
             name = "args",
             type = ParameterType.STRING,
-            description = "rg 风格参数。不填无效。常用：-i -F -e -g --hidden --。支持末尾追加 `| head [-n N]` 截断输出；其它管道命令（grep/sort/wc 等）不支持。",
+            description = "ripgrep 参数。不填无效。常用：-i -F -e -g --hidden --。支持末尾追加 `| head [-n N]` 截断输出；其它管道命令（grep/sort/wc 等）不支持。",
             required = true
         )
     )

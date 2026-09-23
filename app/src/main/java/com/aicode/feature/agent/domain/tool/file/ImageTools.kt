@@ -66,32 +66,32 @@ class ViewImageTool @Inject constructor(
     private val geminiApi: GeminiApi
 ) : AbstractContextualTool() {
     override val name = "viewImage"
-    override val description = "查看本地图片并让识图模型分析。传 images（1~5 张图片路径）可让识图模型一次性对比/分析多张图片，返回分析结果与 vision_id；之后可传 vision_id + prompt 在同一识图会话内继续追问（识图模型记得图片与之前的问答）。prompt 为可选的提问或关注点，为空时识图模型默认描述图片内容。detail 控制图片清晰度：high（默认）小图原样直传、大图压缩到最长边 1536；original 全部原样直传；low 全部压缩到最长边 512 省 token。"
+    override val description = "查看本地图片并交给识图模型分析，返回分析结果与 vision_id。传 images 发起识图（可多张对比），传 id 继续同一识图会话追问。"
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
     override val parameters = mapOf(
         "images" to ToolParameter(
             name = "images",
             type = ParameterType.ARRAY,
-            description = "图片路径列表，1~5 张（可多张对比分析）；与 id 二选一，首次识图必传。路径规则：~/workspace/... 为项目文件；其它绝对路径为容器系统文件。",
+            description = "图片路径列表，1~5 张；与 id 二选一，首次识图必传。路径为 ~/workspace/... 或容器绝对路径。",
             required = false,
             itemsSchema = mapOf("type" to "string")
         ),
         "id" to ToolParameter(
             name = "id",
             type = ParameterType.STRING,
-            description = "识图会话 id，继续之前识图会话的追问（识图模型记得图片与之前的问答）；与 images 二选一。",
+            description = "识图会话 id，用于继续之前的识图会话追问；与 images 二选一。",
             required = false
         ),
         "prompt" to ToolParameter(
             name = "prompt",
             type = ParameterType.STRING,
-            description = "可选的提问或关注点（如「对比这两张图的差异」）；为空时识图模型默认描述图片内容。",
+            description = "可选提问或关注点；为空时默认描述图片内容。",
             required = false
         ),
         "detail" to ToolParameter(
             name = "detail",
             type = ParameterType.STRING,
-            description = "图片细节级别：high（默认）小图原样直传、大图压缩到最长边 1536；original 全部原样直传（多张大图可能超出模型限制导致失败）；low 全部压缩到最长边 512 省 token。",
+            description = "清晰度：high（默认，大图压缩到最长边 1536）；original（原样直传，多张大图可能超限失败）；low（压缩到最长边 512 省 token）。",
             required = false,
             enum = listOf("low", "high", "original")
         )

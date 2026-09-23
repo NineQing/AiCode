@@ -53,7 +53,7 @@ class SendFileTool @Inject constructor(
     }
 
     override val description get() =
-        "把工作区文件发送到聊天区展示给用户，聊天区每个文件占一行（缩略图/类型图标 + 文件名 + 大小·路径），点击查看：图片在应用内全屏预览，其它类型用系统对应 app 打开。支持一次发送多个文件。所有文件必须全部存在，任一文件不存在/不是文件/过大则整体失败，需修正后重新调用。仅用于把已有文件展示给用户，不读取文件内容。"
+        "把工作区已有文件发送到聊天区展示给用户。所有文件必须全部存在且合法，任一失败则整体失败，需修正后重新调用。仅展示，不读取内容、不进上下文。"
 
     override val capabilities = setOf(ToolCapability.READ_WORKSPACE)
 

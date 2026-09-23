@@ -79,7 +79,7 @@ class TerminalSessionTool @Inject constructor(
 
     override val name = "terminal"
     override val description =
-        "管理常驻后台终端会话页面。支持启动后台命令、按标签发送输入/快捷键、读取输出、列出/关闭标签。耗时长且会自行结束的任务（编译、测试）用 start + notify=true：start 只返回初始输出，结束后系统会主动回调并触发新一轮，勿轮询；常驻服务用 notify=false，需要结果时再 read。中断前台进程用 key=ctrl+c。"
+        "管理常驻后台终端会话（启动命令、发输入/快捷键、读输出、关闭标签）。会自行结束且需等结果的任务用 start + notify=true（结束后系统主动通知，勿轮询）；常驻服务用 notify=false，需要时再 read。中断前台进程用 key=ctrl+c。"
     override val permissionPolicy = ToolPermissionPolicy.ASK
     override val capabilities = setOf(ToolCapability.EXECUTE_COMMANDS)
 
@@ -113,7 +113,7 @@ class TerminalSessionTool @Inject constructor(
         "notify" to ToolParameter(
             name = "notify",
             type = ParameterType.BOOLEAN,
-            description = "start 可选：命令结束后是否由系统主动通知 AI（默认 false）。true=编译/测试等会自行结束的任务——start 只捕获约 5 秒初始输出即返回，结束后系统送来一条后台任务完成通知（你正忙时搭在下一次工具调用结果的顶层 notifications 字段里当轮送达，空闲时作为系统消息自动触发新一轮），勿 sleep/read 轮询；false=dev server 等常驻服务，结束后不通知、标签保活可复用。",
+            description = "start 可选：命令结束后是否由系统通知 AI。true 用于编译/测试等会自行结束的任务（start 只捕获约 5 秒初始输出，结束后通知，勿轮询）；false（默认）用于 dev server 等常驻服务，标签保活可复用。",
             required = false
         ),
         "tab_id" to ToolParameter(
@@ -144,7 +144,7 @@ class TerminalSessionTool @Inject constructor(
         "elevate" to ToolParameter(
             name = "elevate",
             type = ParameterType.BOOLEAN,
-            description = "提权重试：仅当 start/send 的命令因内置安全防护（灾难性删除，如 rm 根目录/系统目录/工作区整体）被拒、且确有必要执行时，置为 true 重试。届时系统会弹窗请求用户一次性授权，用户同意才执行，且不可记忆。仅非 AUTO 模式有效。",
+            description = "提权重试：start/send 的命令因内置安全防护（灾难性删除等）被拒且确有必要时，置为 true 重试，会弹窗请用户一次性授权（不可记忆）。PLAN 模式下无效。",
             required = false
         )
     )

@@ -242,6 +242,9 @@
     <string name="agent_complete_notification_background_multi_body">%1$d background tasks finished</string>
     <string name="notification_channel_terminal_service">Terminal Services</string>
     <string name="notification_channel_terminal_service_desc">Notifications for background terminal tasks</string>
+    <string name="notification_keepalive_persistent_sessions">Keepalive · terminal tasks: %1$d</string>
+    <string name="notification_keepalive_running_sessions">Running terminal tasks: %1$d</string>
+    <string name="notification_keepalive_enabled">Keepalive enabled</string>
     <string name="notification_channel_agent_complete">Agent completion notifications</string>
     <string name="notification_channel_agent_complete_desc">Notifications shown when the agent finishes in background</string>
     <string name="settings_app_permissions">App Permissions</string>

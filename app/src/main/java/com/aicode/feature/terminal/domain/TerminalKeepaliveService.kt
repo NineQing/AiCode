@@ -115,9 +115,11 @@ class TerminalKeepaliveService : Service() {
      */
     private fun ensureForeground() {
         val text = when {
-            sessionCount > 0 && persistent -> "后台保活 · 终端任务: $sessionCount"
-            sessionCount > 0 -> "运行中的终端任务: $sessionCount"
-            else -> "后台保活已开启"
+            sessionCount > 0 && persistent ->
+                getString(R.string.notification_keepalive_persistent_sessions, sessionCount)
+            sessionCount > 0 ->
+                getString(R.string.notification_keepalive_running_sessions, sessionCount)
+            else -> getString(R.string.notification_keepalive_enabled)
         }
         val openAppIntent = PendingIntent.getActivity(
             this,

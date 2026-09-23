@@ -242,6 +242,9 @@
     <string name="agent_complete_notification_background_multi_body">%1$d 个后台任务已完成</string>
     <string name="notification_channel_terminal_service">终端服务</string>
     <string name="notification_channel_terminal_service_desc">后台终端任务通知</string>
+    <string name="notification_keepalive_persistent_sessions">后台保活 · 终端任务: %1$d</string>
+    <string name="notification_keepalive_running_sessions">运行中的终端任务: %1$d</string>
+    <string name="notification_keepalive_enabled">后台保活已开启</string>
     <string name="notification_channel_agent_complete">Agent 完成通知</string>
     <string name="notification_channel_agent_complete_desc">Agent 在后台完成任务时弹出的通知</string>
     <string name="settings_app_permissions">软件权限</string>

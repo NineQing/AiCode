@@ -352,6 +352,9 @@ class GitViewModel @Inject constructor(
     }
     /** 在当前工作区执行 `git init` 初始化仓库；成功后 runAction 末尾自动刷新（notARepo 翻 false）。 */
     fun initRepo() = runAction(R.string.git_action_init, { repository.initRepo() })
+
+    /** 在当前工作区克隆远程仓库；成功后 runAction 末尾自动刷新进仓库态。 */
+    fun cloneRepo(url: String) = runAction(R.string.git_action_clone, { repository.cloneRepo(url) })
     fun pull() {
         if (!_state.value.hasRemote) {
             _state.update { it.copy(toast = context.getString(R.string.git_toast_no_remote_pull)) }
@@ -359,13 +362,27 @@ class GitViewModel @Inject constructor(
         }
         runAction(R.string.git_pull, { repository.pull() })
     }
-    fun push() {
+    fun push(onPromptRenameMaster: () -> Unit = {}) {
         if (!_state.value.hasRemote) {
             _state.update { it.copy(toast = context.getString(R.string.git_toast_no_remote_push)) }
             return
         }
-        runAction(R.string.git_push, { repository.push() })
+        viewModelScope.launch {
+            if (repository.isFirstPushOfMaster()) {
+                onPromptRenameMaster()
+            } else {
+                runAction(R.string.git_push, { repository.push() })
+            }
+        }
     }
+
+    /** 用户在首次推送 master 时选择重命名为 main 并推送。 */
+    fun pushRenameMasterToMain() =
+        runAction(R.string.git_push, { repository.renameMasterToMainAndPush() })
+
+    /** 用户在首次推送 master 时选择保留 master 直接推送。 */
+    fun pushDirectly() =
+        runAction(R.string.git_push, { repository.push() })
 
     /**
      * 打开某条提交的详情弹层。若文件清单尚未加载则懒加载（不置 [GitUiState.busy]，

@@ -31,6 +31,9 @@ object GitErrorMessage {
         if (raw.contains("does not appear to be a git repository") ||
             raw.contains("Could not read from remote repository"))
             return "远程仓库不可用或无访问权限"
+        // 克隆目录非空
+        if (raw.contains("already exists and is not an empty directory"))
+            return "当前工作区目录非空，无法直接克隆到当前目录"
         // 鉴权失败（用户名/密码/token 错误或未配置）
         if (raw.contains("Authentication failed") ||
             raw.contains("Invalid username or token") ||

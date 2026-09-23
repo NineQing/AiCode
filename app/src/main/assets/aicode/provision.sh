@@ -628,6 +628,8 @@ EOF
     # 清掉全局顶层 [credential] 段：helper 只应经上面的 includeIf 按目录加载，
     # 写在顶层会对容器内所有仓库生效，破坏「只注入工作区根下」的最小化设计。
     git config --global --remove-section credential 2>/dev/null || true
+    # 默认新仓库初始分支统一为 main（现代平台如 GitHub / GitLab 标准，避免 master 导致的错位）
+    git config --global init.defaultBranch main
 }
 
 # ── 交互初始化菜单（所有容器统一，在终端 PTY 上运行，用户自主选择安装方式）──

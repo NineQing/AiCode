@@ -62,10 +62,15 @@ class GitRepository @Inject constructor(
      */
     private suspend fun gitChecked(
         vararg args: String
+    ): String = gitCheckedWithTimeout(CommandEngine.DEFAULT_TIMEOUT_MS, *args)
+
+    private suspend fun gitCheckedWithTimeout(
+        timeoutMs: Long,
+        vararg args: String
     ): String {
         // 用不限幅执行：diff 内容/文件内容可能远超 AI 工具链路的 4 万字符限幅，
         // 截断占位符会混入 diff 数据流被 UI 渲染成伪 diff 行。
-        val result = engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath())
+        val result = engine.runCommandSyncUnbounded(buildGitCommand(args), workspaceRepository.currentPath(), timeoutMs)
         if (result.outputTruncated) throw GitOutputTooLargeException()
         if (result.exitCode == 0) return result.output
         throw GitCommandFailureException(result.output.ifBlank { "git 退出码 ${result.exitCode}" })
@@ -93,8 +98,24 @@ class GitRepository @Inject constructor(
     /** 容器是否就绪可执行 git 命令；未就绪时返回引导文案（供 Git 页在刷新前提示用户去终端页初始化）。 */
     fun notReadyHint(): String? = engine.notReadyHint()
 
-    /** 在当前工作区初始化 git 仓库（`git init`）。据退出码判成败，失败抛 [GitCommandFailureException]。 */
-    suspend fun initRepo(): String = gitChecked("init")
+    /**
+     * 在当前工作区初始化 git 仓库。
+     *
+     * 默认分支优先使用现代标准的 `main`（Git 2.28+ 支持 `git init -b main`），
+     * 若环境 Git 版本较低不支持 `-b` 参数，降级为先 `git init` 再将未初始化的 HEAD 指向 `refs/heads/main`。
+     */
+    suspend fun initRepo(): String {
+        return runCatching { gitChecked("init", "-b", "main") }
+            .getOrElse {
+                val out = gitChecked("init")
+                runCatching { git("symbolic-ref", "HEAD", "refs/heads/main") }
+                out
+            }
+    }
+
+    /** 克隆远程仓库到当前工作区根目录（`git clone <url> .`）。据退出码判成败，失败抛 [GitCommandFailureException]。 */
+    suspend fun cloneRepo(url: String): String =
+        gitCheckedWithTimeout(600_000L, "clone", url.trim(), ".")
 
     /** 是否已配置至少一个远程仓库（`git remote` 输出非空）。拉取/推送前据此门控。 */
     suspend fun hasRemote(): Boolean = git("remote").trim().isNotEmpty()
@@ -429,6 +450,25 @@ class GitRepository @Inject constructor(
             .takeIf { it.isNotBlank() && it != "HEAD" }
             ?: throw GitCommandFailureException("无法确定当前分支（处于 detached HEAD）")
         return gitChecked("push", "--set-upstream", remote, branch)
+    }
+
+    /**
+     * 当前是否为 master 分支的首次推送（即当前分支为 master 且尚未建立 upstream 跟踪关系）。
+     * 供 UI 弹窗询问用户是否重命名为现代通用的 main 分支。
+     */
+    suspend fun isFirstPushOfMaster(): Boolean {
+        val hasUpstream = runCatching { git("rev-parse", "--abbrev-ref", "@{upstream}").trim() }
+            .getOrDefault("")
+            .takeIf { it.isNotBlank() && it != "HEAD" && !it.startsWith("fatal") } != null
+        if (hasUpstream) return false
+        val branch = git("rev-parse", "--abbrev-ref", "HEAD").removeSuffix("\r").trim()
+        return branch == "master"
+    }
+
+    /** 将当前 master 分支重命名为 main 并执行首次推送。 */
+    suspend fun renameMasterToMainAndPush(): String {
+        renameBranch("master", "main")
+        return push()
     }
 
     /** 本地标签列表，按创建时间倒序（最新在前）。 */

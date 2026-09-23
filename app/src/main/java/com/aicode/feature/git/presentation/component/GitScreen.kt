@@ -72,6 +72,7 @@ import com.aicode.feature.git.presentation.GitViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Activity
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.Download
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.GitCommit
 import compose.icons.feathericons.Key
@@ -105,6 +106,7 @@ fun GitScreen(
 
     var showCommitDialog by remember { mutableStateOf(false) }
     var showPullConfirm by remember { mutableStateOf(false) }
+    var showMasterRenameConfirm by remember { mutableStateOf(false) }
 
     // 三个 tab 的滚动状态统一提升到页面层，聚合出「是否正在滚动」用于底部 tab 栏滚动弱化。
     val statusScrollState = rememberScrollState()
@@ -169,7 +171,11 @@ fun GitScreen(
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                state.notARepo -> NotARepoState(onInit = viewModel::initRepo)
+                state.notARepo -> NotARepoState(
+                    busy = state.busy,
+                    onInit = viewModel::initRepo,
+                    onClone = viewModel::cloneRepo
+                )
                 else -> HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize()
@@ -193,7 +199,7 @@ fun GitScreen(
                             onPull = {
                                 if (state.status?.hasChanges == true) showPullConfirm = true else viewModel.pull()
                             },
-                            onPush = viewModel::push,
+                            onPush = { viewModel.push(onPromptRenameMaster = { showMasterRenameConfirm = true }) },
                             onFileDiff = viewModel::loadWorktreeDiff,
                             onStagedFileDiff = viewModel::loadStagedDiff,
                             onUntrackedDiff = viewModel::loadUntrackedDiff,
@@ -284,6 +290,31 @@ fun GitScreen(
             dismissButton = {
                 TextButton(onClick = { showPullConfirm = false }) {
                     Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (showMasterRenameConfirm) {
+        AlertDialog(
+            onDismissRequest = { showMasterRenameConfirm = false },
+            title = { Text(stringResource(R.string.git_push_master_confirm_title)) },
+            text = { Text(stringResource(R.string.git_push_master_confirm_desc)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showMasterRenameConfirm = false
+                    viewModel.pushRenameMasterToMain()
+                }) { Text(stringResource(R.string.git_push_rename_to_main)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showMasterRenameConfirm = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                    TextButton(onClick = {
+                        showMasterRenameConfirm = false
+                        viewModel.pushDirectly()
+                    }) { Text(stringResource(R.string.git_push_keep_master)) }
                 }
             }
         )
@@ -391,13 +422,20 @@ internal fun EmptyState(text: String) {
     }
 }
 
-/** 非仓库态：文案 + 「初始化 Git 仓库」按钮（跑 `git init`，成功后自动刷新进仓库态）。 */
+/** 非仓库态：文案 + 「初始化 Git 仓库」/「克隆远程仓库」按钮（成功后自动刷新进仓库态）。 */
 @Composable
-private fun NotARepoState(onInit: () -> Unit) {
+private fun NotARepoState(
+    busy: Boolean,
+    onInit: () -> Unit,
+    onClone: (String) -> Unit
+) {
+    var showCloneDialog by remember { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            modifier = Modifier.padding(horizontal = Spacing.lg)
         ) {
             Text(
                 stringResource(R.string.git_not_a_repo),
@@ -409,13 +447,96 @@ private fun NotARepoState(onInit: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            FilledTonalButton(onClick = onInit) {
-                Icon(FeatherIcons.GitBranch, contentDescription = null)
-                Spacer(Modifier.width(Spacing.sm))
-                Text(stringResource(R.string.git_init_repo))
+            if (busy) {
+                Spacer(Modifier.height(Spacing.sm))
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text(
+                    stringResource(R.string.git_cloning_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = onInit) {
+                        Icon(FeatherIcons.GitBranch, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_init_repo))
+                    }
+                    FilledTonalButton(onClick = { showCloneDialog = true }) {
+                        Icon(FeatherIcons.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_clone_repo))
+                    }
+                }
             }
         }
     }
+
+    if (showCloneDialog) {
+        CloneRepoDialog(
+            onDismiss = { showCloneDialog = false },
+            onConfirm = { url ->
+                showCloneDialog = false
+                onClone(url)
+            }
+        )
+    }
+}
+
+@Composable
+private fun CloneRepoDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var url by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.git_clone_dialog_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text(
+                    text = stringResource(R.string.git_clone_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AppTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = stringResource(R.string.git_clone_url_label),
+                    placeholder = stringResource(R.string.git_clone_url_hint),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = dialogTextFieldColors()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val trimmed = url.trim()
+                    if (trimmed.isNotEmpty()) onConfirm(trimmed)
+                },
+                enabled = url.trim().isNotEmpty()
+            ) {
+                Text(stringResource(R.string.git_action_clone))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        }
+    )
 }
 
 @Composable

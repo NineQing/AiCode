@@ -1,6 +1,7 @@
 package com.aicode.feature.credentials.data.repository
 
 import android.content.Context
+import android.util.Base64
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.credentials.domain.model.GitCredential
 import com.aicode.feature.credentials.domain.repository.CredentialRepository
@@ -68,7 +69,9 @@ class FileCredentialRepository @Inject constructor(
     private fun parse(file: File): List<GitCredential> {
         if (!file.isFile) return emptyList()
         return runCatching {
-            file.readLines().mapNotNull { line ->
+            // 文件内容为「base64 后整体反转」的编码串；解码失败（旧版明文）时按原文处理。
+            val content = tryDecode(file.readText()) ?: file.readText()
+            content.lines().mapNotNull { line ->
                 val trimmed = line.trim()
                 if (trimmed.isEmpty()) return@mapNotNull null
                 // https://user:token@host
@@ -101,13 +104,32 @@ class FileCredentialRepository @Inject constructor(
         }
         credentialsFile.parentFile?.mkdirs()
         val tmp = File(credentialsFile.parentFile, "${credentialsFile.name}.tmp")
-        tmp.writeText(sb.toString())
+        val encoded = encode(sb.toString())
+        tmp.writeText(encoded)
         if (credentialsFile.exists()) credentialsFile.delete()
         if (!tmp.renameTo(credentialsFile)) {
-            credentialsFile.writeText(sb.toString())
+            credentialsFile.writeText(encoded)
             tmp.delete()
         }
     }
 
     private fun enc(part: String): String = URLEncoder.encode(part, "UTF-8")
+
+    /** 编码：base64 后整体反转，使文件不是可直接回显的明文（属混淆，非加密）。 */
+    private fun encode(plain: String): String =
+        Base64.encodeToString(plain.toByteArray(Charsets.UTF_8), Base64.NO_WRAP).reversed()
+
+    /** 解码编码串；不是本格式（如旧版明文）时返回 null。 */
+    private fun tryDecode(text: String): String? = runCatching {
+        String(Base64.decode(text.reversed(), Base64.DEFAULT), Charsets.UTF_8)
+    }.getOrNull()
+
+    /** 把旧版明文凭据文件迁移为编码格式（幂等）。 */
+    suspend fun migrateToEncoded() = mutex.withLock {
+        if (!credentialsFile.isFile) return@withLock
+        val raw = runCatching { credentialsFile.readText() }.getOrNull() ?: return@withLock
+        if (tryDecode(raw) != null) return@withLock
+        writeFile(_credentials.value)
+        FileLogger.i(TAG, "已将明文 git 凭据迁移为编码格式")
+    }
 }

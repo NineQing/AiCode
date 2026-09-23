@@ -1,5 +1,6 @@
 package com.aicode.feature.settings.data.repository
 
+import com.aicode.core.security.KeystoreCipher
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.data.local.database.AgentDatabase
 import com.aicode.feature.settings.data.local.dao.AIProviderDao
@@ -96,9 +97,9 @@ class AIProviderRepositoryImpl @Inject constructor(
             id = id,
             name = name,
             type = try { ProviderType.valueOf(type) } catch (e: Exception) { ProviderType.OPENAI },
-            apiKey = apiKey,
+            apiKey = KeystoreCipher.decryptString(apiKey),
             multiKeyEnabled = multiKeyEnabled,
-            apiKeys = apiKeys.split("\n").map { it.trim() }.filter { it.isNotEmpty() },
+            apiKeys = KeystoreCipher.decryptString(apiKeys).split("\n").map { it.trim() }.filter { it.isNotEmpty() },
             keyRotationStrategy = runCatching { KeyRotationStrategy.valueOf(keyRotationStrategy) }
                 .getOrDefault(KeyRotationStrategy.SEQUENTIAL),
             keyFailoverThreshold = keyFailoverThreshold,
@@ -122,9 +123,9 @@ class AIProviderRepositoryImpl @Inject constructor(
             proxyHost = proxyHost,
             proxyPort = proxyPort,
             proxyUsername = proxyUsername,
-            proxyPassword = proxyPassword,
-            customHeaders = decodeMap(customHeaders),
-            scriptParams = decodeMap(scriptParams)
+            proxyPassword = KeystoreCipher.decryptString(proxyPassword),
+            customHeaders = decodeMap(KeystoreCipher.decryptString(customHeaders)),
+            scriptParams = decodeMap(KeystoreCipher.decryptString(scriptParams))
         ).sanitized()
     }
 
@@ -133,9 +134,9 @@ class AIProviderRepositoryImpl @Inject constructor(
             id = id,
             name = name,
             type = type.name,
-            apiKey = apiKey,
+            apiKey = KeystoreCipher.encryptString(apiKey),
             multiKeyEnabled = multiKeyEnabled,
-            apiKeys = apiKeys.joinToString("\n"),
+            apiKeys = KeystoreCipher.encryptString(apiKeys.joinToString("\n")),
             keyRotationStrategy = keyRotationStrategy.name,
             keyFailoverThreshold = keyFailoverThreshold,
             keyCooldownMinutes = keyCooldownMinutes,
@@ -157,9 +158,9 @@ class AIProviderRepositoryImpl @Inject constructor(
             proxyHost = proxyHost,
             proxyPort = proxyPort,
             proxyUsername = proxyUsername,
-            proxyPassword = proxyPassword,
-            customHeaders = encodeMap(customHeaders),
-            scriptParams = encodeMap(scriptParams)
+            proxyPassword = KeystoreCipher.encryptString(proxyPassword),
+            customHeaders = KeystoreCipher.encryptString(encodeMap(customHeaders)),
+            scriptParams = KeystoreCipher.encryptString(encodeMap(scriptParams))
         )
     }
 }

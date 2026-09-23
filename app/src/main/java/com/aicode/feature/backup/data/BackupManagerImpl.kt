@@ -1,6 +1,7 @@
 package com.aicode.feature.backup.data
 
 import android.content.Context
+import com.aicode.core.security.KeystoreCipher
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.GitIgnoreMatcher
 import com.aicode.feature.agent.data.local.dao.AgentMessageDao
@@ -723,7 +724,7 @@ class BackupManagerImpl @Inject constructor(
         id = id,
         name = name,
         type = type,
-        apiKey = apiKey,
+        apiKey = KeystoreCipher.decryptString(apiKey),
         baseUrl = baseUrl,
         defaultModel = defaultModel,
         models = models,
@@ -737,11 +738,11 @@ class BackupManagerImpl @Inject constructor(
         dashboardRefreshInterval = dashboardRefreshInterval,
         sortOrder = sortOrder,
         multiKeyEnabled = multiKeyEnabled,
-        apiKeys = apiKeys,
+        apiKeys = KeystoreCipher.decryptString(apiKeys),
         keyRotationStrategy = keyRotationStrategy,
         keyFailoverThreshold = keyFailoverThreshold,
         keyCooldownMinutes = keyCooldownMinutes,
-        scriptParams = scriptParams,
+        scriptParams = KeystoreCipher.decryptString(scriptParams),
         keySwitchStatusCodes = keySwitchStatusCodes
     )
 
@@ -749,7 +750,7 @@ class BackupManagerImpl @Inject constructor(
         id = id,
         name = name,
         type = type,
-        apiKey = apiKey,
+        apiKey = KeystoreCipher.encryptString(apiKey),
         baseUrl = baseUrl,
         defaultModel = defaultModel,
         models = models,
@@ -763,22 +764,27 @@ class BackupManagerImpl @Inject constructor(
         dashboardRefreshInterval = dashboardRefreshInterval ?: 5,
         sortOrder = sortOrder ?: 0,
         multiKeyEnabled = multiKeyEnabled ?: false,
-        apiKeys = apiKeys ?: "",
+        apiKeys = KeystoreCipher.encryptString(apiKeys ?: ""),
         keyRotationStrategy = keyRotationStrategy ?: "SEQUENTIAL",
         keyFailoverThreshold = keyFailoverThreshold ?: 2,
         keyCooldownMinutes = keyCooldownMinutes ?: 5,
-        scriptParams = scriptParams ?: "",
+        scriptParams = KeystoreCipher.encryptString(scriptParams ?: ""),
         keySwitchStatusCodes = keySwitchStatusCodes ?: ""
     )
 
     private fun RemoteConnectionEntity.toDto() = RemoteConnectionDto(
-        id, name, protocol.name, host, port, username, authType, authData, passphrase
+        id, name, protocol.name, host, port, username, authType,
+        KeystoreCipher.decryptString(authData), passphrase?.let { KeystoreCipher.decryptString(it) }
     )
 
     /** 旧备份可能含已移除的协议（本地通道），此类记录跳过不恢复。 */
     private fun RemoteConnectionDto.toEntity(): RemoteConnectionEntity? {
         val parsed = runCatching { RemoteProtocol.valueOf(protocol) }.getOrNull() ?: return null
-        return RemoteConnectionEntity(id, name, parsed, host, port, username, authType, authData, passphrase)
+        return RemoteConnectionEntity(
+            id, name, parsed, host, port, username, authType,
+            if (authType.equals("PASSWORD", ignoreCase = true)) KeystoreCipher.encryptString(authData) else authData,
+            passphrase?.let { KeystoreCipher.encryptString(it) }
+        )
     }
 
     private fun RemoteMountEntity.toDto() = RemoteMountDto(id, connectionId, remotePath, localMountPath, isActive, autoConnect)

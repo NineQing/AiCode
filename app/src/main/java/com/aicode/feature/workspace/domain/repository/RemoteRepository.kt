@@ -1,10 +1,12 @@
 package com.aicode.feature.workspace.domain.repository
 
+import com.aicode.core.security.KeystoreCipher
 import com.aicode.core.util.FileLogger
 import com.aicode.core.watch.FileChangeHub
 import com.aicode.core.watch.WatchFilter
 import com.aicode.feature.agent.domain.container.SshHostKeyStore
 import com.aicode.feature.agent.domain.container.SshHostKeyVerifier
+import com.aicode.feature.agent.domain.container.SshPrivateKeyStore
 import com.aicode.feature.agent.domain.container.friendlySshError
 import com.aicode.feature.workspace.data.local.dao.RemoteConnectionDao
 import com.aicode.feature.workspace.data.local.entity.RemoteConnectionEntity
@@ -43,6 +45,7 @@ class RemoteRepository @Inject constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val hostKeyStore: SshHostKeyStore,
     private val hostKeyVerifier: SshHostKeyVerifier,
+    private val privateKeyStore: SshPrivateKeyStore,
     private val fileChangeHub: FileChangeHub
 ) {
     private val activeEngines = ConcurrentHashMap<String, SyncEngine>()
@@ -136,8 +139,8 @@ class RemoteRepository @Inject constructor(
             port = conn.port,
             username = conn.username,
             authType = authType,
-            authData = authData,
-            passphrase = passphrase,
+            authData = if (authType == "PASSWORD") KeystoreCipher.encryptString(authData) else authData,
+            passphrase = passphrase?.let { KeystoreCipher.encryptString(it) },
             createdAt = existing?.createdAt ?: System.currentTimeMillis()
         )
         dao.insertConnection(entity)
@@ -202,14 +205,14 @@ class RemoteRepository @Inject constructor(
             val mount = mountEntity.toDomainModel(conn)
 
             val client = when (conn.protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier, privateKeyStore)
                 RemoteProtocol.FTP -> FtpSyncClient()
             }
 
             val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(connEntity.authData)
+                RemoteAuth.Password(KeystoreCipher.decryptString(connEntity.authData))
             } else {
-                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase)
+                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase?.let { KeystoreCipher.decryptString(it) })
             }
 
             client.connect(conn.host, conn.port, conn.username, auth)
@@ -306,7 +309,7 @@ class RemoteRepository @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val client = when (protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier, privateKeyStore)
                 RemoteProtocol.FTP -> FtpSyncClient()
             }
             client.connect(host, port, username, auth)
@@ -329,13 +332,13 @@ class RemoteRepository @Inject constructor(
             val conn = connEntity.toDomainModel()
             
             val client = when (conn.protocol) {
-                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier)
+                RemoteProtocol.SFTP -> SftpSyncClient(hostKeyVerifier, privateKeyStore)
                 RemoteProtocol.FTP -> FtpSyncClient()
             }
             val auth = if (connEntity.authType == "PASSWORD") {
-                RemoteAuth.Password(connEntity.authData)
+                RemoteAuth.Password(KeystoreCipher.decryptString(connEntity.authData))
             } else {
-                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase)
+                RemoteAuth.PrivateKey(connEntity.authData, connEntity.passphrase?.let { KeystoreCipher.decryptString(it) })
             }
             
             client.connect(conn.host, conn.port, conn.username, auth)
@@ -354,10 +357,10 @@ class RemoteRepository @Inject constructor(
         host = host,
         port = port,
         username = username,
-        password = if (authType == "PASSWORD") authData else "",
+        password = if (authType == "PASSWORD") KeystoreCipher.decryptString(authData) else "",
         authType = if (authType == "PRIVATE_KEY") "key" else "password",
         authData = authData,
-        passphrase = passphrase
+        passphrase = passphrase?.let { KeystoreCipher.decryptString(it) }
     )
 
     private fun RemoteMountEntity.toDomainModel(conn: RemoteConnection?) = RemoteMount(

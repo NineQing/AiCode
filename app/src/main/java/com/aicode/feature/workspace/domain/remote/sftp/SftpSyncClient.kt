@@ -1,6 +1,7 @@
 package com.aicode.feature.workspace.domain.remote.sftp
 
 import com.aicode.feature.agent.domain.container.SshHostKeyVerifier
+import com.aicode.feature.agent.domain.container.SshPrivateKeyStore
 import com.aicode.feature.workspace.domain.remote.RemoteAuth
 import com.aicode.feature.workspace.domain.remote.RemoteFileInfo
 import com.aicode.feature.workspace.domain.remote.RemoteSyncClient
@@ -9,10 +10,12 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.sftp.SFTPClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.File
 
 class SftpSyncClient(
-    private val hostKeyVerifier: SshHostKeyVerifier
+    private val hostKeyVerifier: SshHostKeyVerifier,
+    private val privateKeyStore: SshPrivateKeyStore
 ) : RemoteSyncClient {
 
     companion object {
@@ -31,12 +34,9 @@ class SftpSyncClient(
             when (auth) {
                 is RemoteAuth.Password -> authPassword(username, auth.password)
                 is RemoteAuth.PrivateKey -> {
-                    val keyProvider = if (auth.passphrase != null) {
-                        loadKeys(auth.privateKeyPath, auth.passphrase)
-                    } else {
-                        loadKeys(auth.privateKeyPath)
-                    }
-                    authPublickey(username, keyProvider)
+                    val pem = privateKeyStore.readPem(auth.privateKeyPath)
+                    val passwordFinder = auth.passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
+                    authPublickey(username, loadKeys(pem, null, passwordFinder))
                 }
             }
         }

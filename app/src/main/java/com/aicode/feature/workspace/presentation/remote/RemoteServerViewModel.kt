@@ -12,7 +12,7 @@ import com.aicode.feature.workspace.domain.remote.RemoteAuth
 import com.aicode.feature.agent.domain.container.RemoteSshConnection
 import com.aicode.feature.agent.domain.container.SshLoginKey
 import com.aicode.feature.agent.domain.container.SshLoginKeyStore
-import com.aicode.feature.agent.domain.container.sshLoginKeyFingerprint
+import com.aicode.feature.agent.domain.container.SshPrivateKeyStore
 import com.aicode.feature.workspace.domain.repository.RemoteRepository
 import com.aicode.feature.workspace.domain.repository.HostKeyConfirmationRequiredException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,6 +42,7 @@ class RemoteServerViewModel @Inject constructor(
     private val syncSettingsRepository: SyncSettingsRepository,
     private val remoteSshConnection: RemoteSshConnection,
     private val loginKeyStore: SshLoginKeyStore,
+    private val privateKeyStore: SshPrivateKeyStore,
     val ftpServerManager: FtpServerManager
 ) : ViewModel() {
 
@@ -176,10 +177,12 @@ class RemoteServerViewModel @Inject constructor(
                     target = File(dir, "${base}_$n$ext")
                     n++
                 }
-                runCatching { target.writeBytes(bytes) }.getOrNull() ?: return@withContext null
+                runCatching { privateKeyStore.write(target.absolutePath, bytes) }.getOrNull() ?: return@withContext null
                 target
             } ?: return@launch
-            val fingerprint = withContext(Dispatchers.IO) { sshLoginKeyFingerprint(staged.absolutePath) }
+            val fingerprint = withContext(Dispatchers.IO) {
+                privateKeyStore.fingerprint(privateKeyStore.readPem(staged.absolutePath))
+            }
             loginKeyStore.add(
                 SshLoginKey(
                     id = UUID.randomUUID().toString(),

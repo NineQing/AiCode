@@ -21,6 +21,7 @@ import net.schmizz.sshj.sftp.SFTPClient
 import net.schmizz.sshj.transport.DisconnectListener
 import net.schmizz.sshj.userauth.UserAuthException
 import com.hierynomus.sshj.common.KeyDecryptionFailedException
+import net.schmizz.sshj.userauth.password.PasswordUtils
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,7 +38,9 @@ private const val TAG = "RemoteSshConnection"
 @Singleton
 class RemoteSshConnection @Inject constructor(
     private val hostKeyStore: SshHostKeyStore,
-    private val hostKeyVerifier: SshHostKeyVerifier
+    private val hostKeyVerifier: SshHostKeyVerifier,
+    private val privateKeyStore: SshPrivateKeyStore,
+    private val containerInstaller: ContainerInstaller
 ) {
 
     @Volatile
@@ -143,12 +146,9 @@ class RemoteSshConnection @Inject constructor(
         when (val auth = config.auth) {
             is RemoteAuth.Password -> authPassword(config.username, auth.password)
             is RemoteAuth.PrivateKey -> {
-                val keyProvider = if (auth.passphrase != null) {
-                    loadKeys(auth.privateKeyPath, auth.passphrase)
-                } else {
-                    loadKeys(auth.privateKeyPath)
-                }
-                authPublickey(config.username, keyProvider)
+                val pem = privateKeyStore.readPem(auth.privateKeyPath)
+                val passwordFinder = auth.passphrase?.let { PasswordUtils.createOneOff(it.toCharArray()) }
+                authPublickey(config.username, loadKeys(pem, null, passwordFinder))
             }
         }
         // 启用 SSH 心跳保活，防止空闲超时断连
@@ -342,7 +342,16 @@ class RemoteSshConnection @Inject constructor(
                 val creds = credentials.joinToString("\n") { c ->
                     "https://${enc(c.username)}:${enc(c.token)}@${c.host}"
                 }.let { if (it.isNotEmpty()) "$it\n" else "" }
-                writeRemoteFile(client, "$aicodeDir/git-credentials", creds)
+                writeRemoteFile(client, "$aicodeDir/git-credentials", encodeCreds(creds))
+
+                // 上传 credential helper 脚本（本地由 ContainerInstaller 提取），配置为唯一 helper；
+                // 服务器上没有 App，用 AICODE_CRED_NO_PROMPT 让未命中时直接空退出而非等待弹窗。
+                containerInstaller.extractCredentialHelper()
+                val helperScript = java.io.File(containerInstaller.aicodeDir, "git-credential-aicode").readText()
+                writeRemoteFile(client, "$aicodeDir/git-credential-aicode", helperScript)
+                val chmodSession = client.startSession()
+                chmodSession.exec("chmod +x '$aicodeDir/git-credential-aicode'").join()
+                chmodSession.close()
 
                 val gitconfig = buildString {
                     append("[include]\n")
@@ -354,7 +363,7 @@ class RemoteSshConnection @Inject constructor(
 
                 val credentialConfig = buildString {
                     append("[credential]\n")
-                    append("    helper = store --file=$aicodeDir/git-credentials\n")
+                    append("    helper = !AICODE_CRED_NO_PROMPT=1 $aicodeDir/git-credential-aicode\n")
                 }
                 writeRemoteFile(client, "$aicodeDir/gitconfig.credential", credentialConfig)
                 FileLogger.i(TAG, "已注入 git 凭据到远程 $aicodeDir（限定 $wsRoot/）")
@@ -373,7 +382,7 @@ class RemoteSshConnection @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 val session = client.startSession()
-                session.exec("rm -f '$aicodeDir/gitconfig' '$aicodeDir/gitconfig.credential' '$aicodeDir/git-credentials' 2>/dev/null; echo done").join()
+                session.exec("rm -f '$aicodeDir/gitconfig' '$aicodeDir/gitconfig.credential' '$aicodeDir/git-credentials' '$aicodeDir/git-credential-aicode' 2>/dev/null; echo done").join()
                 session.close()
                 FileLogger.i(TAG, "已撤销远程 git 凭据注入")
             }.onFailure { FileLogger.w(TAG, "撤销远程 git 凭据注入失败", it) }
@@ -396,6 +405,10 @@ class RemoteSshConnection @Inject constructor(
     }
 
     private fun enc(part: String): String = java.net.URLEncoder.encode(part, "UTF-8")
+
+    /** 与 app 侧一致的编码：base64 后整体反转（属混淆，非加密）。 */
+    private fun encodeCreds(plain: String): String =
+        android.util.Base64.encodeToString(plain.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP).reversed()
 }
 
 /** 远程 SSH 连接状态，供 UI 指示器与工作区初始化时序判断。 */

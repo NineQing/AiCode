@@ -4,7 +4,6 @@ import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import net.schmizz.sshj.SSHClient
 
 /** SSH 登录密钥（私钥）条目：连接时用于认证登录。 */
 data class SshLoginKey(
@@ -66,12 +65,4 @@ class SharedPrefsSshLoginKeyStore @Inject constructor(
             .remove(fingerprintKey(id))
             .apply()
     }
-}
-
-/** 计算私钥文件对应公钥的 SHA-256 指纹；加密私钥（需口令）无法解析时返回 null。 */
-fun sshLoginKeyFingerprint(path: String): String? = try {
-    val keyProvider = SSHClient().loadKeys(path)
-    sshHostKeyFingerprint(keyProvider.getPublic())
-} catch (e: Exception) {
-    null
 }

@@ -150,6 +150,14 @@ class AIEditorApp : Application(), Configuration.Provider {
     @Inject
     lateinit var legacyCredentialMigrator: com.aicode.feature.credentials.data.LegacyCredentialMigrator
 
+    /** 敏感字段加密迁移器：启动即把历史明文的 API Key/密码/私钥文件加密回写（幂等）。 */
+    @Inject
+    lateinit var secretEncryptionMigrator: com.aicode.feature.settings.data.SecretEncryptionMigrator
+
+    /** git 凭据仓库：启动即把旧版明文凭据文件迁移为编码格式。 */
+    @Inject
+    lateinit var fileCredentialRepository: com.aicode.feature.credentials.data.repository.FileCredentialRepository
+
     /** 三端 git 缺凭据的统一弹窗桥：监听容器内 credential helper 经文件 IPC 发来的未登录请求，
      *  暴露 StateFlow 供全局弹窗回填后回喂 git。必须在主线程启动（FileObserver 绑定主 Looper）。 */
     @Inject
@@ -230,6 +238,14 @@ class AIEditorApp : Application(), Configuration.Provider {
         // 启动即把旧 Room git 凭据一次性迁移到 git-credentials 文件（真源已迁到文件，删表由迁移器完成）。
         appScope.launch {
             legacyCredentialMigrator.migrateIfNeeded()
+        }
+        // 启动即把历史明文的敏感字段（API Key、密码、私钥文件）加密回写。
+        appScope.launch {
+            secretEncryptionMigrator.migrateIfNeeded()
+        }
+        // 启动即把旧版明文的 git 凭据文件迁移为编码格式。
+        appScope.launch {
+            fileCredentialRepository.migrateToEncoded()
         }
         // 启动即异步刷新本仓库模型元数据（12h 缓存；失败静默，resolve 兜底内置 assets 数据）。
         appScope.launch {

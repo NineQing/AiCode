@@ -1,6 +1,9 @@
 package com.aicode.feature.git.presentation.component
 
 import android.content.ClipData
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -69,11 +72,13 @@ import com.aicode.feature.git.presentation.GitViewModel
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Activity
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.Download
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.GitCommit
 import compose.icons.feathericons.Key
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.X
+import compose.icons.feathericons.Zap
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +87,7 @@ fun GitScreen(
     viewModel: GitViewModel,
     onNavigateToCredentials: () -> Unit,
     onNavigateBack: () -> Unit,
+    onOpenFile: ((String) -> Unit)? = null,
     embedded: Boolean = false
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -100,6 +106,7 @@ fun GitScreen(
 
     var showCommitDialog by remember { mutableStateOf(false) }
     var showPullConfirm by remember { mutableStateOf(false) }
+    var showMasterRenameConfirm by remember { mutableStateOf(false) }
 
     // 三个 tab 的滚动状态统一提升到页面层，聚合出「是否正在滚动」用于底部 tab 栏滚动弱化。
     val statusScrollState = rememberScrollState()
@@ -121,7 +128,8 @@ fun GitScreen(
         DiffViewerScreen(
             diffData = state.diffData,
             filePath = state.diffPath,
-            onBack = { viewModel.clearDiff() }
+            onBack = { viewModel.clearDiff() },
+            onOpenInEditor = onOpenFile
         )
         return
     }
@@ -163,7 +171,11 @@ fun GitScreen(
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                state.notARepo -> NotARepoState(onInit = viewModel::initRepo)
+                state.notARepo -> NotARepoState(
+                    busy = state.busy,
+                    onInit = viewModel::initRepo,
+                    onClone = viewModel::cloneRepo
+                )
                 else -> HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize()
@@ -174,6 +186,8 @@ fun GitScreen(
                             busy = state.busy,
                             hasRemote = state.hasRemote,
                             hasIdentity = state.hasIdentity,
+                            stashes = state.stashes,
+                            stashesLoading = state.stashesLoading,
                             untrackedDirFiles = state.untrackedDirFiles,
                             untrackedDirLoading = state.untrackedDirLoading,
                             scrollState = statusScrollState,
@@ -185,7 +199,7 @@ fun GitScreen(
                             onPull = {
                                 if (state.status?.hasChanges == true) showPullConfirm = true else viewModel.pull()
                             },
-                            onPush = viewModel::push,
+                            onPush = { viewModel.push(onPromptRenameMaster = { showMasterRenameConfirm = true }) },
                             onFileDiff = viewModel::loadWorktreeDiff,
                             onStagedFileDiff = viewModel::loadStagedDiff,
                             onUntrackedDiff = viewModel::loadUntrackedDiff,
@@ -198,7 +212,14 @@ fun GitScreen(
                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("git-path", path)))
                                     snackbarHostState.showSnackbar(context.getString(R.string.git_toast_path_copied))
                                 }
-                            }
+                            },
+                            onStashSave = viewModel::stashSave,
+                            onStashPop = viewModel::stashPop,
+                            onStashApply = viewModel::stashApply,
+                            onStashDrop = viewModel::stashDrop,
+                            onStashClear = viewModel::stashClear,
+                            onAbortMerge = viewModel::abortMerge,
+                            onAddToGitignore = viewModel::addToGitignore
                         )
                         GitTab.BRANCHES -> BranchesTab(
                             branches = state.branches,
@@ -213,6 +234,7 @@ fun GitScreen(
                             onDeleteBranch = viewModel::deleteBranch,
                             onDeleteRemoteBranch = viewModel::deleteRemoteBranch,
                             onRenameBranch = viewModel::renameBranch,
+                            onMergeBranch = viewModel::mergeBranch,
                             onCreateTag = viewModel::createTag,
                             onDeleteTag = viewModel::deleteTag
                         )
@@ -226,7 +248,10 @@ fun GitScreen(
                             onOpenCommit = viewModel::openCommitDetail,
                             onCloseCommit = viewModel::closeCommitDetail,
                             onFileDiff = viewModel::loadCommitFileDiff,
-                            onLoadMore = viewModel::loadMoreCommits
+                            onLoadMore = viewModel::loadMoreCommits,
+                            onCreateBranchAtCommit = { name, hash -> viewModel.createBranch(name, hash, false) },
+                            onCreateTagAtCommit = { name, hash -> viewModel.createTag(name, hash) },
+                            onResetToCommit = { hash, mode -> viewModel.resetToCommit(hash, mode) }
                         )
                     }
                 }
@@ -270,12 +295,39 @@ fun GitScreen(
         )
     }
 
+    if (showMasterRenameConfirm) {
+        AlertDialog(
+            onDismissRequest = { showMasterRenameConfirm = false },
+            title = { Text(stringResource(R.string.git_push_master_confirm_title)) },
+            text = { Text(stringResource(R.string.git_push_master_confirm_desc)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showMasterRenameConfirm = false
+                    viewModel.pushRenameMasterToMain()
+                }) { Text(stringResource(R.string.git_push_rename_to_main)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showMasterRenameConfirm = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                    TextButton(onClick = {
+                        showMasterRenameConfirm = false
+                        viewModel.pushDirectly()
+                    }) { Text(stringResource(R.string.git_push_keep_master)) }
+                }
+            }
+        )
+    }
+
     if (showCommitDialog) {
         CommitDialog(
+            isGenerating = state.generatingCommitMessage,
             onDismiss = { showCommitDialog = false },
-            onConfirm = { msg ->
+            onGenerateAiMessage = viewModel::generateCommitMessage,
+            onConfirm = { msg, amend ->
                 showCommitDialog = false
-                viewModel.commit(msg)
+                viewModel.commit(msg, amend)
             }
         )
     }
@@ -370,13 +422,20 @@ internal fun EmptyState(text: String) {
     }
 }
 
-/** 非仓库态：文案 + 「初始化 Git 仓库」按钮（跑 `git init`，成功后自动刷新进仓库态）。 */
+/** 非仓库态：文案 + 「初始化 Git 仓库」/「克隆远程仓库」按钮（成功后自动刷新进仓库态）。 */
 @Composable
-private fun NotARepoState(onInit: () -> Unit) {
+private fun NotARepoState(
+    busy: Boolean,
+    onInit: () -> Unit,
+    onClone: (String) -> Unit
+) {
+    var showCloneDialog by remember { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            modifier = Modifier.padding(horizontal = Spacing.lg)
         ) {
             Text(
                 stringResource(R.string.git_not_a_repo),
@@ -388,36 +447,257 @@ private fun NotARepoState(onInit: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            FilledTonalButton(onClick = onInit) {
-                Icon(FeatherIcons.GitBranch, contentDescription = null)
-                Spacer(Modifier.width(Spacing.sm))
-                Text(stringResource(R.string.git_init_repo))
+            if (busy) {
+                Spacer(Modifier.height(Spacing.sm))
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text(
+                    stringResource(R.string.git_cloning_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = onInit) {
+                        Icon(FeatherIcons.GitBranch, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_init_repo))
+                    }
+                    FilledTonalButton(onClick = { showCloneDialog = true }) {
+                        Icon(FeatherIcons.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_clone_repo))
+                    }
+                }
             }
         }
+    }
+
+    if (showCloneDialog) {
+        CloneRepoDialog(
+            onDismiss = { showCloneDialog = false },
+            onConfirm = { url ->
+                showCloneDialog = false
+                onClone(url)
+            }
+        )
     }
 }
 
 @Composable
-private fun CommitDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var message by remember { mutableStateOf("") }
+private fun CloneRepoDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var url by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.git_commit_dialog_title)) },
-        text = {
-            AppTextField(
-                value = message,
-                onValueChange = { message = it },
-                label = stringResource(R.string.git_commit_message),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                minLines = 2,
-                colors = dialogTextFieldColors()
+        title = {
+            Text(
+                text = stringResource(R.string.git_clone_dialog_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text(
+                    text = stringResource(R.string.git_clone_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AppTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = stringResource(R.string.git_clone_url_label),
+                    placeholder = stringResource(R.string.git_clone_url_hint),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = dialogTextFieldColors()
+                )
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { if (message.isNotBlank()) onConfirm(message.trim()) },
-                enabled = message.isNotBlank()
+                onClick = {
+                    val trimmed = url.trim()
+                    if (trimmed.isNotEmpty()) onConfirm(trimmed)
+                },
+                enabled = url.trim().isNotEmpty()
+            ) {
+                Text(stringResource(R.string.git_action_clone))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun CommitDialog(
+    isGenerating: Boolean,
+    onDismiss: () -> Unit,
+    onGenerateAiMessage: ((String) -> Unit) -> Unit,
+    onConfirm: (String, Boolean) -> Unit
+) {
+    var message by remember { mutableStateOf("") }
+    var amend by remember { mutableStateOf(false) }
+    val commitTypes = remember {
+        listOf("feat", "fix", "refactor", "chore", "docs", "style", "perf", "test")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.git_commit_dialog_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // AI 生成按钮置于标题栏右侧，如同工具栏动作，轻量精致
+                Surface(
+                    color = if (isGenerating) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(Radius.pill),
+                    modifier = Modifier.clickable(enabled = !isGenerating) {
+                        onGenerateAiMessage { message = it }
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = Spacing.sm, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (isGenerating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(13.dp),
+                                strokeWidth = 1.8.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(R.string.git_commit_generating),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                FeatherIcons.Zap,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(R.string.git_commit_ai_generate),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                // 快捷前缀 Chip 胶囊列表（带微边框与圆角，选中/匹配当前前缀时高亮）
+                val chipScrollState = rememberScrollState()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(chipScrollState),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    commitTypes.forEach { type ->
+                        val isCurrentType = message.startsWith("$type:") || message.startsWith("$type(")
+                        val chipBg = if (isCurrentType) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        val chipFg = if (isCurrentType) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        val borderStroke = if (isCurrentType) null
+                        else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                        Surface(
+                            color = chipBg,
+                            shape = RoundedCornerShape(Radius.pill),
+                            border = borderStroke,
+                            modifier = Modifier.clickable {
+                                val prefix = "$type: "
+                                message = if (message.contains(": ")) {
+                                    prefix + message.substringAfter(": ")
+                                } else {
+                                    prefix + message
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = type,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = if (isCurrentType) FontWeight.SemiBold else FontWeight.Normal,
+                                color = chipFg,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+
+                // 提交信息输入框
+                AppTextField(
+                    value = message,
+                    onValueChange = { message = it },
+                    label = stringResource(R.string.git_commit_message),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 3,
+                    colors = dialogTextFieldColors()
+                )
+
+                // 底部轻量设置栏：amend 开关
+                Surface(
+                    color = MaterialTheme.semanticColors.mutedSurface,
+                    shape = RoundedCornerShape(Radius.md),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { amend = !amend }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = stringResource(R.string.git_commit_amend),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        com.aicode.core.ui.AppSwitch(
+                            checked = amend,
+                            onCheckedChange = { amend = it }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (message.isNotBlank()) onConfirm(message.trim(), amend) },
+                enabled = message.isNotBlank() && !isGenerating
             ) { Text(stringResource(R.string.git_action_commit)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }

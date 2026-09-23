@@ -34,7 +34,11 @@ class GitRepositoryTest {
     /** 构造给定输出的 repo；[exitCode] 非 0 用于覆盖 gitChecked 失败路径。 */
     private fun createRepo(output: String, exitCode: Int? = 0): GitRepository {
         val engine = mockk<CommandEngine>()
-        coEvery { engine.runCommandSyncUnbounded(any(), any(), any()) } returns CommandResult(output, exitCode)
+        coEvery { engine.runCommandSyncUnbounded(any(), any(), any()) } answers {
+            // status() 会额外探测 MERGE_HEAD 判断合并状态，该探测须返回空，否则被误判为合并中
+            if (invocation.args[0].toString().contains("MERGE_HEAD")) CommandResult("", 0)
+            else CommandResult(output, exitCode)
+        }
         val workspace = mockk<WorkspaceRepository>()
         every { workspace.currentPath() } returns workPath
         return GitRepository(engine, workspace)

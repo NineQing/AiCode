@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.core.util.LineDiff
+import com.aicode.feature.agent.domain.workflow.AgentWorkflow
 import com.aicode.feature.git.domain.GitCommandFailureException
 import com.aicode.feature.git.domain.GitOutputTooLargeException
 import com.aicode.feature.git.domain.GitErrorMessage
@@ -16,6 +17,7 @@ import com.aicode.feature.git.domain.model.GitBranch
 import com.aicode.feature.git.domain.model.GitCommit
 import com.aicode.feature.git.domain.model.GitFileChange
 import com.aicode.feature.git.domain.model.GitGraph
+import com.aicode.feature.git.domain.model.GitStash
 import com.aicode.feature.git.domain.model.GitStatus
 import com.aicode.feature.git.domain.model.GitTab
 import com.aicode.feature.git.domain.model.GitTag
@@ -54,7 +56,8 @@ private fun GitGraph.toGitCommits() =
 class GitViewModel @Inject constructor(
     private val repository: GitRepository,
     @param:ApplicationContext private val context: Context,
-    private val themeSettings: ThemeSettingsRepository
+    private val themeSettings: ThemeSettingsRepository,
+    private val agentWorkflow: AgentWorkflow
 ) : ViewModel() {
 
     private companion object {
@@ -97,12 +100,18 @@ class GitViewModel @Inject constructor(
         val branchesLoaded: Boolean = false,
         /** 正在加载全量分支/标签。 */
         val branchesLoading: Boolean = false,
+        /** 储藏列表。 */
+        val stashes: List<GitStash> = emptyList(),
+        /** 正在加载储藏列表。 */
+        val stashesLoading: Boolean = false,
         /** 正在切换分支。 */
         val checkoutLoading: String? = null,
         /** 已展开的未跟踪目录 → 其下未跟踪文件清单。git status 把新目录折叠成一行，展开时按需查询。 */
         val untrackedDirFiles: Map<String, List<String>> = emptyMap(),
         /** 正在展开的未跟踪目录路径。 */
         val untrackedDirLoading: String? = null,
+        /** 正在生成提交信息。 */
+        val generatingCommitMessage: Boolean = false,
         /** 是否显示 diff 全屏页；进入即置 true，diffData 为 null 时页内显示加载中。 */
         val diffVisible: Boolean = false,
         /** 正在查看 diff 的文件路径；加载中（diffData 为 null）时供顶栏显示文件名。 */
@@ -232,7 +241,8 @@ class GitViewModel @Inject constructor(
     /** 执行一个写操作：置 busy → 跑命令 → 刷新 → 反馈。操作间互斥。 */
     private fun runAction(
         @StringRes nameRes: Int,
-        action: suspend () -> String
+        action: suspend () -> String,
+        onComplete: (suspend () -> Unit)? = null
     ) {
         if (_state.value.busy) return
         _state.update { it.copy(busy = true, toast = null) }
@@ -254,6 +264,7 @@ class GitViewModel @Inject constructor(
                     val commits = snap.graph.toGitCommits()
                     _state.update { it.copy(busy = false, status = snap.status, commits = commits, graph = snap.graph, hasRemote = snap.hasRemote, untrackedDirFiles = snap.untrackedDirFiles, notARepo = false, toast = msg) }
                     refreshBranchesIfLoaded()
+                    onComplete?.invoke()
                 } else {
                     _state.update { it.copy(busy = false, notARepo = true, toast = msg) }
                 }
@@ -309,9 +320,41 @@ class GitViewModel @Inject constructor(
             }
         }
     }
-    fun commit(message: String) = runAction(R.string.git_action_commit, { repository.commit(message) })
+    fun commit(message: String, amend: Boolean = false) =
+        runAction(R.string.git_action_commit, { repository.commit(message, amend) })
+
+    /**
+     * 调用 AI 根据暂存差异生成提交信息。
+     */
+    fun generateCommitMessage(onResult: (String) -> Unit) {
+        if (_state.value.generatingCommitMessage) return
+        _state.update { it.copy(generatingCommitMessage = true) }
+        viewModelScope.launch {
+            try {
+                val diff = repository.diffForCommitMessage()
+                if (diff.isBlank()) {
+                    _state.update { it.copy(generatingCommitMessage = false, toast = context.getString(R.string.git_toast_no_diff_for_commit)) }
+                    return@launch
+                }
+                val message = agentWorkflow.generateCommitMessage(diff)
+                _state.update { it.copy(generatingCommitMessage = false) }
+                if (!message.isNullOrBlank()) {
+                    onResult(message)
+                } else {
+                    _state.update { it.copy(toast = context.getString(R.string.git_toast_generate_commit_failed)) }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                FileLogger.e(TAG, "生成提交信息异常", e)
+                _state.update { it.copy(generatingCommitMessage = false, toast = context.getString(R.string.git_toast_generate_commit_failed)) }
+            }
+        }
+    }
     /** 在当前工作区执行 `git init` 初始化仓库；成功后 runAction 末尾自动刷新（notARepo 翻 false）。 */
     fun initRepo() = runAction(R.string.git_action_init, { repository.initRepo() })
+
+    /** 在当前工作区克隆远程仓库；成功后 runAction 末尾自动刷新进仓库态。 */
+    fun cloneRepo(url: String) = runAction(R.string.git_action_clone, { repository.cloneRepo(url) })
     fun pull() {
         if (!_state.value.hasRemote) {
             _state.update { it.copy(toast = context.getString(R.string.git_toast_no_remote_pull)) }
@@ -319,13 +362,27 @@ class GitViewModel @Inject constructor(
         }
         runAction(R.string.git_pull, { repository.pull() })
     }
-    fun push() {
+    fun push(onPromptRenameMaster: () -> Unit = {}) {
         if (!_state.value.hasRemote) {
             _state.update { it.copy(toast = context.getString(R.string.git_toast_no_remote_push)) }
             return
         }
-        runAction(R.string.git_push, { repository.push() })
+        viewModelScope.launch {
+            if (repository.isFirstPushOfMaster()) {
+                onPromptRenameMaster()
+            } else {
+                runAction(R.string.git_push, { repository.push() })
+            }
+        }
     }
+
+    /** 用户在首次推送 master 时选择重命名为 main 并推送。 */
+    fun pushRenameMasterToMain() =
+        runAction(R.string.git_push, { repository.renameMasterToMainAndPush() })
+
+    /** 用户在首次推送 master 时选择保留 master 直接推送。 */
+    fun pushDirectly() =
+        runAction(R.string.git_push, { repository.push() })
 
     /**
      * 打开某条提交的详情弹层。若文件清单尚未加载则懒加载（不置 [GitUiState.busy]，
@@ -444,11 +501,27 @@ class GitViewModel @Inject constructor(
     }
 
     /**
-     * 创建轻量标签（git tag <name>），指向当前 HEAD。失败经 runAction toast 透出。
+     * 创建轻量标签（git tag <name>），指向当前 HEAD 或指定提交。失败经 runAction toast 透出。
      */
-    fun createTag(name: String) {
+    fun createTag(name: String, commitHash: String? = null) {
         if (name.isBlank()) return
-        runAction(R.string.git_action_create_tag, { repository.createTag(name) })
+        runAction(R.string.git_action_create_tag, { repository.createTag(name, commitHash) })
+    }
+
+    /**
+     * 重置当前分支到指定提交。
+     */
+    fun resetToCommit(commitHash: String, mode: String = "mixed") {
+        if (commitHash.isBlank()) return
+        runAction(R.string.git_reset_to_commit, { repository.resetToCommit(commitHash, mode) })
+    }
+
+    /**
+     * 添加规则到 .gitignore。
+     */
+    fun addToGitignore(pattern: String) {
+        if (pattern.isBlank()) return
+        runAction(R.string.git_add_to_gitignore, { repository.addToGitignore(pattern) })
     }
 
     /**
@@ -457,6 +530,77 @@ class GitViewModel @Inject constructor(
     fun deleteTag(name: String) {
         if (name.isBlank()) return
         runAction(R.string.git_action_delete_tag, { repository.deleteTag(name) })
+    }
+
+    /**
+     * 合并分支到当前分支。
+     */
+    fun mergeBranch(branch: String, noFf: Boolean = false) {
+        if (branch.isBlank()) return
+        runAction(R.string.git_action_merge, { repository.mergeBranch(branch, noFf) })
+    }
+
+    /**
+     * 中止当前进行中的合并。
+     */
+    fun abortMerge() {
+        runAction(R.string.git_action_abort_merge, { repository.abortMerge() })
+    }
+
+    /**
+     * 加载储藏列表。
+     */
+    fun loadStashes() {
+        viewModelScope.launch {
+            _state.update { it.copy(stashesLoading = true) }
+            val list = runCatching { repository.stashList() }.getOrDefault(emptyList())
+            _state.update { it.copy(stashes = list, stashesLoading = false) }
+        }
+    }
+
+    /**
+     * 储藏工作区改动。
+     */
+    fun stashSave(message: String? = null, includeUntracked: Boolean = false) {
+        runAction(R.string.git_action_stash, { repository.stashSave(message, includeUntracked) }) {
+            loadStashes()
+        }
+    }
+
+    /**
+     * 弹出指定储藏（应用并删除）。
+     */
+    fun stashPop(index: String = "stash@{0}") {
+        runAction(R.string.git_stash_pop, { repository.stashPop(index) }) {
+            loadStashes()
+        }
+    }
+
+    /**
+     * 应用指定储藏（保留记录）。
+     */
+    fun stashApply(index: String = "stash@{0}") {
+        runAction(R.string.git_stash_apply, { repository.stashApply(index) }) {
+            loadStashes()
+        }
+    }
+
+    /**
+     * 丢弃指定储藏。
+     */
+    fun stashDrop(index: String) {
+        runAction(R.string.git_stash_drop, { repository.stashDrop(index) }) {
+            loadStashes()
+        }
+    }
+
+    /**
+     * 清空全部储藏记录。
+     */
+    fun stashClear() {
+        runAction(R.string.git_stash_clear, { repository.stashClear() }) {
+            loadStashes()
+        }
     }
 
     /**

@@ -49,6 +49,7 @@ import com.aicode.core.theme.semanticColors
 import com.aicode.core.util.LineDiff
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.File
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
@@ -90,7 +91,8 @@ data class DiffRow(
 fun DiffViewerScreen(
     diffData: DiffData?,
     filePath: String?,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenInEditor: ((String) -> Unit)? = null
 ) {
     BackHandler { onBack() }
     val path = diffData?.filePath ?: filePath
@@ -132,6 +134,20 @@ fun DiffViewerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(FeatherIcons.ArrowLeft, contentDescription = stringResource(R.string.common_back))
+                    }
+                },
+                actions = {
+                    if (path != null && onOpenInEditor != null) {
+                        IconButton(onClick = {
+                            onBack()
+                            onOpenInEditor(path)
+                        }) {
+                            Icon(
+                                FeatherIcons.Edit3,
+                                contentDescription = stringResource(R.string.git_open_in_editor),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             )

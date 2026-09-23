@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -32,6 +33,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.aicode.core.ui.AdaptiveModalBottomSheet
+import com.aicode.core.ui.AppSwitch
+import com.aicode.core.ui.AppTextField
+import com.aicode.core.ui.dialogTextFieldColors
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,15 +62,18 @@ import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
 import com.aicode.feature.git.domain.model.GitFileChange
+import com.aicode.feature.git.domain.model.GitStash
 import com.aicode.feature.git.domain.model.GitStatus
 import com.aicode.feature.settings.presentation.component.SettingsDivider
 import com.aicode.feature.settings.presentation.component.SettingsGroup
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Archive
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.DownloadCloud
+import compose.icons.feathericons.EyeOff
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Minus
@@ -81,6 +88,8 @@ internal fun StatusTab(
     busy: Boolean,
     hasRemote: Boolean,
     hasIdentity: Boolean,
+    stashes: List<GitStash> = emptyList(),
+    stashesLoading: Boolean = false,
     untrackedDirFiles: Map<String, List<String>>,
     untrackedDirLoading: String?,
     scrollState: ScrollState,
@@ -98,18 +107,38 @@ internal fun StatusTab(
     onRevertAll: () -> Unit,
     onDeleteUntracked: (String) -> Unit,
     onToggleUntrackedDir: (String) -> Unit,
-    onCopyPath: (String) -> Unit
+    onCopyPath: (String) -> Unit,
+    onStashSave: (String?, Boolean) -> Unit = { _, _ -> },
+    onStashPop: (String) -> Unit = {},
+    onStashApply: (String) -> Unit = {},
+    onStashDrop: (String) -> Unit = {},
+    onStashClear: () -> Unit = {},
+    onAbortMerge: () -> Unit = {},
+    onAddToGitignore: (String) -> Unit = {}
 ) {
     val s = status
-    val clean = s == null || (s.staged.isEmpty() && s.unstaged.isEmpty() && s.untracked.isEmpty())
+    val clean = s == null || (s.staged.isEmpty() && s.unstaged.isEmpty() && s.untracked.isEmpty() && s.conflicted.isEmpty())
     val hasChanges = !clean
     var showUnstageAllConfirm by remember { mutableStateOf(false) }
     var showRevertAllConfirm by remember { mutableStateOf(false) }
+    var showStashSheet by remember { mutableStateOf(false) }
+    var showAbortMergeConfirm by remember { mutableStateOf(false) }
+    var pendingDropStash by remember { mutableStateOf<String?>(null) }
+    var showClearStashConfirm by remember { mutableStateOf(false) }
     // 长按文件行弹出的操作菜单；null 表示未打开。
     var actionSheet by remember { mutableStateOf<FileMenu?>(null) }
     // 回退与删除都会丢数据，先经确认弹窗再执行。
     var pendingRevert by remember { mutableStateOf<RevertTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<String?>(null) }
+
+    fun conflictedMenu(file: GitFileChange) = FileMenu(
+        path = file.path,
+        actions = listOf(
+            FileAction.ViewDiff { onFileDiff(file.path) },
+            FileAction.Stage { onStage(file.path) },
+            FileAction.CopyPath { onCopyPath(file.path) }
+        )
+    )
 
     fun stagedMenu(file: GitFileChange) = FileMenu(
         path = file.path,
@@ -133,18 +162,30 @@ internal fun StatusTab(
         )
     }
 
-    fun untrackedFileMenu(path: String) = FileMenu(
-        path = path,
-        actions = listOf(
-            FileAction.ViewDiff { onUntrackedDiff(path) },
-            FileAction.DeleteFile { pendingDelete = path },
-            FileAction.CopyPath { onCopyPath(path) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    fun untrackedFileMenu(path: String): FileMenu {
+        val ext = path.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+        return FileMenu(
+            path = path,
+            actions = buildList {
+                add(FileAction.ViewDiff { onUntrackedDiff(path) })
+                add(FileAction.Ignore(context.getString(R.string.git_ignore_file, path.substringAfterLast('/'))) { onAddToGitignore("/$path") })
+                if (ext != null) {
+                    add(FileAction.Ignore(context.getString(R.string.git_ignore_extension, ext)) { onAddToGitignore("*.$ext") })
+                }
+                add(FileAction.DeleteFile { pendingDelete = path })
+                add(FileAction.CopyPath { onCopyPath(path) })
+            }
         )
-    )
+    }
 
     fun untrackedDirMenu(path: String) = FileMenu(
         path = path,
         actions = listOf(
+            FileAction.Ignore(context.getString(R.string.git_ignore_dir, path.removeSuffix("/").substringAfterLast('/'))) {
+                onAddToGitignore("/${path.removeSuffix("/")}/")
+            },
             FileAction.DeleteDir { pendingDelete = path },
             FileAction.CopyPath { onCopyPath(path) }
         )
@@ -199,7 +240,7 @@ internal fun StatusTab(
             )
         }
 
-        // 次级操作：暂存全部 / 拉取 / 推送。
+        // 次级操作：暂存全部 / 储藏 / 拉取 / 推送。
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -209,6 +250,13 @@ internal fun StatusTab(
                 icon = FeatherIcons.Plus,
                 enabled = !busy && hasChanges,
                 onClick = onStageAll,
+                modifier = Modifier.weight(1f)
+            )
+            ActionButton(
+                label = stringResource(R.string.git_tab_stash),
+                icon = FeatherIcons.Archive,
+                enabled = !busy,
+                onClick = { showStashSheet = true },
                 modifier = Modifier.weight(1f)
             )
             ActionButton(
@@ -242,6 +290,61 @@ internal fun StatusTab(
             }
         } else {
             val ss = s ?: return@Column
+
+            // 存在冲突时高亮提示并列出冲突文件
+            if (ss.conflicted.isNotEmpty()) {
+                GroupHeaderWithAction(
+                    title = stringResource(R.string.git_conflicted_count, ss.conflicted.size),
+                    actionLabel = if (ss.isMerging) stringResource(R.string.git_action_abort_merge) else "",
+                    actionEnabled = !busy,
+                    onAction = { showAbortMergeConfirm = true }
+                )
+                SettingsGroup {
+                    ss.conflicted.forEachIndexed { index, f ->
+                        if (index > 0) SettingsDivider()
+                        FileRow(
+                            file = f,
+                            actionIcon = FeatherIcons.Plus,
+                            actionDesc = stringResource(R.string.git_stage),
+                            onAction = { onStage(f.path) },
+                            enabled = !busy,
+                            onClick = { onFileDiff(f.path) },
+                            onLongClick = { actionSheet = conflictedMenu(f) }
+                        )
+                    }
+                }
+            } else if (ss.isMerging) {
+                Surface(
+                    color = MaterialTheme.semanticColors.warning.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(Radius.mdLarge),
+                    border = BorderStroke(1.dp, MaterialTheme.semanticColors.warning.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.git_conflict_detected),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.semanticColors.warning
+                            )
+                            Text(
+                                stringResource(R.string.git_conflict_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = { showAbortMergeConfirm = true }, enabled = !busy) {
+                            Text(stringResource(R.string.git_action_abort_merge), color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+
             if (ss.staged.isNotEmpty()) {
                 GroupHeaderWithAction(
                     title = stringResource(R.string.git_staged_count, ss.staged.size),
@@ -339,6 +442,72 @@ internal fun StatusTab(
                 }
             }
         }
+    }
+
+    if (showStashSheet) {
+        StashBottomSheet(
+            stashes = stashes,
+            loading = stashesLoading,
+            hasChanges = hasChanges,
+            busy = busy,
+            onDismiss = { showStashSheet = false },
+            onSave = onStashSave,
+            onPop = onStashPop,
+            onApply = onStashApply,
+            onDrop = { pendingDropStash = it },
+            onClear = { showClearStashConfirm = true }
+        )
+    }
+
+    if (showAbortMergeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showAbortMergeConfirm = false },
+            title = { Text(stringResource(R.string.git_action_abort_merge)) },
+            text = { Text(stringResource(R.string.git_abort_merge_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAbortMergeConfirm = false
+                    onAbortMerge()
+                }) { Text(stringResource(R.string.git_action_abort_merge), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAbortMergeConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
+    pendingDropStash?.let { index ->
+        AlertDialog(
+            onDismissRequest = { pendingDropStash = null },
+            title = { Text(stringResource(R.string.git_stash_drop)) },
+            text = { Text(stringResource(R.string.git_stash_drop_confirm, index)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDropStash = null
+                    onStashDrop(index)
+                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDropStash = null }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
+
+    if (showClearStashConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearStashConfirm = false },
+            title = { Text(stringResource(R.string.git_stash_clear)) },
+            text = { Text(stringResource(R.string.git_stash_clear_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearStashConfirm = false
+                    onStashClear()
+                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearStashConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
     }
 
     actionSheet?.let { menu ->
@@ -503,6 +672,9 @@ private fun StatusOverview(status: GitStatus?, clean: Boolean) {
             Spacer(Modifier.height(Spacing.md))
 
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                if (status != null && status.conflicted.isNotEmpty()) {
+                    StatusMetric(stringResource(R.string.git_conflicted_count, "").trim(), status.conflicted.size, MaterialTheme.colorScheme.error, Modifier.weight(1f))
+                }
                 StatusMetric(stringResource(R.string.git_staged_label), staged, MaterialTheme.semanticColors.success, Modifier.weight(1f))
                 StatusMetric(stringResource(R.string.git_modified_label), modified, MaterialTheme.semanticColors.warning, Modifier.weight(1f))
                 StatusMetric(stringResource(R.string.git_untracked_label), untracked, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.weight(1f))
@@ -750,12 +922,14 @@ private sealed class FileAction(
     val isDestructive: Boolean,
     val onClick: () -> Unit
 ) {
+    class Stage(onClick: () -> Unit) : FileAction(R.string.git_stage, FeatherIcons.Plus, false, onClick)
     class ViewDiff(onClick: () -> Unit) : FileAction(R.string.git_action_view_diff, FeatherIcons.FileText, false, onClick)
     class Revert(onClick: () -> Unit) : FileAction(R.string.git_action_revert, FeatherIcons.RotateCcw, true, onClick)
     class RestoreFile(onClick: () -> Unit) : FileAction(R.string.git_action_restore_file, FeatherIcons.RotateCcw, false, onClick)
     class DeleteFile(onClick: () -> Unit) : FileAction(R.string.git_action_delete_file, FeatherIcons.Trash2, true, onClick)
     class DeleteDir(onClick: () -> Unit) : FileAction(R.string.git_action_delete_dir, FeatherIcons.Trash2, true, onClick)
     class CopyPath(onClick: () -> Unit) : FileAction(R.string.git_action_copy_path, FeatherIcons.Copy, false, onClick)
+    class Ignore(val customLabel: String, onClick: () -> Unit) : FileAction(R.string.git_add_to_gitignore, FeatherIcons.EyeOff, false, onClick)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -807,11 +981,229 @@ private fun FileActionSheet(menu: FileMenu, onDismiss: () -> Unit) {
                         )
                         Spacer(Modifier.width(Spacing.lg))
                         Text(
-                            text = stringResource(action.labelRes),
+                            text = if (action is FileAction.Ignore) action.customLabel else stringResource(action.labelRes),
                             style = MaterialTheme.typography.bodyLarge,
                             color = tint
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StashBottomSheet(
+    stashes: List<GitStash>,
+    loading: Boolean,
+    hasChanges: Boolean,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String?, Boolean) -> Unit,
+    onPop: (String) -> Unit,
+    onApply: (String) -> Unit,
+    onDrop: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    var message by remember { mutableStateOf("") }
+    var includeUntracked by remember { mutableStateOf(false) }
+
+    AdaptiveModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg)
+                .padding(bottom = Spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.git_stash_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (stashes.isNotEmpty()) {
+                    TextButton(onClick = onClear, enabled = !busy) {
+                        Text(
+                            stringResource(R.string.git_stash_clear),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                color = MaterialTheme.semanticColors.mutedSurface,
+                shape = RoundedCornerShape(Radius.mdLarge),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    AppTextField(
+                        value = message,
+                        onValueChange = { message = it },
+                        label = stringResource(R.string.git_stash_message_hint),
+                        singleLine = true,
+                        colors = dialogTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { includeUntracked = !includeUntracked },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.git_stash_include_untracked),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        AppSwitch(
+                            checked = includeUntracked,
+                            onCheckedChange = { includeUntracked = it }
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            val msg = message.trim().ifBlank { null }
+                            message = ""
+                            onSave(msg, includeUntracked)
+                        },
+                        enabled = !busy && hasChanges,
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(Radius.md)
+                    ) {
+                        Icon(FeatherIcons.Archive, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(R.string.git_action_stash))
+                    }
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.git_stash_count, stashes.size),
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                color = MaterialTheme.semanticColors.subtleText
+            )
+
+            if (stashes.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xl),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        stringResource(R.string.git_stash_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    items(stashes, key = { it.index }) { item ->
+                        StashItemRow(
+                            stash = item,
+                            busy = busy,
+                            onPop = { onPop(item.index) },
+                            onApply = { onApply(item.index) },
+                            onDrop = { onDrop(item.index) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StashItemRow(
+    stash: GitStash,
+    busy: Boolean,
+    onPop: () -> Unit,
+    onApply: () -> Unit,
+    onDrop: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(Radius.md),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stash.message.ifBlank { stash.index },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = stash.date,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stash.index,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = onPop,
+                    enabled = !busy,
+                    contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 2.dp)
+                ) {
+                    Text(stringResource(R.string.git_stash_pop), style = MaterialTheme.typography.labelSmall)
+                }
+                TextButton(
+                    onClick = onApply,
+                    enabled = !busy,
+                    contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 2.dp)
+                ) {
+                    Text(stringResource(R.string.git_stash_apply), style = MaterialTheme.typography.labelSmall)
+                }
+                IconButton(
+                    onClick = onDrop,
+                    enabled = !busy,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        FeatherIcons.Trash2,
+                        contentDescription = stringResource(R.string.git_stash_drop),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(15.dp)
+                    )
                 }
             }
         }

@@ -789,6 +789,12 @@
     <string name="git_not_a_repo">Current workspace is not a Git repository</string>
     <string name="git_init_desc">Initialization will create .git here, after which you can stage, commit, and link remotes.</string>
     <string name="git_init_repo">Initialize Git Repository</string>
+    <string name="git_clone_repo">Clone Remote Repository</string>
+    <string name="git_clone_dialog_title">Clone Git Repository</string>
+    <string name="git_clone_desc">Clone a remote repository into the current workspace root (directory must be empty). For private repos, configure credentials via the key icon first.</string>
+    <string name="git_clone_url_label">Repository URL</string>
+    <string name="git_clone_url_hint">https://github.com/user/repo.git</string>
+    <string name="git_cloning_hint">Cloning repository, please wait…</string>
     <string name="git_commit_dialog_title">Commit Changes</string>
     <string name="git_commit_message">Commit message</string>
     <string name="git_tracking_branch">Tracking %1$s</string>
@@ -803,6 +809,10 @@
     <string name="git_unstage_all_confirm">All files will be unstaged, but their contents will not be deleted. Continue?</string>
     <string name="git_pull_dirty_confirm">The working tree has uncommitted changes. Pulling may cause conflicts. Commit or stage them first if possible. Continue pulling?</string>
     <string name="git_pull_continue">Continue Pull</string>
+    <string name="git_push_master_confirm_title">Branch Naming Suggestion</string>
+    <string name="git_push_master_confirm_desc">Current local branch is \"master\". GitHub and GitLab recommend using \"main\" as the default branch. Would you like to rename it to \"main\" before pushing?</string>
+    <string name="git_push_rename_to_main">Rename to main &amp; Push</string>
+    <string name="git_push_keep_master">Keep master &amp; Push</string>
 
     <!-- Git Toast Messages -->
     <string name="git_toast_load_branches_failed">Failed to load branches: %1$s</string>
@@ -821,6 +831,7 @@
     <string name="git_action_unstage_all">Unstage all</string>
     <string name="git_action_commit">Commit</string>
     <string name="git_action_init">Initialize</string>
+    <string name="git_action_clone">Clone</string>
     <string name="git_action_create_branch">Create branch</string>
     <string name="git_action_delete_branch">Delete branch</string>
     <string name="git_action_delete_remote_branch">Delete remote branch</string>
@@ -839,6 +850,58 @@
     <string name="git_restore_file_confirm">Restore the deleted %1$s? The file will be brought back from the last commit.</string>
     <string name="git_revert_all_confirm">Discard all unstaged changes (%1$d files) and restore them to the last staged or committed content? Staged content is unaffected, but discarded changes cannot be recovered.</string>
     <string name="git_delete_untracked_confirm">Delete %1$s? It has never been committed, so Git cannot recover it after deletion.</string>
+
+    <!-- Git Merge -->
+    <string name="git_action_merge">Merge Branch</string>
+    <string name="git_merge_into">Merge into %1$s</string>
+    <string name="git_merge_confirm">Merge branch %1$s into current branch (%2$s)?</string>
+    <string name="git_merge_no_ff">Create a merge commit (--no-ff)</string>
+
+    <!-- Git Stash -->
+    <string name="git_tab_stash">Stash</string>
+    <string name="git_stash_title">Stashes</string>
+    <string name="git_action_stash">Stash Changes</string>
+    <string name="git_stash_message_hint">Stash message (optional)</string>
+    <string name="git_stash_include_untracked">Include untracked files (-u)</string>
+    <string name="git_stash_empty">No stashes found</string>
+    <string name="git_stash_pop">Pop</string>
+    <string name="git_stash_apply">Apply</string>
+    <string name="git_stash_drop">Drop</string>
+    <string name="git_stash_drop_confirm">Drop stash %1$s? This action cannot be undone.</string>
+    <string name="git_stash_clear">Clear All</string>
+    <string name="git_stash_clear_confirm">Clear all stashes? This action cannot be undone.</string>
+    <string name="git_stash_count">Stashes (%1$d)</string>
+
+    <!-- Git Conflict -->
+    <string name="git_conflicted_count">Conflicts (%1$s)</string>
+    <string name="git_conflict_detected">Merge Conflicts Detected</string>
+    <string name="git_conflict_hint">Resolve conflicts in editor then stage the files, or abort the merge.</string>
+    <string name="git_action_abort_merge">Abort Merge</string>
+    <string name="git_abort_merge_confirm">Abort the current merge? Unresolved changes will be discarded and the working tree will be restored.</string>
+
+    <!-- Git Commit Enhancements -->
+    <string name="git_commit_ai_generate">AI Generate</string>
+    <string name="git_commit_generating">Generating…</string>
+    <string name="git_commit_amend">Amend last commit (--amend)</string>
+    <string name="git_toast_no_diff_for_commit">No changes found to generate commit message</string>
+    <string name="git_toast_generate_commit_failed">Failed to generate commit message, please check model or network</string>
+    <string name="git_open_in_editor">Open in Editor</string>
+
+    <!-- Git Log & Commit Detail Actions -->
+    <string name="git_create_branch_from_commit">Create Branch from Commit</string>
+    <string name="git_create_tag_at_commit">Create Tag at Commit</string>
+    <string name="git_reset_to_commit">Reset to this Commit</string>
+    <string name="git_reset_soft">Soft (Keep working tree and staged)</string>
+    <string name="git_reset_mixed">Mixed (Keep working tree, unstage)</string>
+    <string name="git_reset_confirm">Reset current branch to commit %1$s?</string>
+    <string name="git_search_commits_hint">Search commit message or author…</string>
+
+    <!-- Gitignore -->
+    <string name="git_add_to_gitignore">Add to .gitignore</string>
+    <string name="git_ignore_file">Ignore this file (%1$s)</string>
+    <string name="git_ignore_dir">Ignore directory (%1$s/)</string>
+    <string name="git_ignore_extension">Ignore same extension (*.%1$s)</string>
+    <string name="git_toast_added_to_gitignore">Added to .gitignore</string>
 
     <!-- Git Identity -->
     <string name="git_tab_identity">Identity</string>

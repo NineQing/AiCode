@@ -680,6 +680,7 @@ fun AppNavigation(
                             editorPath = paneEditorPath,
                             editorLine = paneEditorLine,
                             onClose = { paneKind = WorkbenchPaneKind.NONE },
+                            onOpenFile = { path -> openFile(path, 0, false) },
                             modifier = Modifier.weight(1f - paneSplit)
                         )
                     }
@@ -740,7 +741,8 @@ fun AppNavigation(
                 GitScreen(
                     viewModel = gitViewModel,
                     onNavigateToCredentials = { navController.navigate("credentials") },
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenFile = { path -> openFile(path, 0, false) }
                 )
             }
             composable("credentials") {

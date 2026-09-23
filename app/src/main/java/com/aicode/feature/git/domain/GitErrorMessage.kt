@@ -31,6 +31,9 @@ object GitErrorMessage {
         if (raw.contains("does not appear to be a git repository") ||
             raw.contains("Could not read from remote repository"))
             return "远程仓库不可用或无访问权限"
+        // 克隆目录非空
+        if (raw.contains("already exists and is not an empty directory"))
+            return "当前工作区目录非空，无法直接克隆到当前目录"
         // 鉴权失败（用户名/密码/token 错误或未配置）
         if (raw.contains("Authentication failed") ||
             raw.contains("Invalid username or token") ||
@@ -53,6 +56,15 @@ object GitErrorMessage {
         // 未配置署名（提交时）
         if (raw.contains("Please tell me who you are") || raw.contains("Author identity unknown"))
             return "尚未配置提交署名，请在设置中填写用户名和邮箱"
+        // 合并冲突
+        if (raw.contains("CONFLICT") || raw.contains("Automatic merge failed"))
+            return "合并产生冲突，请前往状态页查看并解决冲突"
+        // 合并/拉取时本地有未提交改动
+        if (raw.contains("Your local changes to the following files would be overwritten by merge"))
+            return "本地有未提交的改动，请先提交或储藏（Stash）后再合并"
+        // 储藏相关
+        if (raw.contains("No local changes to save"))
+            return "当前没有需要储藏的改动"
         return raw
     }
 }

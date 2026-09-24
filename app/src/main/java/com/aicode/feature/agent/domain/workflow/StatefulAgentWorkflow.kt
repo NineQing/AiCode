@@ -763,14 +763,14 @@ class StatefulAgentWorkflow @Inject constructor(
                                     ?: ""
                                 send(AgentEvent.ModeChanged(newCtx.mode, reason))
 
-                                // PLAN→BUILD 时挂起 workflow，等待用户在计划审查面板批准后才继续
-                                if (newCtx.mode == AgentMode.BUILD) {
+                                // 退出 PLAN 时挂起 workflow，等待用户在计划审查面板批准后才继续
+                                if (currentContext.mode == AgentMode.PLAN && newCtx.mode != AgentMode.PLAN) {
                                     val choice = planApprovalManager.awaitApproval(reason, currentContext.sessionId)
                                     if (choice == PlanApprovalChoice.APPROVE) {
                                         currentContext = newCtx
                                         // system 与 mode 已解耦（SystemPromptProvider 不再注入模式提示词），
                                         // 切换不重建 systemPrompt，避免 system 前缀变化打断缓存；模式状态通过工具结果与下轮消息提醒告知。
-                                        rawResult += buildModeSwitchNotice(AgentMode.BUILD)
+                                        rawResult += buildModeSwitchNotice(newCtx.mode)
                                     } else {
                                         // 用户选择继续反馈，回滚到 PLAN 模式，修正工具结果让 AI 知道切换被取消并等待用户反馈
                                         currentContext = currentContext.copy(mode = AgentMode.PLAN)
@@ -802,7 +802,16 @@ class StatefulAgentWorkflow @Inject constructor(
                             val newMode = modeChange?.newMode
                             if (newMode != null) {
                                 // 用户在工作期间切换模式：本轮后续批次的权限判定立即改用新模式。
-                                currentContext = currentContext.copy(mode = newMode)
+                                // 与 SessionUseCase.updateMode 保持同一套语义：进入 PLAN 记下进入前的模式，其余情况清空。
+                                val prevMode = currentContext.mode
+                                currentContext = if (newMode == AgentMode.PLAN) {
+                                    currentContext.copy(
+                                        mode = AgentMode.PLAN,
+                                        modeBeforePlan = if (prevMode != AgentMode.PLAN) prevMode else currentContext.modeBeforePlan
+                                    )
+                                } else {
+                                    currentContext.copy(mode = newMode, modeBeforePlan = null)
+                                }
                             }
                             val last = batchResults.last()
                             var injected = eventInjector.inject(last.result, notifications)
@@ -1063,14 +1072,16 @@ class StatefulAgentWorkflow @Inject constructor(
     }
 
     private fun checkAndUpdateMode(toolCall: ToolCall, isError: Boolean, currentContext: AgentContext): Pair<AgentContext, Boolean> {
-        if (toolCall.name == "switchMode" && !isError) {
-            val targetModeStr = (toolCall.arguments["mode"] as? JsonPrimitive)?.content?.trim()?.uppercase()
-                ?: toolCall.arguments["mode"]?.toString()?.replace("\"", "")?.trim()?.uppercase()
-            if (targetModeStr != null) {
-                runCatching { AgentMode.valueOf(targetModeStr) }.getOrNull()?.let { newMode ->
-                    if (currentContext.mode != newMode) {
-                        return currentContext.copy(mode = newMode) to true
-                    }
+        if (toolCall.name == "planMode" && !isError) {
+            val action = (toolCall.arguments["action"] as? JsonPrimitive)?.content?.trim()?.lowercase()
+                ?: toolCall.arguments["action"]?.toString()?.replace("\"", "")?.trim()?.lowercase()
+            when (action) {
+                // 进入 PLAN 时记住当前模式；退出时恢复到它（AUTO→PLAN 的规划往返结束后回到 AUTO 而非 BUILD）。
+                "enter" -> if (currentContext.mode != AgentMode.PLAN) {
+                    return currentContext.copy(mode = AgentMode.PLAN, modeBeforePlan = currentContext.mode) to true
+                }
+                "exit" -> if (currentContext.mode == AgentMode.PLAN) {
+                    return currentContext.copy(mode = currentContext.modeBeforePlan ?: AgentMode.BUILD) to true
                 }
             }
         }
@@ -1109,13 +1120,13 @@ class StatefulAgentWorkflow @Inject constructor(
         return buildModeReminder(mode)
     }
 
-    /** 工具切换成功后拼进 switchMode 工具结果的模式状态通知（当轮即可见，无需等下一条用户消息）。 */
+    /** 工具调用成功后拼进 planMode 工具结果的模式状态通知（当轮即可见，无需等下一条用户消息）。 */
     private fun buildModeSwitchNotice(mode: AgentMode): String = when (mode) {
         AgentMode.PLAN -> "\n\n" + promptProvider.resolvePrompt(MODE_REMINDER_PLAN_FILE)
             .replace(LEADING_COMMENT, "")
             .trim()
         AgentMode.BUILD -> "\n\n【模式切换】计划已获用户批准，你已切换到 BUILD（构建）模式，可以开始执行计划。"
-        AgentMode.AUTO -> "\n\n【模式切换】你已切换到 AUTO（自动）模式。"
+        AgentMode.AUTO -> "\n\n【模式切换】计划已获用户批准，你已恢复到 AUTO（自动）模式，可以开始执行计划（工具调用将自动放行）。"
     }
 
     /** 用户在外部（界面）手动切换模式时拼进工具结果的提示；与 AI 自切的 [buildModeSwitchNotice] 区分，避免误称「计划已获批准」。 */
@@ -1179,11 +1190,11 @@ class StatefulAgentWorkflow @Inject constructor(
             return PermissionCheckResult(true)
         }
 
-        // switchMode 从 PLAN 切到 BUILD 时，后续会有计划审查面板兜底用户决策，
-        // 此处权限弹窗冗余，直接放行；BUILD→PLAN 方向无后续审查面板，仍走权限弹窗。
-        if (tool.name == "switchMode" && mode == AgentMode.PLAN) {
-            val targetModeStr = (arguments["mode"] as? JsonPrimitive)?.contentOrNull?.trim()?.uppercase()
-            if (targetModeStr == AgentMode.BUILD.name) {
+        // planMode 退出 PLAN 时，后续会有计划审查面板兜底用户决策，
+        // 此处权限弹窗冗余，直接放行；进入 PLAN 的方向无后续审查面板，仍走权限弹窗。
+        if (tool.name == "planMode" && mode == AgentMode.PLAN) {
+            val action = (arguments["action"] as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()
+            if (action == "exit") {
                 return PermissionCheckResult(true)
             }
         }

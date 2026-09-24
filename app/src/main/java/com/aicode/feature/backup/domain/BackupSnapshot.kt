@@ -192,6 +192,7 @@ data class ChatSessionDto(
     val updatedAt: Long,
     val workspacePath: String = "",
     val mode: String = "BUILD",
+    val modeBeforePlan: String? = null,
     val reasoningEffort: String = "MEDIUM",
     val providerId: String? = null,
     val model: String? = null,

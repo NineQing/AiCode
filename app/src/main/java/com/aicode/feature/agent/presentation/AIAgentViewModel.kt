@@ -1393,6 +1393,7 @@ class AIAgentViewModel @Inject constructor(
                 inputImages = inputImages,
                 sessionId = sessionId,
                 mode = mode,
+                modeBeforePlan = sessionDomain?.modeBeforePlan,
                 reasoningEffort = sessionDomain?.reasoningEffort?.apiValue,
                 agentDefinition = agentDefinition
             )

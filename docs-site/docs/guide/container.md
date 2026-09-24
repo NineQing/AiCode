@@ -34,9 +34,9 @@ App 自带一个 Alpine 镜像，首次启动会自动加进列表并选中，sh
 
 先列出要装的东西（bash、curl、ripgrep、git 这些基础工具，加 Node.js 和 Python 3），输入 `y` 确认后先选软件源，然后开始装。
 
-**2. 自定义安装**
+**2. 环境安装**
 
-逐个问你要不要装 Node.js、Python 3、Java、Go、Rust、PHP（前两个默认装，其余默认跳过）。选 `y` 之后会列出这个运行时在软件仓库里可用的主版本让你挑（比如 Debian 下 Java 会列 `openjdk-21-jdk-headless` 和 `openjdk-25-jdk-headless`，回车默认选第一个）。基础工具始终会装。
+打开「环境安装」菜单，按场景选择要装的开发环境（见下一节）。场景是一组运行时的组合，选完确认清单即可安装；菜单里也有「自定义安装」可以逐项勾选、指定主版本。
 
 **3. 手动安装（不再提示）**
 
@@ -57,6 +57,34 @@ App 自带一个 Alpine 镜像，首次启动会自动加进列表并选中，sh
 - `0)` 不换源，保持默认。
 
 换源前会备份原配置，失败自动恢复，不影响后续安装。内置 Alpine 的 rootfs 保持官方源，需要国内源就在这个菜单里换。
+
+## 随时安装开发依赖（aicode）
+
+初始化菜单只会在首次进终端时弹一次。之后想再装别的运行时（比如后来才需要 Java 或 Go），有两个入口，打开的都是同一个「环境安装」菜单：
+
+- 在终端里执行命令 `aicode`；
+- 点终端右上角的**工具**图标，选「重新运行环境安装」，会在一个新标签里打开同样的工具。
+
+`aicode` 提供按场景安装，选一个场景、确认清单即可：
+
+| 场景 | 安装内容 |
+| --- | --- |
+| 通用开发 | 基础工具 + Node.js + Python 3 |
+| Python 开发 | 基础工具 + Python 3 + pip |
+| Node.js / 前端开发 | 基础工具 + Node.js + npm |
+| Kotlin / Android 开发 | 基础工具 + JDK 17 + Android SDK |
+| Flutter 开发 | 基础工具 + JDK + Android SDK + Flutter SDK |
+| Java 开发 | 基础工具 + JDK |
+| Go 开发 | 基础工具 + Go |
+| Rust 开发 | 基础工具 + rustc + cargo |
+| PHP 开发 | 基础工具 + PHP + Composer |
+| 仅基础工具 | bash、curl、ripgrep、git |
+
+基础工具（bash、curl、ripgrep、git）任何场景都会一起装上。场景默认装软件仓库里的最新主版本；要指定版本，用菜单里的「自定义安装」逐项勾选。菜单里还能单独换软件源、查看已装了哪些运行时。
+
+「Kotlin / Android 开发」「Flutter 开发」是重场景：会从国内镜像下载 JDK、Android SDK（含 build-tools、platform-tools）以及 Flutter SDK，耗时较长、占用较多存储。建议在 Debian / Ubuntu 镜像里装（内置 Alpine 因 musl libc 需额外处理）；ARM64 设备会自动替换为可执行的 aapt2 等原生二进制。注意 ARM64 容器只能构建 Flutter debug APK，release 包需用远程构建。装好后新开终端会自动带上 `JAVA_HOME`、`ANDROID_HOME` 等环境变量，具体编译步骤见「进阶教程」里的《在容器中编译 Android 应用》《在容器中编译 Flutter 应用》。
+
+终端右上角原来的设置图标已改为**工具**图标，点开后在面板里除了环境工具入口，还能调整配色主题、字号、字体和光标样式。
 
 ## 自定义镜像
 

@@ -185,6 +185,44 @@ class ContainerInstaller @Inject constructor(
         }
 
         /**
+         * 从 assets 提取环境工具（`aicode` 命令 + 共享库 lib/）到 ~/.aicode/bin 与 ~/.aicode/lib 并赋可执行位。
+         *
+         * 经 [LinuxContainerEngine] 的 -b 绑定即容器内 /root/.aicode/bin/aicode（在 PATH 中，见
+         * buildContainerEnv）与 /root/.aicode/lib/（env-common.sh、android-sdk.sh 与 scenarios/ 子目录），
+         * 供用户随时执行 `aicode` 安装开发环境（场景化）。每次覆盖写（随 App 版本更新）；提取失败仅告警
+         * 不抛：缺工具时容器初始化菜单（provision.sh）会提示未就绪，用户重启 App 即可重新提取。
+         */
+        fun extractEnvTool(context: Context) {
+            runCatching {
+                extractDirOverwrite(context, "aicode/bin", File(File(context.filesDir, "aicode"), "bin"), executable = true)
+                extractDirOverwrite(context, "aicode/lib", File(File(context.filesDir, "aicode"), "lib"), executable = false)
+            }.onFailure {
+                FileLogger.w(TAG, "提取环境工具失败: ${it.message}", it)
+            }
+        }
+
+        /** 递归复制 assets 下某目录到 [destDir]（每次覆盖，支持子目录如 lib/scenarios/）；[executable] 时对每个文件赋可执行位。 */
+        private fun extractDirOverwrite(context: Context, assetDir: String, destDir: File, executable: Boolean) {
+            val entries = context.assets.list(assetDir) ?: return
+            destDir.mkdirs()
+            for (entry in entries) {
+                val assetPath = "$assetDir/$entry"
+                val dest = File(destDir, entry)
+                try {
+                    context.assets.open(assetPath).use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (executable && !dest.setExecutable(true, false)) {
+                        FileLogger.w(TAG, "setExecutable 返回 false: ${dest.absolutePath}")
+                    }
+                } catch (e: IOException) {
+                    // 目录项：assets.open 对目录抛 IOException，递归复制（如 lib/scenarios/）
+                    extractDirOverwrite(context, assetPath, dest, executable)
+                }
+            }
+        }
+
+        /**
          * 与 assets 里 alpine-rootfs 版本对应的 apk 分支，用于拼镜像源地址。
          * 固定 v3.21：与 [INSTALL_VERSION]（alpine-3.21.3）一致；该版本 apk-tools 2.14 在 proot 下可靠。
          */
@@ -544,6 +582,7 @@ class ContainerInstaller @Inject constructor(
             extractDocs(context)
             extractCredentialHelper(context)
             extractProvisionScript(context)
+            extractEnvTool(context)
         }
     }
 
@@ -555,6 +594,9 @@ class ContainerInstaller @Inject constructor(
 
     /** 从 assets 提取容器初始化依赖安装脚本到 ~/.aicode/provision.sh 并赋可执行位。 */
     fun extractProvisionScript() = extractProvisionScript(context)
+
+    /** 从 assets 提取环境工具（aicode 命令 + 共享库）到 ~/.aicode/{bin,lib} 并赋可执行位。 */
+    fun extractEnvTool() = extractEnvTool(context)
 
     /** 解压 alpine-minirootfs.tar.gz，正确处理目录/文件/符号链接/硬链接与权限位；返回解压条目数。 */
     private fun extractRootfs(onProgress: (ContainerInitState) -> Unit): Int {

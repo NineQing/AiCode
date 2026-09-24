@@ -79,7 +79,7 @@ import com.termux.view.TerminalView
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Tool
 import compose.icons.feathericons.X
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
@@ -99,7 +99,7 @@ fun TerminalScreen(
     val activeTabId by viewModel.activeTabId.collectAsStateWithLifecycle()
     val revision by viewModel.revision.collectAsStateWithLifecycle()
     val terminalSettings by viewModel.terminalSettings.collectAsStateWithLifecycle()
-    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showToolsSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -122,8 +122,8 @@ fun TerminalScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(FeatherIcons.Settings, contentDescription = stringResource(R.string.terminal_settings_title))
+                    IconButton(onClick = { showToolsSheet = true }) {
+                        Icon(FeatherIcons.Tool, contentDescription = stringResource(R.string.terminal_tools_title))
                     }
                 }
             )
@@ -186,10 +186,15 @@ fun TerminalScreen(
             }
         }
 
-        if (showSettingsSheet) {
+        if (showToolsSheet) {
             TerminalSettingsSheet(
                 settings = terminalSettings,
-                onDismiss = { showSettingsSheet = false },
+                showEnvTool = !viewModel.isRemoteMode,
+                onRunInstaller = {
+                    showToolsSheet = false
+                    viewModel.runEnvInstaller()
+                },
+                onDismiss = { showToolsSheet = false },
                 onSelectTheme = { viewModel.setTheme(it) },
                 onChangeFontSize = { viewModel.setFontSize(it) },
                 onChangeCursorStyle = { viewModel.setCursorStyle(it) },

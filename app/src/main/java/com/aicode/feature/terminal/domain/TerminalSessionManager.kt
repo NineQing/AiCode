@@ -102,19 +102,19 @@ class TerminalSessionManager @Inject constructor(
      *
      * 首次会触发 rootfs/proot 解压（幂等）；失败抛异常由调用方处理。
      */
-    suspend fun createInteractiveTab(): String {
-        FileLogger.i(TAG, "新建交互终端标签：开始准备容器")
+    suspend fun createInteractiveTab(): String = createTab(runEnvTool = false)
+
+    /**
+     * 新建一个执行 `aicode` 环境工具的标签并设为当前（终端右上角工具入口调用）。
+     * 在新标签里跑，避免打断当前标签中正在运行的程序。
+     */
+    suspend fun createEnvToolTab(): String = createTab(runEnvTool = true)
+
+    private suspend fun createTab(runEnvTool: Boolean): String {
+        FileLogger.i(TAG, "新建交互终端标签：开始准备容器（envTool=$runEnvTool）")
         ensureContainer()
         val id = nextId()
-        // -w 已把 cwd 设为 /root/workspace，cd 仅作兜底；裸 sh/bash 在 tty 上自动进交互模式，
-        // 靠 ENV=/etc/profile 加载登录环境；exec 让 shell 取代外层 sh -c 成为前台交互 shell。
-        // 首次进入终端时先跑初始化菜单（脚本自行判断已完成/已跳过则秒退），所有容器一致；
-        // 用 `;` 分隔保证脚本任何失败都不阻塞进入 shell。
-        val shellCommand = "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; " +
-            "[ -f /root/.aicode/provision.sh ] && sh /root/.aicode/provision.sh; " +
-            "export PS1='\\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '; " +
-            "alias ls='ls --color=auto' 2>/dev/null; alias grep='grep --color=auto' 2>/dev/null; alias ll='ls -la --color=auto' 2>/dev/null; " +
-            "exec ${containerEngine.defaultShell()}"
+        val shellCommand = buildInteractiveCommand(runEnvTool)
         FileLogger.i(TAG, "交互 shell 命令（$id）：$shellCommand")
         val (session, client) = try {
             buildSession(shellCommand)
@@ -138,6 +138,25 @@ class TerminalSessionManager @Inject constructor(
         FileLogger.i(TAG, "新建交互终端标签 $id：pid=${session.pid} 运行中=${session.isRunning}")
         scheduleSilentSessionDiagnostic(id)
         return id
+    }
+
+    /**
+     * 交互 shell 启动命令。-w 已把 cwd 设为 /root/workspace，cd 仅作兜底；裸 sh/bash 在 tty 上自动进交互模式，
+     * 靠 ENV=/etc/profile 加载登录环境；exec 让 shell 取代外层 sh -c 成为前台交互 shell。
+     * [runEnvTool] 为 true 时执行 `aicode` 环境工具，否则跑首次初始化菜单（脚本自行判断已完成/已跳过则秒退）；
+     * 用 `;` 分隔保证脚本任何失败都不阻塞进入 shell。
+     */
+    private fun buildInteractiveCommand(runEnvTool: Boolean): String {
+        val startup = if (runEnvTool) {
+            "command -v aicode >/dev/null 2>&1 && aicode || echo '环境工具不可用，请重启 App 后重试'; "
+        } else {
+            "[ -f /root/.aicode/provision.sh ] && sh /root/.aicode/provision.sh; "
+        }
+        return "cd ~/workspace 2>/dev/null; export ENV=/etc/profile; " +
+            startup +
+            "export PS1='\\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '; " +
+            "alias ls='ls --color=auto' 2>/dev/null; alias grep='grep --color=auto' 2>/dev/null; alias ll='ls -la --color=auto' 2>/dev/null; " +
+            "exec ${containerEngine.defaultShell()}"
     }
 
     /**

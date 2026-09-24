@@ -45,6 +45,9 @@ class TerminalViewModel @Inject constructor(
 
     private fun isRemote() = modeHolder.currentMode() == ExecutionMode.REMOTE_SSH
 
+    /** 当前是否远程 SSH 模式（UI 据此隐藏本地容器专属入口，如环境工具）。 */
+    val isRemoteMode: Boolean get() = isRemote()
+
     /** 容器准备阶段的整体状态：仅用于首个标签创建前的 Loading/Error 提示。 */
     sealed interface PrepareState {
         data object Loading : PrepareState
@@ -108,6 +111,18 @@ class TerminalViewModel @Inject constructor(
                 if (isRemote()) remoteManager.createInteractiveTab() else localManager.createInteractiveTab()
             } catch (e: Exception) {
                 FileLogger.e(TAG, "新建标签失败", e)
+            }
+        }
+    }
+
+    /** 打开环境工具：在新标签执行 `aicode`（仅本地容器；远程模式无此工具，UI 已隐藏入口）。 */
+    fun runEnvInstaller() {
+        if (isRemote()) return
+        viewModelScope.launch {
+            try {
+                localManager.createEnvToolTab()
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "打开环境工具失败", e)
             }
         }
     }

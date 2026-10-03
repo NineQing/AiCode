@@ -9,6 +9,8 @@ import com.aicode.feature.agent.domain.model.CONTEXT_SUMMARY_LEGACY_PREFIX
 import com.aicode.feature.agent.domain.tool.ToolCall
 import com.aicode.feature.agent.presentation.AgentAttachment
 import com.aicode.feature.agent.presentation.MessageRole
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -228,7 +230,9 @@ class MessagePersistenceUseCase @Inject constructor(
                 }
             }
         }
-        val messages = buildHistoryUncached(sessionId, pendingToolMarker)
+        val messages = withContext(Dispatchers.IO) {
+            buildHistoryUncached(sessionId, pendingToolMarker)
+        }
         synchronized(historyCache) {
             historyCache[sessionId] = HistoryEntry(version, pendingToolMarker, messages)
         }

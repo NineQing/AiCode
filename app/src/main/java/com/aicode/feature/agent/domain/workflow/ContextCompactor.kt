@@ -22,6 +22,9 @@ import com.aicode.feature.settings.domain.model.ModelContextPolicy
 import com.aicode.feature.settings.domain.model.ProviderType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -62,6 +65,25 @@ class ContextCompactor @Inject constructor(
         tools: List<AgentTool> = emptyList(),
         currentInputTokens: Int = 0,
         onEvent: suspend (AgentEvent) -> Unit = {}
+    ): CompactionResult {
+        val eventContext = currentCoroutineContext().minusKey(Job)
+        return withContext(Dispatchers.Default) {
+            compactOnBackground(messages, aiProvider, sessionId, force, windowProvider, systemPrompt, tools, currentInputTokens) { event ->
+                withContext(eventContext) { onEvent(event) }
+            }
+        }
+    }
+
+    private suspend fun compactOnBackground(
+        messages: List<AgentMessage>,
+        aiProvider: AIProvider,
+        sessionId: String?,
+        force: Boolean,
+        windowProvider: AIProvider?,
+        systemPrompt: String,
+        tools: List<AgentTool>,
+        currentInputTokens: Int,
+        onEvent: suspend (AgentEvent) -> Unit
     ): CompactionResult {
         val unchanged = CompactionResult(messages, compacted = false)
         val windowModel = windowProvider ?: aiProvider
@@ -106,7 +128,9 @@ class ContextCompactor @Inject constructor(
             )
             aiProvider.maxOutputTokens = outputLimit
             val summaryBudget = minOf(ModelContextPolicy.effectiveInputBudget(summaryMetadata), summaryContext - outputLimit)
-            val prompt = systemPromptProvider.resolvePrompt("agent/compact-summary.md").replace(LEADING_COMMENT, "")
+            val prompt = withContext(Dispatchers.IO) {
+                systemPromptProvider.resolvePrompt("agent/compact-summary.md").replace(LEADING_COMMENT, "")
+            }
             var summary = extractPreviousSummary(head)
             val cursor = CompactionText.Cursor(CompactionText.units(material))
             var block = 0
@@ -323,13 +347,19 @@ internal object CompactionText {
 
         fun next(budget: Int): String {
             val result = StringBuilder()
+            var ascii = 0
+            var other = 0
             while (!finished) {
                 val unit = units[index]
                 val label = "[history-unit ${index + 1}, character-offset $offset]\n"
                 val remaining = unit.substring(offset)
-                val candidate = result.toString() + label + remaining + "\n\n"
-                if (tokens(candidate) <= budget) {
-                    result.append(label).append(remaining).append("\n\n")
+                val fragment = label + remaining + "\n\n"
+                val fragmentAscii = fragment.count { it.code < 128 }
+                val fragmentOther = fragment.length - fragmentAscii
+                if (ModelContextPolicy.estimateTokens(ascii + fragmentAscii) + other + fragmentOther <= budget) {
+                    result.append(fragment)
+                    ascii += fragmentAscii
+                    other += fragmentOther
                     index++
                     offset = 0
                 } else {

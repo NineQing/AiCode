@@ -113,6 +113,17 @@ class ContextCompactorTest {
     }
 
     @Test
+    fun cursorIncrementalBudgetMatchesWholeTextCounting() {
+        val units = List(120) { index -> if (index % 2 == 0) "ascii-$index" else "混合-$index" }
+        val cursor = CompactionText.Cursor(units)
+        val chunks = mutableListOf<String>()
+        while (!cursor.finished) chunks.add(cursor.next(160))
+        assertTrue(chunks.all { CompactionText.tokens(it) <= 160 })
+        assertEquals(units.size, chunks.sumOf { chunk -> Regex("\\[history-unit ").findAll(chunk).count() })
+        units.forEach { unit -> assertTrue(chunks.any { it.contains("\n$unit\n") }) }
+    }
+
+    @Test
     fun multipleBlocksFusePreviousSummaryAndRetainLatestGoal() = runTest {
         prepare()
         val requests = mutableListOf<List<AgentMessage>>()

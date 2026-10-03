@@ -96,6 +96,8 @@ class ContextCompactor @Inject constructor(
 
         onEvent(AgentEvent.CompactionStarted(currentTokens))
         val originalOutputLimit = aiProvider.maxOutputTokens
+        val markerTimestamp = if (sessionId != null) messagePersistenceUseCase.nextTimestamp() else null
+        val summaryTimestamp = if (sessionId != null) messagePersistenceUseCase.nextTimestamp() else null
         try {
             var splitIndex = CompactionText.selectTailStartIndex(messages, inputBudget)
             if (force && splitIndex <= 0) splitIndex = messages.lastIndex
@@ -107,16 +109,14 @@ class ContextCompactor @Inject constructor(
             check(material.isNotEmpty()) { "No new history to summarize" }
 
             val headIds = head.map { it.id }.filter { it.isNotBlank() }.distinct()
-            val anchorTs = if (sessionId != null) {
+            if (sessionId != null) {
                 check(headIds.isNotEmpty() && head.all { it.id.isNotBlank() }) { "History has no stable persistence IDs" }
                 val entities = agentMessageDao.getMessagesBySessionOnce(sessionId)
                 val persistedIds = entities.mapTo(HashSet()) { it.id }
                 check(headIds.all { it in persistedIds }) { "History persistence is not complete yet" }
                 val tailIds = tail.map { it.id }.toSet()
-                val timestamp = entities.filter { it.id in tailIds }.minOfOrNull { it.timestamp }
-                check(timestamp != null && timestamp > Long.MIN_VALUE + 2) { "Retained history has no persisted timestamp anchor" }
-                timestamp
-            } else null
+                check(entities.any { it.id in tailIds }) { "Retained history has no persisted timestamp anchor" }
+            }
 
             val summaryMetadata = modelMetadataService.resolve(aiProvider.providerId, inferProviderType(aiProvider), aiProvider.model)
             val summaryContext = summaryMetadata.contextTokens.takeIf { it > 0 } ?: ModelContextPolicy.DEFAULT_CONTEXT_TOKENS
@@ -162,9 +162,9 @@ class ContextCompactor @Inject constructor(
                     headIds = headIds,
                     messages = listOf(
                         AgentMessageEntity(id = markerId, sessionId = sessionId, role = MessageRole.USER.name,
-                            content = CONTEXT_COMPACTION_MARKER, timestamp = requireNotNull(anchorTs) - 2, isCompactionMarker = true),
+                            content = CONTEXT_COMPACTION_MARKER, timestamp = requireNotNull(markerTimestamp), isCompactionMarker = true),
                         AgentMessageEntity(id = summaryId, sessionId = sessionId, role = MessageRole.ASSISTANT.name,
-                            content = summary, timestamp = requireNotNull(anchorTs) - 1, isContextSummary = true)
+                            content = summary, timestamp = requireNotNull(summaryTimestamp), isContextSummary = true)
                     ),
                     summaryId = summaryId
                 )

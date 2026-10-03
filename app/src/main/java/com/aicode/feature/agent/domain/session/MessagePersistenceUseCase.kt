@@ -167,6 +167,12 @@ class MessagePersistenceUseCase @Inject constructor(
         /** 内嵌 base64 图片 data URL（`data:image/...;base64,...`）。 */
         private val INLINE_BASE64_IMAGE = Regex("""data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+""")
 
+        internal fun orderHistoryEntities(entities: List<AgentMessageEntity>): List<AgentMessageEntity> {
+            // 聊天按压缩触发时间展示；模型必须先读摘要，再读保留历史。
+            val (compaction, retained) = entities.partition { it.isCompactionMarker || it.isContextSummary }
+            return compaction + retained
+        }
+
         /** UTF-8 单字符最多占 3 字节，故 [String.length] 的三倍不超上限时无需实际编码即可放行。 */
         private fun definitelyFits(raw: String, maxBytes: Int): Boolean =
             raw.length.toLong() * 3 <= maxBytes
@@ -242,6 +248,7 @@ class MessagePersistenceUseCase @Inject constructor(
     private suspend fun buildHistoryUncached(sessionId: String, pendingToolMarker: String): List<AgentMessage> {
         val entities = agentMessageDao.getMessagesBySessionOnce(sessionId)
             .filter { !it.isCompacted && !it.isContextExcluded }
+            .let { orderHistoryEntities(it) }
 
         // 第一遍：求 assistant 声明的 toolCallId 与 tool 结果 toolCallId 的交集。
         val declaredIds = mutableSetOf<String>()

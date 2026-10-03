@@ -339,7 +339,7 @@ private fun splitChatTurns(messages: List<AgentUIMessage>): Pair<List<AgentUIMes
     var user: AgentUIMessage? = null
     var body: MutableList<AgentUIMessage>? = null
     for (message in messages) {
-        if (message.role == MessageRole.USER && !message.isBackgroundNotification) {
+        if (message.role == MessageRole.USER && !message.isBackgroundNotification && !message.isCompactionMarker) {
             user?.let { turns += ChatTurn(turnKeyOf(it.id), it, body?.toList().orEmpty()) }
             user = message
             body = ArrayList()
@@ -675,7 +675,7 @@ fun AIChatPanel(
         if (!isBusy) {
             null
         } else {
-            messages.lastOrNull { it.role == MessageRole.USER && !it.isBackgroundNotification }
+            messages.lastOrNull { it.role == MessageRole.USER && !it.isBackgroundNotification && !it.isCompactionMarker }
                 ?.let { turnKeyOf(it.id) }
         }
     }

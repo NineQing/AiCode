@@ -340,7 +340,8 @@ class BackupManagerImpl @Inject constructor(
         compactionProviderId = if (options.appSettings) compactionModelSettingsRepository.getCompactionProviderId() else "",
         compactionModel = if (options.appSettings) compactionModelSettingsRepository.getCompactionModel() else "",
         syncSettings = if (options.appSettings) syncSettingsRepository.snapshot() else null,
-        workspaces = if (options.workspaceFiles) collectWorkspaceMetas() else emptyList()
+        workspaces = if (options.workspaceFiles) collectWorkspaceMetas() else emptyList(),
+        includesAppSettings = options.appSettings
     )
 
     private fun writeMetadataEntry(tar: TarArchiveOutputStream, metadata: BackupMetadata) {
@@ -607,28 +608,30 @@ class BackupManagerImpl @Inject constructor(
         if (meta.globalPermissionRules.isNotEmpty()) {
             permissionRulesRepository.setGlobalRules(meta.globalPermissionRules)
         }
-        meta.themeMode?.let { themeSettingsRepository.restore(it) }
-        themeSettingsRepository.restoreColors(meta.themePresetId, meta.dynamicColorEnabled)
-        keepaliveSettingsRepository.restore(meta.keepaliveEnabled)
-        screenOnSettingsRepository.restore(meta.screenOnEnabled)
-        agentSoundSettingsRepository.restore(meta.agentSoundEnabled)
-        generalSettingsRepository.restoreAutoRemoveStaleModels(meta.autoRemoveStaleModels)
-        generalSettingsRepository.restoreStartupSessionMode(meta.startupSessionMode)
-        generalSettingsRepository.restoreFirstByteTimeoutSec(meta.firstByteTimeoutSec)
-        generalSettingsRepository.restoreStreamIdleTimeoutSec(meta.streamIdleTimeoutSec)
-        generalSettingsRepository.restoreMaxNetworkRetries(meta.maxNetworkRetries)
-        generalSettingsRepository.restoreEnterToSend(meta.enterToSend)
-        generalSettingsRepository.restoreCompactionThresholdPercent(meta.compactionThresholdPercent)
-        generalSettingsRepository.restoreSendFileMaxSizeMb(meta.sendFileMaxSizeMb)
-        generalSettingsRepository.restoreDeleteExternalWorkspaceSessions(meta.deleteExternalWorkspaceSessions)
-        logSettingsRepository.restore(meta.logLevel)
-        if (meta.visionProviderId.isNotBlank() || meta.visionModel.isNotBlank()) {
-            visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel)
+        if (meta.includesAppSettings) {
+            meta.themeMode?.let { themeSettingsRepository.restore(it) }
+            themeSettingsRepository.restoreColors(meta.themePresetId, meta.dynamicColorEnabled)
+            keepaliveSettingsRepository.restore(meta.keepaliveEnabled)
+            screenOnSettingsRepository.restore(meta.screenOnEnabled)
+            agentSoundSettingsRepository.restore(meta.agentSoundEnabled)
+            generalSettingsRepository.restoreAutoRemoveStaleModels(meta.autoRemoveStaleModels)
+            generalSettingsRepository.restoreStartupSessionMode(meta.startupSessionMode)
+            generalSettingsRepository.restoreFirstByteTimeoutSec(meta.firstByteTimeoutSec)
+            generalSettingsRepository.restoreStreamIdleTimeoutSec(meta.streamIdleTimeoutSec)
+            generalSettingsRepository.restoreMaxNetworkRetries(meta.maxNetworkRetries)
+            generalSettingsRepository.restoreEnterToSend(meta.enterToSend)
+            generalSettingsRepository.restoreCompactionThresholdPercent(meta.compactionThresholdPercent)
+            generalSettingsRepository.restoreSendFileMaxSizeMb(meta.sendFileMaxSizeMb)
+            generalSettingsRepository.restoreDeleteExternalWorkspaceSessions(meta.deleteExternalWorkspaceSessions)
+            logSettingsRepository.restore(meta.logLevel)
+            if (meta.visionProviderId.isNotBlank() || meta.visionModel.isNotBlank()) {
+                visionModelSettingsRepository.setVisionModel(meta.visionProviderId, meta.visionModel)
+            }
+            if (meta.compactionProviderId.isNotBlank() || meta.compactionModel.isNotBlank()) {
+                compactionModelSettingsRepository.setCompactionModel(meta.compactionProviderId, meta.compactionModel)
+            }
+            meta.syncSettings?.let { syncSettingsRepository.restore(it) }
         }
-        if (meta.compactionProviderId.isNotBlank() || meta.compactionModel.isNotBlank()) {
-            compactionModelSettingsRepository.setCompactionModel(meta.compactionProviderId, meta.compactionModel)
-        }
-        meta.syncSettings?.let { syncSettingsRepository.restore(it) }
 
         return RestoreStats(
             providers = meta.providers.size,

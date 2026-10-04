@@ -339,7 +339,7 @@ private fun splitChatTurns(messages: List<AgentUIMessage>): Pair<List<AgentUIMes
     var user: AgentUIMessage? = null
     var body: MutableList<AgentUIMessage>? = null
     for (message in messages) {
-        if (message.role == MessageRole.USER && !message.isBackgroundNotification) {
+        if (message.role == MessageRole.USER && !message.isBackgroundNotification && !message.isCompactionMarker) {
             user?.let { turns += ChatTurn(turnKeyOf(it.id), it, body?.toList().orEmpty()) }
             user = message
             body = ArrayList()
@@ -614,11 +614,7 @@ fun AIChatPanel(
     val currentMode by viewModel.currentSessionMode.collectAsStateWithLifecycle()
     val slashCommands by viewModel.slashCommands.collectAsStateWithLifecycle()
 
-    var inputText by remember { mutableStateOf("") }
-    val inputDraft by viewModel.inputDraft.collectAsStateWithLifecycle()
-    LaunchedEffect(inputDraft) {
-        if (inputText != inputDraft) inputText = inputDraft
-    }
+    val inputText by viewModel.inputDraft.collectAsStateWithLifecycle()
     // 输入 "/" 打开命令菜单时重扫技能，反映磁盘上技能的增删改。
     LaunchedEffect(inputText) {
         if (inputText == "/") viewModel.refreshSlashCommands()
@@ -675,7 +671,7 @@ fun AIChatPanel(
         if (!isBusy) {
             null
         } else {
-            messages.lastOrNull { it.role == MessageRole.USER && !it.isBackgroundNotification }
+            messages.lastOrNull { it.role == MessageRole.USER && !it.isBackgroundNotification && !it.isCompactionMarker }
                 ?.let { turnKeyOf(it.id) }
         }
     }
@@ -1205,7 +1201,6 @@ fun AIChatPanel(
                 inputImages = images,
                 inputAttachments = attachments.toAgentAttachments()
             )
-            inputText = ""
             viewModel.clearInputDraft()
             pendingAttachments = emptyList()
             followBottom = true
@@ -1576,7 +1571,9 @@ fun AIChatPanel(
             val questionForPanel = rememberLastNonNull(pendingQuestion)
             AnimatedVisibility(
                 visible = pendingQuestion != null,
-                modifier = Modifier.graphicsLayer { alpha = floatingPanelAlpha },
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .graphicsLayer { alpha = floatingPanelAlpha },
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -1610,7 +1607,7 @@ fun AIChatPanel(
 
             ChatInputBar(
                 value = inputText,
-                onValueChange = { inputText = it; viewModel.updateInputDraft(it) },
+                onValueChange = viewModel::updateInputDraft,
                 onSend = sendMessage,
                 enterToSend = settingsViewModel?.enterToSend?.collectAsStateWithLifecycle()?.value ?: false,
                 onStop = { viewModel.stopAgent() },
@@ -1741,7 +1738,7 @@ fun AIChatPanel(
                     promptSnippet = targetMsg?.content ?: "",
                     onOptionSelected = { option ->
                         viewModel.executeRewindOption(targetId, option) { text, attachments ->
-                            inputText = text
+                            viewModel.updateInputDraft(text)
                             pendingAttachments = attachments.map { it.toPendingAttachment() }
                         }
                     },

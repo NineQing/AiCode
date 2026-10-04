@@ -221,6 +221,7 @@ class AIAgentViewModel @Inject constructor(
 
     private val _messageLimit = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val defaultLimit = 30
+    private val loadedMessageLimits = mutableMapOf<String, Int>()
 
     /** 聊天记录搜索：命中条数上限、输入防抖、片段上下文宽度、定位时预留的分页余量。 */
     private val chatSearchLimit = 50
@@ -309,7 +310,10 @@ class AIAgentViewModel @Inject constructor(
 
     fun loadMoreMessages() {
         val sid = _currentSessionId.value ?: return
+        val state = messagesState.value
+        if (state.sessionId != sid || !state.loaded || !state.hasMore) return
         val currentLimit = _messageLimit.value[sid] ?: defaultLimit
+        if (loadedMessageLimits[sid] != currentLimit) return
         _messageLimit.value = _messageLimit.value + (sid to (currentLimit + 30))
     }
 
@@ -773,7 +777,8 @@ class AIAgentViewModel @Inject constructor(
                     hasMore = list.size >= limit,
                     isLoadingMore = false
                 )
-            }
+            }.flowOn(Dispatchers.Default)
+                .onEach { loadedMessageLimits[id] = limit }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ChatMessagesState(null, emptyList(), loaded = false))
 

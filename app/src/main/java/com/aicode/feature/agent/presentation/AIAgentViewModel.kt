@@ -1526,9 +1526,12 @@ class AIAgentViewModel @Inject constructor(
             val sessionDomain = sessionEntity?.toDomain()
             val mode = sessionDomain?.mode ?: AgentMode.BUILD
             // 子会话的 subagentType 存的是自定义 agent 名；能查到定义时提示词与工具集都按它组装。
-            val agentDefinition = sessionEntity?.takeIf { it.parentId != null }
-                ?.subagentType
-                ?.let { agentDefinitionRepository.findIncludingDisabled(it) }
+            // 定义来自目录扫描（远程模式经 SFTP），故切到 IO，避免阻塞主线程。
+            val agentDefinition = withContext(Dispatchers.IO) {
+                sessionEntity?.takeIf { it.parentId != null }
+                    ?.subagentType
+                    ?.let { agentDefinitionRepository.findIncludingDisabled(it) }
+            }
 
             val agentContext = AgentContext(
                 currentFile = currentFile,

@@ -1501,7 +1501,19 @@ class AIAgentViewModel @Inject constructor(
         try {
             var failed = false
             // 必须在插入本次用户消息之前读取历史：workflow 会自己 add(userRequest)，避免重复。
+            val historyStartedNs = System.nanoTime()
+            FileLogger.memoryCheckpoint(
+                TAG,
+                "history.start",
+                details = "operation=$historyStartedNs requestChars=${request.length} attachments=${inputAttachments.size}"
+            )
             val history = messagePersistenceUseCase.buildHistory(sessionId, SessionUseCase.PENDING_TOOL_MARKER)
+            FileLogger.memoryCheckpoint(
+                TAG,
+                "history.ready",
+                elapsedMs = (System.nanoTime() - historyStartedNs) / 1_000_000,
+                details = "operation=$historyStartedNs messages=${history.size}"
+            )
             val isFirst = history.isEmpty()
 
             val userMsgId = UUID.randomUUID().toString()

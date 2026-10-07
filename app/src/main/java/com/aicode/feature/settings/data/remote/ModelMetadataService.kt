@@ -9,6 +9,8 @@ import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.domain.model.mergeModelMetadata
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -29,6 +31,9 @@ class ModelMetadataService @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val activeCatalogParses = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 串行化目录加载：并发的 resolve 会同时穿透 [cached] 未命中的空窗，各自把 5MB 目录读盘并解析一遍。 */
+    private val catalogLock = Mutex()
 
     /** 统一拉取器：模型元数据从独立数据分支拉取，避免每日机器产物污染 main。 */
     private val repoFetcher = RepoDataFetcher(context, branch = MODELS_BRANCH)
@@ -82,14 +87,13 @@ class ModelMetadataService @Inject constructor(
                 else -> null
             } ?: return@withContext
             if (body.isBlank()) return@withContext
-            runCatching { parseCatalogWithDiagnostics(body, "refresh") }
-                .onSuccess { cached = it }
+            runCatching { catalogLock.withLock { parseCatalogWithDiagnostics(body, "refresh").also { cached = it } } }
                 .onFailure { FileLogger.w(TAG, "解析模型元数据失败", it) }
         }
     }
 
     /** 纯只读链路：内存 → 本仓库磁盘缓存 → 内置 assets → 空目录（由调用方回退默认值），绝不发网络请求。 */
-    private fun loadCatalog(): Catalog {
+    private suspend fun loadCatalog(): Catalog = catalogLock.withLock {
         cached?.let { return it }
 
         val readStartedNs = System.nanoTime()
